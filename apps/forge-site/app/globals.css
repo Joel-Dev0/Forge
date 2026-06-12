@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── Design tokens ────────────────────────────────────────────── */
+/* Tailwind v4: register custom utilities via @theme               */
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #171717;
+  --color-surface-1: #f3f4f6;
+  --color-surface-2: #e5e7eb;
+  --color-primary:   #FF6B00;
+  --color-accent:    #FFB347;
+  --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ── Runtime theme switching via next-themes (data-theme attr) ── */
+:root,
+[data-theme="light"] {
+  --color-background: #ffffff;
+  --color-foreground: #171717;
+  --color-surface-1: #f3f4f6;
+  --color-surface-2: #e5e7eb;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="dark"] {
+  --color-background: #0D0D0D;
+  --color-foreground: #ededed;
+  --color-surface-1: #1E1E1E;
+  --color-surface-2: #2B2B2B;
+}
+
+/* ── Base ────────────────────────────────────────────────────── */
+html {
+  color-scheme: dark light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface-1); }
+::-webkit-scrollbar-thumb { background: #FF6B00; border-radius: 3px; }

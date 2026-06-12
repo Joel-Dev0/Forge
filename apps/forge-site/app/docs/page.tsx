@@ -11,20 +11,15 @@ export default function Documentation() {
     if (!containerRef.current) return;
     
     const ctx = gsap.context(() => {
-      gsap.from(".doc-sidebar", {
-        x: -50,
-        opacity: 0,
-        duration: 0.8,
-        ease: "power2.out",
-      });
-      
-      gsap.from(".doc-content", {
-        y: 30,
-        opacity: 0,
-        duration: 0.8,
-        delay: 0.3,
-        ease: "power2.out",
-      });
+      gsap.fromTo(".doc-sidebar",
+        { x: -50, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.8, ease: "power2.out" }
+      );
+
+      gsap.fromTo(".doc-content",
+        { y: 30, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, delay: 0.3, ease: "power2.out" }
+      );
     }, containerRef);
     
     return () => ctx.revert();

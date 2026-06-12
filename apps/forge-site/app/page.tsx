@@ -63,25 +63,31 @@ export default function Home() {
           The ultimate developer experience tailored for focus, speed, and absolute control.
         </p>
         
-        <div className="hero-btn flex flex-col sm:flex-row items-center justify-center gap-4 flex-wrap">
-          <Link
-            href="/downloads"
-            id="hero-download-btn"
-            className="px-8 py-4 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(255,107,0,0.4)] flex items-center gap-2"
-          >
-            <Download className="w-5 h-5" /> Download Free
-          </Link>
+        {/* Primary CTAs */}
+        <div className="hero-btn flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
           <Link
             href="/products"
-            className="px-8 py-4 bg-surface-1 border border-surface-2 text-foreground font-semibold rounded-lg hover:bg-surface-2 transition-all flex items-center gap-2"
+            className="px-8 py-4 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(255,107,0,0.4)] flex items-center gap-2"
           >
             Explore Products <ArrowRight className="w-5 h-5" />
           </Link>
           <Link
             href="/docs"
-            className="px-8 py-4 text-foreground/70 hover:text-primary font-semibold transition-colors"
+            className="px-8 py-4 bg-surface-1 border border-surface-2 text-foreground font-semibold rounded-lg hover:bg-surface-2 transition-all"
           >
             Read the Docs
+          </Link>
+        </div>
+
+        {/* Secondary CTA — Download */}
+        <div className="hero-btn flex items-center justify-center">
+          <Link
+            href="/downloads"
+            id="hero-download-btn"
+            className="inline-flex items-center gap-2 text-sm text-foreground/60 hover:text-primary transition-colors group"
+          >
+            <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+            Download the app for free
           </Link>
         </div>
       </div>

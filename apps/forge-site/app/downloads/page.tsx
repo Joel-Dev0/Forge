@@ -11,22 +11,15 @@ export default function Downloads() {
     if (!containerRef.current) return;
     
     const ctx = gsap.context(() => {
-      gsap.from(".dl-header", {
-        y: -30,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.1,
-        ease: "power2.out",
-      });
-      
-      gsap.from(".dl-card", {
-        y: 50,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.15,
-        delay: 0.4,
-        ease: "power3.out",
-      });
+      gsap.fromTo(".dl-header",
+        { y: -30, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.1, ease: "power2.out" }
+      );
+
+      gsap.fromTo(".dl-card",
+        { y: 50, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.15, delay: 0.4, ease: "power3.out" }
+      );
     }, containerRef);
     
     return () => ctx.revert();

@@ -11,22 +11,15 @@ export default function Products() {
     if (!containerRef.current) return;
     
     const ctx = gsap.context(() => {
-      gsap.from(".product-header", {
-        y: 30,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.2,
-        ease: "power2.out",
-      });
-      
-      gsap.from(".product-card", {
-        scale: 0.9,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.2,
-        delay: 0.4,
-        ease: "back.out(1.5)",
-      });
+      gsap.fromTo(".product-header",
+        { y: 30, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.2, ease: "power2.out" }
+      );
+
+      gsap.fromTo(".product-card",
+        { scale: 0.9, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.8, stagger: 0.2, delay: 0.4, ease: "back.out(1.5)" }
+      );
     }, containerRef);
     
     return () => ctx.revert();

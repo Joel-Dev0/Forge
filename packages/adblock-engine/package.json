@@ -1,0 +1,25 @@
+{
+  "name": "@forge/adblock-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "adblock",
+    "easylist",
+    "content-blocker",
+    "filter-engine"
+  ],
+  "author": "Forge Team",
+  "license": "ISC"
+}

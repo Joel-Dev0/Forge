@@ -55,8 +55,13 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
           {/* Brand */}
           <div className="col-span-1">
-            <Link href="/" className="text-3xl font-extrabold text-primary tracking-tighter">
-              Forge.
+            <Link href="/" className="flex items-center gap-3 mb-3 group">
+              <img
+                src="/logo.png"
+                alt="Forge Browser"
+                className="w-10 h-10 rounded-xl object-contain shadow-md border border-surface-2 group-hover:scale-105 transition-transform"
+              />
+              
             </Link>
             <p className="mt-4 text-sm text-foreground/60 leading-relaxed">
               The ultimate developer experience tailored for focus, speed, and absolute control.

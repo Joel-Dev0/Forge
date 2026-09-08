@@ -26,6 +26,18 @@ export default function Products() {
   }, []);
 
   const products = [
+    {
+      name: "Forge Browser",
+      customIcon: (
+        <img
+          src="/logo.png"
+          alt="Forge Browser"
+          className="w-12 h-12 rounded-xl object-contain shadow-md"
+        />
+      ),
+      desc: "The browser for developers. Raw socket HTTP engine, live network interception, and full CDP body inspection.",
+      href: "/downloads",
+    },
     { name: "Forge Core", icon: <Cpu className="w-10 h-10 text-primary" />, desc: "The foundational engine for your development workflow." },
     { name: "Forge Shield", icon: <Shield className="w-10 h-10 text-accent" />, desc: "Enterprise-grade security and vulnerability scanning." },
     { name: "Forge Hub", icon: <Package className="w-10 h-10 text-primary" />, desc: "Centralized package management and distribution." },
@@ -45,14 +57,17 @@ export default function Products() {
           {products.map((product, i) => (
             <div key={i} className="product-card p-8 rounded-3xl bg-surface-1 border border-surface-2 hover:border-primary transition-all group overflow-hidden relative">
               <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[40px] -mr-10 -mt-10 group-hover:bg-primary/20 transition-all" />
-              <div className="mb-8 p-4 bg-background inline-block rounded-2xl group-hover:scale-110 transition-transform">
-                {product.icon}
+              <div className="mb-8 p-3 bg-background inline-block rounded-2xl group-hover:scale-110 transition-transform">
+                {product.customIcon ? product.customIcon : product.icon}
               </div>
               <h2 className="text-2xl font-bold mb-4">{product.name}</h2>
               <p className="text-foreground/70 mb-8">{product.desc}</p>
-              <button className="text-primary font-semibold flex items-center gap-2 group-hover:gap-4 transition-all">
-                Learn more <span>&rarr;</span>
-              </button>
+              <a
+                href={product.href || "#"}
+                className="text-primary font-semibold flex items-center gap-2 group-hover:gap-4 transition-all"
+              >
+                {product.href ? "Get Started" : "Learn more"} <span>&rarr;</span>
+              </a>
             </div>
           ))}
         </div>

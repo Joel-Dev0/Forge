@@ -58,8 +58,13 @@ export function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <Link href="/" className="text-2xl font-bold text-primary tracking-tighter">
-              Forge.
+            <Link href="/" className="flex items-center gap-3 group">
+              <img
+                src="/logo.png"
+                alt="Forge Browser"
+                className="w-9 h-9 rounded-lg object-contain shadow-md group-hover:scale-105 transition-transform duration-200 border border-surface-2"
+              />
+              
             </Link>
 
             {/* Desktop links */}
@@ -121,8 +126,13 @@ export function Navbar() {
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-surface-2">
-          <Link href="/" onClick={close} className="text-2xl font-bold text-primary tracking-tighter">
-            Forge.
+          <Link href="/" onClick={close} className="flex items-center gap-3">
+            <img
+              src="/logo.png"
+              alt="Forge Browser"
+              className="w-8 h-8 rounded-lg object-contain shadow-sm border border-surface-2"
+            />
+            
           </Link>
           <button
             onClick={close}

@@ -1,0 +1,116 @@
+import type { VpnLocation, WireGuardConfig } from "../types/NetworkConfig.ts";
+
+export const DEFAULT_VPN_LOCATIONS: VpnLocation[] = [
+  {
+    id: "loc-us-east",
+    name: "United States (East)",
+    country: "United States",
+    countryCode: "US",
+    city: "New York",
+    endpoint: "us-east.vpn.forge-net.org:51820",
+    flag: "🇺🇸",
+    pingMs: 24,
+    load: 42,
+    isRecommended: true,
+  },
+  {
+    id: "loc-de-fra",
+    name: "Germany",
+    country: "Germany",
+    countryCode: "DE",
+    city: "Frankfurt",
+    endpoint: "de-fra.vpn.forge-net.org:51820",
+    flag: "🇩🇪",
+    pingMs: 38,
+    load: 35,
+    isRecommended: true,
+  },
+  {
+    id: "loc-nl-ams",
+    name: "Netherlands",
+    country: "Netherlands",
+    countryCode: "NL",
+    city: "Amsterdam",
+    endpoint: "nl-ams.vpn.forge-net.org:51820",
+    flag: "🇳🇱",
+    pingMs: 32,
+    load: 55,
+  },
+  {
+    id: "loc-sg-sin",
+    name: "Singapore",
+    country: "Singapore",
+    countryCode: "SG",
+    city: "Singapore",
+    endpoint: "sg-sin.vpn.forge-net.org:51820",
+    flag: "🇸🇬",
+    pingMs: 78,
+    load: 28,
+  },
+  {
+    id: "loc-co-bog",
+    name: "Colombia",
+    country: "Colombia",
+    countryCode: "CO",
+    city: "Bogotá",
+    endpoint: "co-bog.vpn.forge-net.org:51820",
+    flag: "🇨🇴",
+    pingMs: 18,
+    load: 20,
+    isRecommended: true,
+  },
+  {
+    id: "loc-gb-lon",
+    name: "United Kingdom",
+    country: "United Kingdom",
+    countryCode: "GB",
+    city: "London",
+    endpoint: "uk-lon.vpn.forge-net.org:51820",
+    flag: "🇬🇧",
+    pingMs: 44,
+    load: 62,
+  },
+  {
+    id: "loc-jp-tyo",
+    name: "Japan",
+    country: "Japan",
+    countryCode: "JP",
+    city: "Tokyo",
+    endpoint: "jp-tyo.vpn.forge-net.org:51820",
+    flag: "🇯🇵",
+    pingMs: 95,
+    load: 40,
+  },
+  {
+    id: "loc-ch-zrh",
+    name: "Switzerland (Privacy)",
+    country: "Switzerland",
+    countryCode: "CH",
+    city: "Zurich",
+    endpoint: "ch-zrh.vpn.forge-net.org:51820",
+    flag: "🇨🇭",
+    pingMs: 40,
+    load: 18,
+    isRecommended: true,
+  },
+];
+
+/**
+ * Creates a template WireGuardConfig for a specific VPN location
+ */
+export function createConfigForLocation(
+  location: VpnLocation,
+  clientPrivateKey: string = "aP94sD234kdjfn39vksjflsdjflskjdfkljsdf234=",
+  serverPublicKey: string = "kL89sD234kdjfn39vksjflsdjflskjdfkljsdf890="
+): WireGuardConfig {
+  return {
+    endpoint: location.endpoint,
+    privateKey: clientPrivateKey,
+    publicKey: serverPublicKey,
+    address: "10.8.0.2/32",
+    dns: ["1.1.1.1", "1.0.0.1"],
+    allowedIps: ["0.0.0.0/0", "::/0"],
+    persistentKeepalive: 25,
+    mtu: 1420,
+  };
+}

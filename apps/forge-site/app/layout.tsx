@@ -16,8 +16,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Forge",
-  description: "Browser focus for developers",
+  title: "Forge Browser | The Developer's Browser",
+  description: "The ultimate browser engineered for developers with raw HTTP engine, network inspector, and high performance.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

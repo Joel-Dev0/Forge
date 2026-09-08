@@ -51,7 +51,21 @@ export default function Home() {
         <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full bg-accent/10 blur-[150px]" />
       </div>
 
-      <div className="max-w-5xl w-full text-center mt-20 md:mt-32">
+      <div className="max-w-5xl w-full text-center mt-16 md:mt-24">
+        {/* Official Logo Badge */}
+        <div className="hero-text flex justify-center mb-8">
+          <div className="relative group inline-block">
+            <div className="absolute -inset-2 bg-gradient-to-r from-primary via-[#FF8533] to-accent rounded-3xl blur-2xl opacity-40 group-hover:opacity-75 transition duration-500" />
+            <div className="relative p-2 rounded-2xl bg-surface-1 border border-surface-2 shadow-2xl">
+              <img
+                src="/logo.png"
+                alt="Forge Browser Logo"
+                className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl object-contain shadow-inner"
+              />
+            </div>
+          </div>
+        </div>
+
         <h1 className="hero-text text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
           Forge Your Next <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">

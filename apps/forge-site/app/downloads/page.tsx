@@ -1,27 +1,55 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { Download, Monitor, Apple, MonitorSmartphone } from "lucide-react";
+import {
+  Download,
+  Monitor,
+  Apple,
+  MonitorSmartphone,
+  Shield,
+  Lock,
+  Globe,
+  Wifi,
+  Building2,
+  Zap,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Sparkles,
+  ArrowRight,
+  Radio,
+  Layers,
+  ShieldAlert,
+} from "lucide-react";
 
 export default function Downloads() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isVpnSimulatedOn, setIsVpnSimulatedOn] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    
+
     const ctx = gsap.context(() => {
-      gsap.fromTo(".dl-header",
+      gsap.fromTo(
+        ".dl-header",
         { y: -30, opacity: 0 },
         { y: 0, opacity: 1, duration: 0.8, stagger: 0.1, ease: "power2.out" }
       );
 
-      gsap.fromTo(".dl-card",
+      gsap.fromTo(
+        ".dl-card",
         { y: 50, opacity: 0 },
         { y: 0, opacity: 1, duration: 0.8, stagger: 0.15, delay: 0.4, ease: "power3.out" }
       );
+
+      gsap.fromTo(
+        ".vpn-feature-card",
+        { y: 40, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.7, stagger: 0.1, delay: 0.7, ease: "power2.out" }
+      );
     }, containerRef);
-    
+
     return () => ctx.revert();
   }, []);
 
@@ -31,33 +59,322 @@ export default function Downloads() {
     { name: "Linux", icon: <MonitorSmartphone className="w-12 h-12" />, arch: "deb / rpm / AppImage", version: "v2.4.0" },
   ];
 
-  return (
-    <div ref={containerRef} className="min-h-screen py-20 px-8 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-[100px] -z-10" />
+  const steps = [
+    {
+      num: "01",
+      title: "On-Device Encryption",
+      tech: "ChaCha20-Poly1305",
+      icon: <Lock className="w-6 h-6 text-primary" />,
+      desc: "When you switch on Forge VPN, data is scrambled locally on your device before a single packet touches the network, preventing local sniffing.",
+    },
+    {
+      num: "02",
+      title: "The Secure Tunnel",
+      tech: "WireGuard UDP :51820",
+      icon: <Zap className="w-6 h-6 text-[#FF8533]" />,
+      desc: "Your scrambled traffic traverses an isolated, high-speed tunnel directly to the global server node chosen by you (US, DE, NL, SG, CO, JP).",
+    },
+    {
+      num: "03",
+      title: "IP Replacement",
+      tech: "Virtual Exit Gateway",
+      icon: <Globe className="w-6 h-6 text-accent" />,
+      desc: "The VPN server opens and relays the request. The destination website only sees the VPN server's location and IP address, never your home identity.",
+    },
+    {
+      num: "04",
+      title: "Shared Addresses & Guard",
+      tech: "Crowd Anonymity + Kill Switch",
+      icon: <Shield className="w-6 h-6 text-emerald-400" />,
+      desc: "You share an IP address with other concurrent users for untraceable crowd privacy, reinforced by a Kill Switch that halts traffic if the tunnel drops.",
+    },
+  ];
 
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-20">
-          <h1 className="dl-header text-5xl md:text-6xl font-bold mb-6">Download Forge</h1>
+  return (
+    <div ref={containerRef} className="min-h-screen py-20 px-4 sm:px-8 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-[120px] -z-10" />
+      <div className="absolute bottom-10 right-10 w-[500px] h-[500px] bg-accent/5 rounded-full blur-[140px] -z-10" />
+
+      <div className="max-w-6xl mx-auto">
+        {/* ============================================================== */}
+        {/* HEADER */}
+        {/* ============================================================== */}
+        <div className="text-center mb-16">
+          <div className="dl-header flex justify-center mb-6">
+            <div className="p-2.5 rounded-2xl bg-surface-1 border border-surface-2 shadow-xl inline-block">
+              <img
+                src="/logo.png"
+                alt="Forge Browser"
+                className="w-20 h-20 rounded-xl object-contain"
+              />
+            </div>
+          </div>
+          <h1 className="dl-header text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
+            Download Forge Browser
+          </h1>
           <p className="dl-header text-xl text-foreground/70 max-w-2xl mx-auto">
-            Get the latest version of Forge for your operating system and start building immediately.
+            Get the developer-first browser featuring built-in WireGuard VPN, native network inspection, AdBlock, and pip multimedia control.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* ============================================================== */}
+        {/* DOWNLOAD PLATFORM CARDS */}
+        {/* ============================================================== */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-24">
           {platforms.map((os, i) => (
-            <div key={i} className="dl-card p-8 rounded-2xl bg-surface-1 border border-surface-2 hover:border-primary/50 transition-all flex flex-col items-center text-center group">
+            <div
+              key={i}
+              className="dl-card p-8 rounded-2xl bg-surface-1 border border-surface-2 hover:border-primary/50 transition-all flex flex-col items-center text-center group shadow-sm hover:shadow-xl"
+            >
               <div className="mb-6 p-4 bg-background rounded-full group-hover:bg-primary group-hover:text-white transition-colors duration-300">
                 {os.icon}
               </div>
               <h2 className="text-2xl font-bold mb-2">{os.name}</h2>
               <p className="text-sm text-foreground/50 mb-6">{os.arch}</p>
-              
-              <button className="w-full py-3 bg-primary/10 text-primary hover:bg-primary hover:text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2">
+
+              <button className="w-full py-3 bg-primary/10 text-primary hover:bg-primary hover:text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer">
                 <Download className="w-4 h-4" /> Download {os.version}
               </button>
             </div>
           ))}
+        </div>
+
+        {/* ============================================================== */}
+        {/* VPN STEP-BY-STEP & "WHAT OTHERS SEE" FEATURE SECTION */}
+        {/* ============================================================== */}
+        <div className="mt-12 pt-16 border-t border-surface-2">
+          {/* Section Title */}
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-4 tracking-wide uppercase">
+              <Sparkles className="w-3.5 h-3.5" /> Built-In WireGuard Client & Privacy Core
+            </div>
+            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4">
+              How Forge VPN Protects You
+            </h2>
+            <p className="text-foreground/70 text-base sm:text-lg">
+              Forge operates as a complete, lightweight VPN client compatible with WireGuard servers.
+              Here is the exact step-by-step cryptographic process and what others see when you browse.
+            </p>
+          </div>
+
+          {/* 4-Step Process Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            {steps.map((step, idx) => (
+              <div
+                key={idx}
+                className="vpn-feature-card p-6 rounded-2xl bg-surface-1 border border-surface-2 relative overflow-hidden flex flex-col justify-between hover:border-primary/40 transition-all group"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-3 rounded-xl bg-background border border-surface-2 group-hover:scale-110 transition-transform">
+                      {step.icon}
+                    </div>
+                    <span className="font-mono text-2xl font-black text-foreground/20 group-hover:text-primary/40 transition-colors">
+                      {step.num}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold mb-1 text-foreground">{step.title}</h3>
+                  <div className="text-[11px] font-mono text-primary font-medium mb-3">
+                    {step.tech}
+                  </div>
+                  <p className="text-sm text-foreground/60 leading-relaxed">{step.desc}</p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-surface-2/60 flex items-center gap-1.5 text-xs text-foreground/40 font-mono">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Fully Verified
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ============================================================== */}
+          {/* INTERACTIVE "WHAT OTHERS SEE" COMPARISON MATRIX */}
+          {/* ============================================================== */}
+          <div className="rounded-3xl bg-surface-1 border border-surface-2 p-6 sm:p-10 shadow-2xl overflow-hidden relative">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-surface-2">
+              <div>
+                <h3 className="text-2xl font-bold flex items-center gap-2.5">
+                  <Eye className="w-6 h-6 text-primary" /> What Others See When You Browse
+                </h3>
+                <p className="text-sm text-foreground/60 mt-1">
+                  Compare your network visibility with Forge WireGuard active versus an unprotected direct connection.
+                </p>
+              </div>
+
+              {/* Interactive Simulation Switch */}
+              <div className="flex items-center gap-3 self-end sm:self-center bg-background p-1.5 rounded-xl border border-surface-2">
+                <span className="text-xs font-semibold text-foreground/70 px-2">
+                  VPN Shield:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsVpnSimulatedOn(false)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    !isVpnSimulatedOn
+                      ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                      : "text-foreground/50 hover:text-foreground"
+                  }`}
+                >
+                  Disconnected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsVpnSimulatedOn(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isVpnSimulatedOn
+                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm"
+                      : "text-foreground/50 hover:text-foreground"
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" /> Connected
+                </button>
+              </div>
+            </div>
+
+            {/* 3 Visibility Columns */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Column 1: Websites */}
+              <div
+                className={`p-6 rounded-2xl border transition-all ${
+                  isVpnSimulatedOn
+                    ? "bg-purple-950/10 border-purple-500/30"
+                    : "bg-red-950/10 border-red-500/30"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-background border border-surface-2">
+                      <Globe className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <h4 className="font-bold text-base">Websites You Visit</h4>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                      isVpnSimulatedOn
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-red-500/20 text-red-300"
+                    }`}
+                  >
+                    {isVpnSimulatedOn ? "Real IP Hidden" : "Real IP Exposed"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">Visible Location</span>
+                    <span className="font-semibold text-foreground">
+                      {isVpnSimulatedOn ? "🇩🇪 Frankfurt, Germany (VPN Server)" : "🏠 Your Actual City & Region"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">Visible IP Address</span>
+                    <span className="font-mono text-xs font-bold text-foreground">
+                      {isVpnSimulatedOn ? "185.156.46.12 (Shared Anonymized Pool)" : "Your ISP Public IP"}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-surface-2/60 text-xs text-foreground/70 leading-relaxed">
+                    {isVpnSimulatedOn
+                      ? "Websites only see the VPN gateway. Ad trackers cannot correlate your browsing habits across different platforms."
+                      : "Websites log your physical geolocation, provider name, and track your activity across sessions."}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: ISP */}
+              <div
+                className={`p-6 rounded-2xl border transition-all ${
+                  isVpnSimulatedOn
+                    ? "bg-indigo-950/10 border-indigo-500/30"
+                    : "bg-amber-950/10 border-amber-500/30"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-background border border-surface-2">
+                      <Building2 className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <h4 className="font-bold text-base">Your Internet Provider</h4>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                      isVpnSimulatedOn
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-amber-500/20 text-amber-300"
+                    }`}
+                  >
+                    {isVpnSimulatedOn ? "Encrypted Stream" : "History Logged"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">What They See</span>
+                    <span className="font-semibold text-foreground">
+                      {isVpnSimulatedOn ? "Encrypted WireGuard UDP :51820" : "Every Domain & URL You Visit"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">DNS Queries</span>
+                    <span className="font-mono text-xs font-bold text-foreground">
+                      {isVpnSimulatedOn ? "Resolved in Tunnel (1.1.1.1 DNSSEC)" : "ISP Default Logging Resolver"}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-surface-2/60 text-xs text-foreground/70 leading-relaxed">
+                    {isVpnSimulatedOn
+                      ? "Your ISP only sees that you are connected to a secure server. They cannot see pages visited, media streamed, or queries searched."
+                      : "ISPs can record, monetize, or throttle your traffic based on domains you visit."}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3: Public Wi-Fi Admins */}
+              <div
+                className={`p-6 rounded-2xl border transition-all ${
+                  isVpnSimulatedOn
+                    ? "bg-cyan-950/10 border-cyan-500/30"
+                    : "bg-red-950/10 border-red-500/30"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-background border border-surface-2">
+                      <Wifi className="w-5 h-5 text-cyan-400" />
+                    </div>
+                    <h4 className="font-bold text-base">Public Wi-Fi & Admins</h4>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                      isVpnSimulatedOn
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-red-500/20 text-red-300"
+                    }`}
+                  >
+                    {isVpnSimulatedOn ? "Snooping Blocked" : "Packet Sniffing Risk"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">Packet Payload</span>
+                    <span className="font-semibold text-foreground">
+                      {isVpnSimulatedOn ? "Unreadable ChaCha20 Ciphertext" : "Cleartext HTTP / SNI / DNS"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-mono text-foreground/50 block">Man-In-The-Middle</span>
+                    <span className="font-mono text-xs font-bold text-foreground">
+                      {isVpnSimulatedOn ? "Cryptographically Prevented" : "Vulnerable to Rogue Access Points"}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-surface-2/60 text-xs text-foreground/70 leading-relaxed">
+                    {isVpnSimulatedOn
+                      ? "On untrusted public networks (airports, hotels, cafes), administrators and eavesdroppers see zero usable information."
+                      : "Rogue hotspots can intercept insecure traffic, spoof DNS, or capture browsing activity."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

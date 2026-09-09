@@ -4,9 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import {
   Download,
-  Monitor,
-  Apple,
-  MonitorSmartphone,
   Shield,
   Lock,
   Globe,
@@ -15,12 +12,7 @@ import {
   Zap,
   CheckCircle2,
   Eye,
-  EyeOff,
   Sparkles,
-  ArrowRight,
-  Radio,
-  Layers,
-  ShieldAlert,
 } from "lucide-react";
 
 export default function Downloads() {
@@ -54,9 +46,42 @@ export default function Downloads() {
   }, []);
 
   const platforms = [
-    { name: "Windows", icon: <Monitor className="w-12 h-12" />, arch: "x64 / arm64", version: "v2.4.0" },
-    { name: "macOS", icon: <Apple className="w-12 h-12" />, arch: "Intel / Apple Silicon", version: "v2.4.0" },
-    { name: "Linux", icon: <MonitorSmartphone className="w-12 h-12" />, arch: "deb / rpm / AppImage", version: "v2.4.0" },
+    {
+      name: "Windows",
+      icon: (
+        <img
+          src="/windows-174-svgrepo-com.svg"
+          alt="Windows"
+          className="w-12 h-12 object-contain dark:invert transition-all duration-300 group-hover:brightness-0 group-hover:invert"
+        />
+      ),
+      arch: "x64 / arm64",
+      version: "v2.4.0",
+    },
+    {
+      name: "macOS",
+      icon: (
+        <img
+          src="/apple-black-logo-svgrepo-com.svg"
+          alt="macOS"
+          className="w-12 h-12 object-contain dark:invert transition-all duration-300 group-hover:brightness-0 group-hover:invert"
+        />
+      ),
+      arch: "Intel / Apple Silicon",
+      version: "v2.4.0",
+    },
+    {
+      name: "Linux",
+      icon: (
+        <img
+          src="/linux-svgrepo-com.svg"
+          alt="Linux"
+          className="w-12 h-12 object-contain transition-all duration-300 group-hover:scale-105"
+        />
+      ),
+      arch: "deb / rpm / AppImage",
+      version: "v2.4.0",
+    },
   ];
 
   const steps = [

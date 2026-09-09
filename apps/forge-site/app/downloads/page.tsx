@@ -15,6 +15,34 @@ import {
   Sparkles,
 } from "lucide-react";
 
+function WindowsIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      className={className}
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <g transform="translate(-4, -7279)">
+        <path d="M13.1458647,7289.43426 C13.1508772,7291.43316 13.1568922,7294.82929 13.1619048,7297.46884 C16.7759398,7297.95757 20.3899749,7298.4613 23.997995,7299 C23.997995,7295.84873 24.002005,7292.71146 23.997995,7289.71311 C20.3809524,7289.71311 16.7649123,7289.43426 13.1458647,7289.43426 M4,7289.43526 L4,7296.22153 C6.72581454,7296.58933 9.45162907,7296.94113 12.1724311,7297.34291 C12.1774436,7294.71736 12.1704261,7292.0908 12.1704261,7289.46524 C9.44661654,7289.47024 6.72380952,7289.42627 4,7289.43526 M4,7281.84344 L4,7288.61071 C6.72581454,7288.61771 9.45162907,7288.57673 12.1774436,7288.57973 C12.1754386,7285.96017 12.1754386,7283.34361 12.1724311,7280.72405 C9.44461153,7281.06486 6.71679198,7281.42567 4,7281.84344 M24,7288.47179 C20.3879699,7288.48578 16.7759398,7288.54075 13.1619048,7288.55175 C13.1598997,7285.88921 13.1598997,7283.22967 13.1619048,7280.56914 C16.7689223,7280.01844 20.3839599,7279.50072 23.997995,7279 C24,7282.15826 23.997995,7285.31353 24,7288.47179" />
+      </g>
+    </svg>
+  );
+}
+
+function AppleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="-52.01 0 560.035 560.035"
+      className={className}
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M380.844 297.529c.787 84.752 74.349 112.955 75.164 113.314-.622 1.988-11.754 40.191-38.756 79.652-23.343 34.117-47.568 68.107-85.731 68.811-37.499.691-49.557-22.236-92.429-22.236-42.859 0-56.256 21.533-91.753 22.928-36.837 1.395-64.889-36.891-88.424-70.883-48.093-69.53-84.846-196.475-35.496-282.165 24.516-42.554 68.328-69.501 115.882-70.192 36.173-.69 70.315 24.336 92.429 24.336 22.1 0 63.59-30.096 107.208-25.676 18.26.76 69.517 7.376 102.429 55.552-2.652 1.644-61.159 35.704-60.523 106.559M310.369 89.418C329.926 65.745 343.089 32.79 339.498 0 311.308 1.133 277.22 18.785 257 42.445c-18.121 20.952-33.991 54.487-29.709 86.628 31.421 2.431 63.52-15.967 83.078-39.655" />
+    </svg>
+  );
+}
+
 export default function Downloads() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVpnSimulatedOn, setIsVpnSimulatedOn] = useState(true);
@@ -48,25 +76,13 @@ export default function Downloads() {
   const platforms = [
     {
       name: "Windows",
-      icon: (
-        <img
-          src="/windows-174-svgrepo-com.svg"
-          alt="Windows"
-          className="w-12 h-12 object-contain dark:invert transition-all duration-300 group-hover:brightness-0 group-hover:invert"
-        />
-      ),
+      icon: <WindowsIcon className="w-12 h-12 transition-transform duration-300 group-hover:scale-105" />,
       arch: "x64 / arm64",
       version: "v2.4.0",
     },
     {
       name: "macOS",
-      icon: (
-        <img
-          src="/apple-black-logo-svgrepo-com.svg"
-          alt="macOS"
-          className="w-12 h-12 object-contain dark:invert transition-all duration-300 group-hover:brightness-0 group-hover:invert"
-        />
-      ),
+      icon: <AppleIcon className="w-12 h-12 transition-transform duration-300 group-hover:scale-105" />,
       arch: "Intel / Apple Silicon",
       version: "v2.4.0",
     },
@@ -152,7 +168,7 @@ export default function Downloads() {
               key={i}
               className="dl-card p-8 rounded-2xl bg-surface-1 border border-surface-2 hover:border-primary/50 transition-all flex flex-col items-center text-center group shadow-sm hover:shadow-xl"
             >
-              <div className="mb-6 p-4 bg-background rounded-full group-hover:bg-primary group-hover:text-white transition-colors duration-300">
+              <div className="mb-6 p-4 bg-background text-foreground rounded-full group-hover:bg-primary group-hover:text-white transition-colors duration-300 flex items-center justify-center">
                 {os.icon}
               </div>
               <h2 className="text-2xl font-bold mb-2">{os.name}</h2>

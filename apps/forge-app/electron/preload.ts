@@ -1,10 +1,23 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+let guestPreloadPath = "";
+try {
+  guestPreloadPath = ipcRenderer.sendSync("adblock:get-guest-preload-path-sync") || "";
+} catch {}
+
 const windowControls = {
-  minimize: () => ipcRenderer.send("window:minimize"),
+  minimize: () => {
+    try {
+      ipcRenderer.send("window:minimize");
+    } catch {}
+    try {
+      ipcRenderer.invoke("window:minimize").catch(() => {});
+    } catch {}
+  },
   maximize: () => ipcRenderer.send("window:maximize"),
   restoreAndFocus: () => ipcRenderer.send("window:restore-and-focus"),
   close: () => ipcRenderer.send("window:close"),
+  openPrivate: () => ipcRenderer.send("window:open-private"),
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
   setFullScreen: (flag: boolean) => ipcRenderer.send("window:set-fullscreen", flag),
   isFullScreen: () => ipcRenderer.invoke("window:is-fullscreen"),
@@ -16,9 +29,51 @@ contextBridge.exposeInMainWorld("electron", windowControls);
 
 contextBridge.exposeInMainWorld("forge", {
   platform: process.platform,
-  ...windowControls,
+  minimize: windowControls.minimize,
+  maximize: windowControls.maximize,
+  restoreAndFocus: windowControls.restoreAndFocus,
+  close: windowControls.close,
+  openPrivate: windowControls.openPrivate,
+  isMaximized: windowControls.isMaximized,
+  setFullScreen: windowControls.setFullScreen,
+  isFullScreen: windowControls.isFullScreen,
+  setTheme: windowControls.setTheme,
   setTitle: (title: string) => ipcRenderer.send("window:set-title", title),
-  restoreAndFocus: () => ipcRenderer.send("window:restore-and-focus"),
+  shortcuts: {
+    onTrigger: (callback: (action: string) => void) => {
+      const listener = (_event: any, action: string) => callback(action);
+      ipcRenderer.on("shortcut:trigger", listener);
+      return () => ipcRenderer.removeListener("shortcut:trigger", listener);
+    },
+  },
+  tabs: {
+    onOpenTab: (callback: (data: { url: string }) => void) => {
+      const listener = (_event: any, data: { url: string }) => callback(data);
+      ipcRenderer.on("tabs:open-tab", listener);
+      return () => ipcRenderer.removeListener("tabs:open-tab", listener);
+    },
+  },
+  downloads: {
+    getRecent: () => ipcRenderer.invoke("downloads:get-recent"),
+    openFolder: () => ipcRenderer.invoke("downloads:open-folder"),
+    openFile: (filePath: string) => ipcRenderer.invoke("downloads:open-file", filePath),
+    showInFolder: (filePath: string) => ipcRenderer.invoke("downloads:show-in-folder", filePath),
+    onDownloadCreated: (callback: (item: any) => void) => {
+      const listener = (_event: any, item: any) => callback(item);
+      ipcRenderer.on("downloads:item-created", listener);
+      return () => ipcRenderer.removeListener("downloads:item-created", listener);
+    },
+    onDownloadUpdated: (callback: (item: any) => void) => {
+      const listener = (_event: any, item: any) => callback(item);
+      ipcRenderer.on("downloads:item-updated", listener);
+      return () => ipcRenderer.removeListener("downloads:item-updated", listener);
+    },
+    onDownloadDone: (callback: (item: any) => void) => {
+      const listener = (_event: any, item: any) => callback(item);
+      ipcRenderer.on("downloads:item-done", listener);
+      return () => ipcRenderer.removeListener("downloads:item-done", listener);
+    },
+  },
   pip: {
     onActivateTabByContentsId: (callback: (contentsId: number) => void) => {
       const listener = (_event: any, contentsId: number) => callback(contentsId);
@@ -89,6 +144,7 @@ contextBridge.exposeInMainWorld("forge", {
     setCwd: (newCwd: string) => ipcRenderer.invoke("terminal:set-cwd", newCwd),
   },
   adblock: {
+    guestPreloadPath,
     getState: () => ipcRenderer.invoke("adblock:get-state"),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke("adblock:set-enabled", enabled),
     setFeature: (feature: string, enabled: boolean) => ipcRenderer.invoke("adblock:set-feature", feature, enabled),
@@ -103,6 +159,7 @@ contextBridge.exposeInMainWorld("forge", {
     clearLogs: () => ipcRenderer.invoke("adblock:clear-logs"),
     getCosmeticCSS: (url: string) => ipcRenderer.invoke("adblock:get-cosmetic-css", url),
     getScriptlet: (url: string) => ipcRenderer.invoke("adblock:get-scriptlet", url),
+    evaluateRequest: (url: string) => ipcRenderer.invoke("adblock:evaluate-request", url),
     updateLists: () => ipcRenderer.invoke("adblock:update-lists"),
     getGuestPreloadPath: () => ipcRenderer.invoke("adblock:get-guest-preload-path"),
     onRequestEntry: (callback: (entry: any) => void) => {

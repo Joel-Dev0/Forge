@@ -275,7 +275,221 @@
       if (window.__forge_universal_adblock_active) return;
       window.__forge_universal_adblock_active = true;
 
-      // Neutralize Google IMA SDK
+      // 1. Anti-Adblock Evasion Stubs
+      try {
+        window.canRunAds = true;
+        window.isAdBlockActive = false;
+        window.adsbygoogle = window.adsbygoogle || [];
+        if (!window.adsbygoogle.loaded) {
+          window.adsbygoogle.loaded = true;
+        }
+        window.adsbygoogle.push = function() { return 0; };
+      } catch {}
+
+      // 2. Universal Popunder & Unsolicited Window.Open Defuser
+      try {
+        let lastUserActionTime = 0;
+        let lastOpenTime = 0;
+        const recordUserAction = () => { lastUserActionTime = Date.now(); };
+        window.addEventListener('pointerdown', recordUserAction, true);
+        window.addEventListener('mousedown', recordUserAction, true);
+        window.addEventListener('keydown', recordUserAction, true);
+
+        const originalOpen = window.open;
+        const adUrlKeywords = [
+          'popads', 'popcash', 'adcash', 'propellerads', 'monetag', 'hilltopads',
+          'adsterra', 'richads', 'clickadu', 'trafficstars', 'onclickprediction',
+          'onclickalgo', 'onclickbright', 'onclickperformance', 'ad2up', 'ero-advertising',
+          'juicyads', 'yllix', 'bidvertiser', 'doubleclick', 'googlesyndication',
+          'adnxs', 'criteo', 'taboola', 'outbrain', 'bet365', '1xbet', 'redirect',
+          'click.php', 'track/click', 'serving/ad', 'adserver', 'clksite', 'revenuehits',
+          'rotator', 'popunder', 'fastclick', 'adservice', 'runative', 'syndicate',
+          'casino', 'casinon', 'spelpaus', 'zilla-networks'
+        ];
+
+        // Defuse Runative & Tabup Popunder SDKs
+        try {
+          Object.defineProperty(window, '__ts', { get: () => ({}), set: () => {} });
+          Object.defineProperty(window, 'runative', { get: () => ({}), set: () => {} });
+          Object.defineProperty(window, 'RunativeSDK', { get: () => ({}), set: () => {} });
+        } catch {}
+
+        function createDummyWindow() {
+          return {
+            closed: true,
+            focus: function() {},
+            blur: function() {},
+            close: function() {},
+            postMessage: function() {},
+            document: {},
+            location: { href: 'about:blank', replace: function() {}, assign: function() {} }
+          };
+        }
+
+        window.open = function(url, target, features) {
+          if (window.__forge_adblock_enabled === false) {
+            return originalOpen.apply(this, arguments);
+          }
+
+          const now = Date.now();
+          const isUserInitiated = (now - lastUserActionTime) < 1200;
+          const urlStr = String(url || '').toLowerCase();
+
+          // Block blank or script window.open calls used by ad networks to pop under
+          if (!url || url === '' || url === 'about:blank' || urlStr.startsWith('javascript:') || urlStr.startsWith('data:')) {
+            console.warn('[Forge Shield] Blocked blank/script window.open:', url);
+            return createDummyWindow();
+          }
+
+          // Block if matches known ad/popunder keywords
+          const isAdUrl = adUrlKeywords.some(k => urlStr.includes(k));
+          if (isAdUrl) {
+            console.warn('[Forge Shield] Blocked ad popunder URL:', url);
+            return createDummyWindow();
+          }
+
+          // Block unprompted / programmatic window.open without genuine user gesture
+          if (!isUserInitiated) {
+            console.warn('[Forge Shield] Blocked unsolicited background popup:', url);
+            return createDummyWindow();
+          }
+
+          // Block rapid-fire popunder spam (max 1 window open per 2.5 seconds)
+          if (now - lastOpenTime < 2500) {
+            console.warn('[Forge Shield] Blocked rapid-fire popup spam:', url);
+            return createDummyWindow();
+          }
+
+          lastOpenTime = now;
+          return originalOpen.apply(this, arguments);
+        };
+      } catch {}
+
+      // 3. Synthetic Link Click, Form Submit & Event Dispatch Interceptor
+      try {
+        const isAdUrlString = function(url) {
+          const str = String(url || '').toLowerCase();
+          return adUrlKeywords.some(k => str.includes(k));
+        };
+
+        // Capture-phase click interceptor to catch ad link clicks before handlers fire
+        window.addEventListener('click', function(e) {
+          if (window.__forge_adblock_enabled === false) return;
+          const target = e.target && e.target.closest ? e.target.closest('a') : null;
+          if (target && target.href) {
+            const hrefLower = String(target.href).toLowerCase();
+            if (isAdUrlString(hrefLower)) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              console.warn('[Forge Shield] Prevented click on ad link:', target.href);
+            }
+          }
+        }, true);
+
+        const originalAnchorClick = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function() {
+          if (window.__forge_adblock_enabled !== false) {
+            const h = String(this.href || '').toLowerCase();
+            if (isAdUrlString(h) || !h || h === 'about:blank' || h.startsWith('javascript:')) {
+              console.warn('[Forge Shield] Blocked synthetic ad link click:', this.href);
+              return;
+            }
+          }
+          return originalAnchorClick.apply(this, arguments);
+        };
+
+        const originalFormSubmit = HTMLFormElement.prototype.submit;
+        HTMLFormElement.prototype.submit = function() {
+          if (window.__forge_adblock_enabled !== false) {
+            if (isAdUrlString(this.action)) {
+              console.warn('[Forge Shield] Blocked ad form submit:', this.action);
+              return;
+            }
+          }
+          return originalFormSubmit.apply(this, arguments);
+        };
+
+        const origDispatch = EventTarget.prototype.dispatchEvent;
+        EventTarget.prototype.dispatchEvent = function(evt) {
+          if (window.__forge_adblock_enabled !== false && evt && evt.type === 'click') {
+            if (this instanceof HTMLAnchorElement && isAdUrlString(this.href)) {
+              console.warn('[Forge Shield] Blocked synthetic dispatchEvent click on ad:', this.href);
+              return false;
+            }
+          }
+          return origDispatch.apply(this, arguments);
+        };
+      } catch {}
+
+      // 4. In-Page Interstitial & Overlay Ad Neutralizer
+      function neutralizeInterstitialOverlays() {
+        if (window.__forge_adblock_enabled === false) return;
+        try {
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const elements = document.querySelectorAll('div, section, aside, iframe, dialog');
+
+          for (const el of elements) {
+            if (el.id && el.id.startsWith('__forge_')) continue;
+            if (el.querySelector('video') || el.tagName === 'VIDEO') continue;
+
+            const style = window.getComputedStyle(el);
+            if (style.position === 'fixed' || style.position === 'absolute') {
+              const rect = el.getBoundingClientRect();
+              const z = parseInt(style.zIndex, 10) || 0;
+
+              // Full-screen overlay or large popup (> 60% of viewport and high z-index)
+              if (rect.width >= vw * 0.6 && rect.height >= vh * 0.6 && z >= 1000) {
+                const hasAdContent =
+                  el.querySelector('iframe[src*="ad" i], iframe[src*="banner" i], iframe[src*="pop" i], iframe[src*="traffic" i]') !== null ||
+                  el.querySelector('a[href*="bet" i], a[href*="casino" i], a[href*="click" i], a[href*="track" i]') !== null ||
+                  el.className.toLowerCase().includes('modal-ad') ||
+                  el.className.toLowerCase().includes('interstitial') ||
+                  el.className.toLowerCase().includes('popunder') ||
+                  el.className.toLowerCase().includes('overlay') ||
+                  (z >= 2147483640 && !el.textContent?.trim());
+
+                if (hasAdContent) {
+                  el.style.display = 'none';
+                  el.style.pointerEvents = 'none';
+                  el.remove();
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+      setInterval(neutralizeInterstitialOverlays, 600);
+
+      // 5. Transparent Overlay Click-Trap Cleaner (Streaming Sites)
+      function removeClickTraps() {
+        if (window.__forge_adblock_enabled === false) return;
+        try {
+          const allDivs = document.querySelectorAll('div, a, span');
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          for (const el of allDivs) {
+            if (el.id && el.id.startsWith('__forge_')) continue;
+            const style = window.getComputedStyle(el);
+            if (style.position === 'fixed' || style.position === 'absolute') {
+              const rect = el.getBoundingClientRect();
+              if (rect.width >= w * 0.7 && rect.height >= h * 0.7) {
+                const z = parseInt(style.zIndex, 10);
+                if (z > 100 && (style.opacity === '0' || style.backgroundColor === 'rgba(0, 0, 0, 0)' || style.backgroundColor === 'transparent')) {
+                  if (!el.querySelector('video') && !el.textContent?.trim()) {
+                    el.style.pointerEvents = 'none';
+                    el.remove();
+                  }
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+      setInterval(removeClickTraps, 800);
+
+      // 5. Neutralize Google IMA SDK
       try {
         window.google = window.google || {};
         window.google.ima = window.google.ima || {
@@ -311,7 +525,7 @@
         };
       } catch {}
 
-      // Fast-forward generic HTML5 video ads
+      // 6. Fast-forward generic HTML5 video ads
       function skipGenericVideoAds() {
         if (window.__forge_adblock_enabled === false) return;
         const adSelectors = [
@@ -320,7 +534,9 @@
           '.ad-container video',
           '.video-ad video',
           'video[src*="ad"]',
-          'video[src*="doubleclick"]'
+          'video[src*="doubleclick"]',
+          'video[src*="aniview"]',
+          'video[src*="springserve"]'
         ];
 
         for (const selector of adSelectors) {
@@ -395,6 +611,18 @@
           }
         } catch (e) {
         }
+        try {
+          const iframes = currentRoot.querySelectorAll("iframe");
+          for (let i = 0; i < iframes.length; i++) {
+            try {
+              if (iframes[i].contentDocument) {
+                list = list.concat(getAllVideosInDocument(iframes[i].contentDocument));
+              }
+            } catch (e) {
+            }
+          }
+        } catch (e) {
+        }
         return list;
       }
       function patchIframesAndVideos() {
@@ -420,35 +648,125 @@
             if (v.hasAttribute("disablepictureinpicture")) {
               v.removeAttribute("disablepictureinpicture");
             }
+            if (v.hasAttribute("controlslist")) {
+              const cl = v.getAttribute("controlslist") || "";
+              v.setAttribute("controlslist", cl.replace(/nopictureinpicture/gi, ""));
+            }
           }
         } catch (e) {
         }
       }
       patchIframesAndVideos();
-      setInterval(patchIframesAndVideos, 2500);
+      setInterval(patchIframesAndVideos, 1500);
+      try {
+        const patchObserver = new MutationObserver(() => {
+          patchIframesAndVideos();
+        });
+        if (document.documentElement) {
+          patchObserver.observe(document.documentElement, { childList: true, subtree: true });
+        }
+      } catch (e) {
+      }
       let isPiPActive = false;
       let activePiPVideo = null;
+      function handlePiPExit() {
+        if (!isPiPActive && !activePiPVideo) return;
+        isPiPActive = false;
+        activePiPVideo = null;
+        console.log("__FORGE_PIP_RETURN_TO_PAGE__");
+        console.log("__FORGE_PIP_LEAVE__");
+      }
+      try {
+        const origReqPiP = HTMLVideoElement.prototype.requestPictureInPicture;
+        if (origReqPiP) {
+          HTMLVideoElement.prototype.requestPictureInPicture = async function(...args) {
+            isPiPActive = true;
+            activePiPVideo = this;
+            console.log("__FORGE_PIP_ENTER__");
+            const onElemLeave = () => {
+              this.removeEventListener("leavepictureinpicture", onElemLeave, true);
+              handlePiPExit();
+            };
+            this.addEventListener("leavepictureinpicture", onElemLeave, true);
+            return origReqPiP.apply(this, args);
+          };
+        }
+      } catch (e) {
+      }
       document.addEventListener("enterpictureinpicture", function(e) {
         isPiPActive = true;
         activePiPVideo = e.target;
         console.log("__FORGE_PIP_ENTER__");
+        if (e.target && typeof e.target.addEventListener === "function") {
+          const onTargetLeave = () => {
+            e.target.removeEventListener("leavepictureinpicture", onTargetLeave, true);
+            handlePiPExit();
+          };
+          e.target.addEventListener("leavepictureinpicture", onTargetLeave, true);
+        }
       }, true);
       window.addEventListener("focus", function() {
         if (isPiPActive) {
           console.log("__FORGE_PIP_RETURN_TO_PAGE__");
         }
       });
-      document.addEventListener("leavepictureinpicture", function(e) {
-        if (document.hasFocus()) {
-          console.log("__FORGE_PIP_RETURN_TO_PAGE__");
-        }
-        isPiPActive = false;
-        activePiPVideo = null;
-        console.log("__FORGE_PIP_LEAVE__");
+      document.addEventListener("leavepictureinpicture", function() {
+        handlePiPExit();
       }, true);
+      let lastKnownPiPEl = null;
+      setInterval(() => {
+        const current = document.pictureInPictureElement;
+        if (current && !lastKnownPiPEl) {
+          lastKnownPiPEl = current;
+          isPiPActive = true;
+          console.log("__FORGE_PIP_ENTER__");
+        } else if (!current && lastKnownPiPEl) {
+          lastKnownPiPEl = null;
+          handlePiPExit();
+        }
+      }, 350);
       window.addEventListener("message", function(e) {
-        if (e.data && e.data.type === "__FORGE_TOGGLE_PIP__") {
-          togglePiP();
+        if (!e.data || typeof e.data !== "object") return;
+        if (e.data.type === "__FORGE_TOGGLE_PIP__") {
+          const allV = getAllVideosInDocument();
+          if (allV.length > 0) {
+            togglePiP();
+          } else {
+            try {
+              const iframes = document.querySelectorAll("iframe");
+              for (let i = 0; i < iframes.length; i++) {
+                if (iframes[i].contentWindow) {
+                  iframes[i].contentWindow.postMessage({ type: "__FORGE_TOGGLE_PIP__" }, "*");
+                }
+              }
+            } catch (err) {
+            }
+          }
+        } else if (e.data.type === "__FORGE_TOGGLE_FULLSCREEN__") {
+          const allV = getAllVideosInDocument();
+          if (allV.length > 0) {
+            toggleVideoFullscreen();
+          } else {
+            try {
+              const iframes = document.querySelectorAll("iframe");
+              for (let i = 0; i < iframes.length; i++) {
+                if (iframes[i].contentWindow) {
+                  iframes[i].contentWindow.postMessage({ type: "__FORGE_TOGGLE_FULLSCREEN__" }, "*");
+                }
+              }
+            } catch (err) {
+            }
+          }
+        } else if (e.data.type === "__FORGE_FOCUS_VIDEO__") {
+          const v = activeVideo || getAllVideosInDocument()[0];
+          if (v) {
+            try {
+              window.focus();
+              v.focus?.();
+              v.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+            } catch (err) {
+            }
+          }
         }
       });
       let activeVideo = null;
@@ -905,18 +1223,118 @@
       padding: 0 !important;
     }
   ` : `
+    /* Generic ad banners, wrappers & sponsor placeholders */
     .ad-container,
     .ad-banner,
     .ad-placeholder,
+    .ad-slot,
+    .ad-box,
+    .ad-wrapper,
+    .ad-unit,
+    .ad-placement,
+    .ad-sidebar,
+    .ad-header,
+    .ad-footer,
+    .banner-ad,
+    .floating-ad,
+    .sticky-ad,
+    .bottom-ad,
+    .top-ad,
+    [class*="banner-ad" i],
+    [class*="sticky-ad" i],
+    [class*="floating-ad" i],
+    [class*="ad-slot" i],
+    [class*="ad-wrapper" i],
+    [class*="ad-box" i],
+    [class*="ad-sense" i],
+    [id*="advertisement" i],
+    [class*="advertisement" i],
+    [aria-label="advertisement" i],
+    [aria-label="ad" i],
+    [data-ad-unit],
+    [data-ad-slot],
+    [data-ad-client],
+    [data-ad-format],
+    [data-google-query-id],
     [id^="google_ads_iframe"],
     [id^="div-gpt-ad"],
     .adsbygoogle,
+
+    /* Native content recommendation ad widgets */
+    .trc_related_container,
+    .trc_rbox_div,
+    [id^="taboola-"],
+    .tbl-feed-container,
+    .OUTBRAIN,
+    [class*="ob-widget"],
+    [id^="outbrain_widget_"],
+    .ob-cards,
+    [id^="MarketGid"],
+    .mgid-widget,
+    [id^="rc-widget-"],
+    .rc-ad-item,
+    [class*="adsterra" i],
+    [class*="exoclick" i],
+    [id*="adsterra" i],
+
+    /* Video player ad overlays and VAST/IMA/VPAID containers */
+    .video-ads,
+    .video-ad,
     .video-ad-overlay,
-    .vast-ad-container {
+    .vast-ad-container,
+    .vjs-ad-playing,
+    .ima-ad-container,
+    .ima-container,
+    [id*="vdo_ai"],
+    .fluid_video_wrapper .vast_ad,
+    [class*="preroll" i],
+    [class*="midroll" i],
+
+    /* Popunders, interstitials & floating modals */
+    [class*="interstitial" i],
+    [class*="overlay-ad" i],
+    [class*="modal-ad" i],
+    [class*="popup-ad" i],
+    [class*="popunder" i],
+    [id*="interstitial" i],
+    [id*="overlay-ad" i],
+    [id*="modal-ad" i],
+    [id*="popup-ad" i],
+    [id*="popunder" i],
+    div[style*="z-index: 2147483647"]:not(:has(video)):not(#__forge_theater_backdrop),
+    div[style*="z-index: 2147483646"]:not(:has(video)):not(#__forge_video_fullscreen_pill),
+    div[style*="z-index: 999999"]:not(:has(video)),
+    div[style*="z-index: 99999"]:not(:has(video)),
+    iframe[src*="adsterra" i],
+    iframe[src*="exoclick" i],
+    iframe[src*="monetag" i],
+    iframe[src*="propeller" i],
+    iframe[src*="popads" i],
+    iframe[src*="popcash" i],
+    iframe[src*="hilltop" i],
+    iframe[src*="richads" i],
+    iframe[src*="trafficstars" i],
+    iframe[src*="onclick" i],
+    iframe[src*="doubleclick" i],
+
+    /* Anti-adblock warning modals, popups and block screens */
+    .fc-ab-root,
+    [class*="adblock-overlay" i],
+    [id*="adblock-notice" i],
+    [class*="adblock-warning" i],
+    [id*="adblock-modal" i],
+    .adblocker-overlay,
+    [class*="blocking-warning" i],
+    .sp-message-open,
+    #sp-message-container {
       display: none !important;
       height: 0 !important;
+      max-height: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      opacity: 0 !important;
     }
   `;
     const injectStyle = () => {

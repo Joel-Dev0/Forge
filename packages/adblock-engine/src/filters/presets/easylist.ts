@@ -1,13 +1,14 @@
 export const EASYLIST_PRESET_RULES = `
 ! Title: EasyList Core (Ad Blocking)
-! Description: Popular advertising networks, ad servers, banners, and video ad trackers
+! Description: Popular advertising networks, ad servers, banners, popunders, and video ad trackers
 ! Homepage: https://easylist.to/
 
-! --- Major Advertising Networks ---
+! --- Major Advertising & Programmatic Networks ---
 ||doubleclick.net^
 ||googlesyndication.com^
 ||adservice.google.com^
 ||pagead2.googlesyndication.com^
+||tpc.googlesyndication.com^
 ||adnxs.com^
 ||criteo.com^
 ||criteo.net^
@@ -23,6 +24,32 @@ export const EASYLIST_PRESET_RULES = `
 ||adform.net^
 ||zedo.com^
 ||popads.net^
+||popcash.net^
+||adcash.com^
+||propellerads.com^
+||monetag.com^
+||hilltopads.net^
+||hilltopads.com^
+||adsterra.com^
+||richads.com^
+||clickadu.com^
+||trafficstars.com^
+||runative.com^
+||runative-syndicate.com^
+||runative-syndicate.net^
+||cdn.runative-syndicate.com^
+||syndication.runative.com^
+||zilla-networks.com/ads/*
+||player.zilla-networks.com/ads/*
+||onclickprediction.com^
+||onclickalgo.com^
+||onclickbright.com^
+||onclickperformance.com^
+||ad-maven.com^
+||ero-advertising.com^
+||juicyads.com^
+||yllix.com^
+||bidvertiser.com^
 ||buysellads.com^
 ||adroll.com^
 ||media.net^
@@ -30,6 +57,7 @@ export const EASYLIST_PRESET_RULES = `
 ||inmobi.com^
 ||revcontent.com^
 ||adskeeper.co.uk^
+||adskeeper.com^
 ||mgid.com^
 ||bidswitch.net^
 ||yieldmo.com^
@@ -40,10 +68,10 @@ export const EASYLIST_PRESET_RULES = `
 ||connatix.com^
 ||aniview.com^
 ||spotxchange.com^
+||spotx.tv^
 ||adtech.de^
 ||advertising.com^
 ||quantserve.com^
-||propellerads.com^
 ||adcolony.com^
 ||admob.com^
 ||unityads.unity3d.com^
@@ -57,12 +85,36 @@ export const EASYLIST_PRESET_RULES = `
 ||adbutler.com^
 ||carbonads.net^
 ||adtrue.com^
-||adsterra.com^
 ||exoclick.com^
 ||trafficjunky.com^
 ||trafficfactory.biz^
+||zergnet.com^
+||mediavine.com^
+||raptive.com^
+||adthrive.com^
+||infolinks.com^
+||chitika.com^
+||skimresources.com^
+||viglink.com^
+||gumgum.com^
+||undertone.com^
+||conversantmedia.com^
+||yieldlove.com^
+||snigelweb.com^
+||shemedia.com^
+||playwire.com^
+||ezoic.com^
+||ezoic.net^
+||a-ads.com^
+||coinzilla.com^
+||bitmedia.io^
+||cointraffic.io^
+||clksite.com^
+||revenuehits.com^
+||popmyads.com^
+||clicksor.com^
 
-! --- Ad Paths and Generic Banner Patterns ---
+! --- Ad Paths, Redirects and Generic Banner Patterns ---
 /pagead/
 /ads/banner/*
 /adserver/*
@@ -72,6 +124,14 @@ export const EASYLIST_PRESET_RULES = `
 *banner_ad*
 *ads.min.js
 /dfp_ads.js
+/popunder*
+/popup/*
+/click.php?*
+/track/click*
+/serving/ad*
+*ad-delivery*
+*ad-provider*
+*ad-placement*
 ||ads.*^$script
 ||adserver.*^
 ||advert.*^
@@ -109,4 +169,15 @@ export const EASYLIST_PRESET_RULES = `
 ||serving-sys.com^
 ||vidazoo.com^
 ||kargo.com^
+||primis.tech^
+||streamrail.com^
+||brightroll.com^
+||stickyadstv.com^
+||videologygroup.com^
+||brid.tv^
+||targetspot.com^
+||adswizz.com^
+||truvid.com^
+||insticator.com^
+||anyclip.com^
 `;

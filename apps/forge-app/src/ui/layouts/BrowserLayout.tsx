@@ -5,9 +5,14 @@ import { TabBar } from "../components/TabBar";
 import { WebView } from "../components/WebView";
 import { Sidebar } from "../components/Sidebar";
 import { DevToolsBar } from "../components/DevToolsBar";
+import { FindInPageBar } from "../components/FindInPageBar";
+import { DownloadsModal } from "../components/DownloadsModal";
+import { HotkeysModal } from "../components/HotkeysModal";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
+import { useDownloadsStore } from "../../core/downloads/useDownloadsStore";
+import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
 import { Minimize2 } from "lucide-react";
 
 export function BrowserLayout() {
@@ -18,6 +23,26 @@ export function BrowserLayout() {
   const webviewRefs = useRef<Map<string, WebviewElement>>(new Map());
   const [showExitHint, setShowExitHint] = useState(false);
   const exitHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [isHotkeysOpen, setIsHotkeysOpen] = useState(false);
+  const [zoomBadge, setZoomBadge] = useState<number | null>(null);
+  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastShortcutRef = useRef<{ action: string; time: number }>({ action: "", time: 0 });
+
+  const triggerZoomBadge = useCallback((level: number) => {
+    setZoomBadge(level);
+    if (zoomTimer.current) clearTimeout(zoomTimer.current);
+    zoomTimer.current = setTimeout(() => setZoomBadge(null), 1500);
+  }, []);
+
+  const triggerToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(null), 2000);
+  }, []);
 
   const activeWebview = useCallback(() => webviewRefs.current.get(activeTabId) ?? null, [activeTabId]);
 
@@ -79,8 +104,39 @@ export function BrowserLayout() {
           return 'youtube';
         }
 
-        // 2. Any HTML5 video on the page
-        const videos = Array.from(document.querySelectorAll('video'));
+        // 2. Recursive video finder across Shadow DOM and accessible iframes
+        function getVideos(root) {
+          const currentRoot = root || document;
+          let list = [];
+          try {
+            const found = currentRoot.querySelectorAll('video');
+            for (let i = 0; i < found.length; i++) list.push(found[i]);
+          } catch(e) {}
+          try {
+            const treeRoot = currentRoot === document ? (document.body || document.documentElement) : currentRoot;
+            if (treeRoot) {
+              const allEls = treeRoot.querySelectorAll('*');
+              for (let i = 0; i < allEls.length; i++) {
+                if (allEls[i].shadowRoot) {
+                  list = list.concat(getVideos(allEls[i].shadowRoot));
+                }
+              }
+            }
+          } catch(e) {}
+          try {
+            const iframes = currentRoot.querySelectorAll('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+              try {
+                if (iframes[i].contentDocument) {
+                  list = list.concat(getVideos(iframes[i].contentDocument));
+                }
+              } catch(e) {}
+            }
+          } catch(e) {}
+          return list;
+        }
+
+        const videos = getVideos();
         const targetVideo = videos.find(v => !v.paused && v.currentTime > 0) ||
                             videos.find(v => !v.paused) ||
                             videos[0];
@@ -97,6 +153,16 @@ export function BrowserLayout() {
             return 'video';
           }
         }
+
+        // Cross-frame broadcast to child iframes
+        try {
+          const iframes = document.querySelectorAll('iframe');
+          for (let i = 0; i < iframes.length; i++) {
+            if (iframes[i].contentWindow) {
+              iframes[i].contentWindow.postMessage({ type: '__FORGE_TOGGLE_FULLSCREEN__' }, '*');
+            }
+          }
+        } catch(e) {}
 
         // 3. Fallback: Fullscreen the entire page document
         if (document.documentElement && document.documentElement.requestFullscreen) {
@@ -138,7 +204,7 @@ export function BrowserLayout() {
           } catch(e) {}
         }
 
-        // Recursive shadow DOM video finder for arbitrary web components & custom players
+        // Recursive video finder across Shadow DOM and accessible iframes
         function getVideos(root) {
           const currentRoot = root || document;
           let list = [];
@@ -155,6 +221,16 @@ export function BrowserLayout() {
                   list = list.concat(getVideos(allEls[i].shadowRoot));
                 }
               }
+            }
+          } catch(e) {}
+          try {
+            const iframes = currentRoot.querySelectorAll('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+              try {
+                if (iframes[i].contentDocument) {
+                  list = list.concat(getVideos(iframes[i].contentDocument));
+                }
+              } catch(e) {}
             }
           } catch(e) {}
           return list;
@@ -220,6 +296,20 @@ export function BrowserLayout() {
         try {
           if (wv && typeof wv.getWebContentsId === "function" && wv.getWebContentsId() === contentsId) {
             useTabsStore.getState().setActiveTab(tabId);
+            useFullscreenStore.getState().setFullscreen(false);
+            try {
+              wv.focus();
+              wv.executeJavaScript(`
+                (function() {
+                  window.focus();
+                  const v = document.pictureInPictureElement || document.querySelector('video');
+                  if (v) {
+                    v.focus?.();
+                    v.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+                  }
+                })()
+              `).catch(() => {});
+            } catch {}
             forge.restoreAndFocus?.();
             break;
           }
@@ -230,24 +320,284 @@ export function BrowserLayout() {
     return unsub;
   }, []);
 
-  // Global Escape, F11 (Fullscreen), and Alt+P (PiP) shortcuts
+  // Centralized action dispatcher for all hotkeys with deduplication to prevent double-firing
+  const handleShortcutAction = useCallback(
+    (action: string) => {
+      const now = Date.now();
+      // Debounce identical shortcuts triggered within 180ms (prevents double execution from IPC + DOM keydown)
+      if (lastShortcutRef.current.action === action && now - lastShortcutRef.current.time < 180) {
+        return;
+      }
+      lastShortcutRef.current = { action, time: now };
+
+      const wv = activeWebview();
+      switch (action) {
+        // Managing Tabs
+        case "tab:new":
+          useTabsStore.getState().openTab();
+          window.dispatchEvent(new CustomEvent("forge:focus-address-bar"));
+          break;
+        case "tab:close": {
+          const { tabs: currentTabs, activeTabId: currentActiveId, closeTab } = useTabsStore.getState();
+          if (currentTabs.length > 1) {
+            closeTab(currentActiveId);
+          } else {
+            (window as any).forge?.close?.();
+          }
+          break;
+        }
+        case "tab:reopen":
+          useTabsStore.getState().reopenClosedTab();
+          break;
+        case "tab:next":
+          useTabsStore.getState().nextTab();
+          break;
+        case "tab:prev":
+          useTabsStore.getState().prevTab();
+          break;
+
+        // Navigation and Windows
+        case "nav:focus-address":
+          window.dispatchEvent(new CustomEvent("forge:focus-address-bar"));
+          break;
+        case "win:private":
+          (window as any).forge?.openPrivate?.();
+          break;
+        case "nav:back":
+          if (wv && typeof wv.canGoBack === "function" && wv.canGoBack()) {
+            wv.goBack();
+          }
+          break;
+        case "nav:forward":
+          if (wv && typeof wv.canGoForward === "function" && wv.canGoForward()) {
+            wv.goForward();
+          }
+          break;
+        case "nav:reload":
+          if (wv && typeof wv.reload === "function") {
+            wv.reload();
+          }
+          break;
+        case "win:toggle-fullscreen":
+          handleToggleFullscreen();
+          break;
+
+        // Page Controls
+        case "page:find":
+          setIsFindOpen((prev) => !prev);
+          break;
+        case "page:zoom-in":
+          if (wv && typeof wv.getZoomFactor === "function") {
+            wv.getZoomFactor((factor) => {
+              const current = typeof factor === "number" ? factor : 1.0;
+              const next = Math.min(3.0, Math.round((current + 0.1) * 10) / 10);
+              wv.setZoomFactor?.(next);
+              triggerZoomBadge(Math.round(next * 100));
+            });
+          }
+          break;
+        case "page:zoom-out":
+          if (wv && typeof wv.getZoomFactor === "function") {
+            wv.getZoomFactor((factor) => {
+              const current = typeof factor === "number" ? factor : 1.0;
+              const next = Math.max(0.3, Math.round((current - 0.1) * 10) / 10);
+              wv.setZoomFactor?.(next);
+              triggerZoomBadge(Math.round(next * 100));
+            });
+          }
+          break;
+        case "page:zoom-reset":
+          if (wv && typeof wv.setZoomFactor === "function") {
+            wv.setZoomFactor(1.0);
+            triggerZoomBadge(100);
+          }
+          break;
+        case "page:bookmark": {
+          const active = tabs.find((t) => t.id === activeTabId);
+          if (active && active.url && active.url !== "about:blank") {
+            const { isBookmarked, addBookmark, removeBookmark } = useBookmarksStore.getState();
+            if (isBookmarked(active.url)) {
+              removeBookmark(active.url);
+              triggerToast("☆ Removed from bookmarks");
+            } else {
+              addBookmark(active.title || active.url, active.url);
+              triggerToast("★ Saved to bookmarks");
+            }
+          }
+          break;
+        }
+        case "page:history":
+          window.dispatchEvent(new CustomEvent("forge:open-history"));
+          break;
+        case "page:downloads":
+          useDownloadsStore.getState().toggleOpen();
+          break;
+        case "help:hotkeys":
+          setIsHotkeysOpen((prev) => !prev);
+          break;
+
+        default:
+          if (action.startsWith("tab:select-")) {
+            const num = parseInt(action.replace("tab:select-", ""), 10);
+            const currentTabs = useTabsStore.getState().tabs;
+            if (num === 9 && currentTabs.length > 0) {
+              useTabsStore.getState().setActiveTab(currentTabs[currentTabs.length - 1].id);
+            } else if (num >= 1 && num <= currentTabs.length) {
+              useTabsStore.getState().setActiveTab(currentTabs[num - 1].id);
+            }
+          }
+          break;
+      }
+    },
+    [activeWebview, handleToggleFullscreen, tabs, activeTabId, triggerZoomBadge, triggerToast]
+  );
+
+  // Listen for shortcuts from Electron IPC (intercepted from webviews or main window)
+  useEffect(() => {
+    const forge = (window as any).forge;
+    if (!forge?.shortcuts?.onTrigger) return;
+
+    const unsub = forge.shortcuts.onTrigger((action: string) => {
+      handleShortcutAction(action);
+    });
+    return unsub;
+  }, [handleShortcutAction]);
+
+  // Listen for open-tab events from Electron main process (e.g. legitimate target="_blank" links)
+  useEffect(() => {
+    const forge = (window as any).forge;
+    if (!forge?.tabs?.onOpenTab) return;
+
+    const unsub = forge.tabs.onOpenTab((data: { url: string }) => {
+      if (data?.url) {
+        useTabsStore.getState().openTab(data.url);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Listen for custom event from TitleBar button
+  useEffect(() => {
+    const handler = () => setIsHotkeysOpen((prev) => !prev);
+    window.addEventListener("forge:toggle-hotkeys", handler);
+    return () => window.removeEventListener("forge:toggle-hotkeys", handler);
+  }, []);
+
+  // Global DOM keyboard shortcuts listener (for renderer / web fallback)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && useFullscreenStore.getState().isFullscreen) {
-        handleExitFullscreen();
+      if (e.key === "Escape") {
+        if (useFullscreenStore.getState().isFullscreen) {
+          handleExitFullscreen();
+          return;
+        }
+        if (isFindOpen) {
+          setIsFindOpen(false);
+          return;
+        }
+        if (isHotkeysOpen) {
+          setIsHotkeysOpen(false);
+          return;
+        }
       }
-      if (e.key === "F11") {
-        e.preventDefault();
-        handleToggleFullscreen();
-      }
+
+      // Alt+P: PiP
       if (e.altKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         handleTogglePiP();
+        return;
+      }
+
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const ctrl = isMac ? e.metaKey : e.ctrlKey;
+      const shift = e.shiftKey;
+      const alt = e.altKey;
+      const key = e.key.toLowerCase();
+      const code = e.code;
+
+      let action: string | null = null;
+
+      // Managing Tabs
+      if (ctrl && !shift && !alt && key === "t") action = "tab:new";
+      else if (ctrl && !shift && !alt && key === "w") action = "tab:close";
+      else if (ctrl && shift && !alt && key === "t") action = "tab:reopen";
+      else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) action = "tab:next";
+      else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) action = "tab:prev";
+      else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) action = "tab:prev";
+      else if (ctrl && !shift && !alt && /^[1-9]$/.test(key)) action = `tab:select-${key}`;
+      // Navigation and Windows
+      else if ((ctrl && !shift && !alt && key === "l") || (alt && !ctrl && !shift && key === "d")) action = "nav:focus-address";
+      else if (ctrl && shift && !alt && key === "n") action = "win:private";
+      else if (alt && !ctrl && !shift && (key === "arrowleft" || code === "ArrowLeft")) action = "nav:back";
+      else if (alt && !ctrl && !shift && (key === "arrowright" || code === "ArrowRight")) action = "nav:forward";
+      else if (!ctrl && !shift && !alt && (key === "f5" || code === "F5")) action = "nav:reload";
+      else if (ctrl && !shift && !alt && key === "r") action = "nav:reload";
+      else if (!ctrl && !shift && !alt && (key === "f11" || code === "F11")) action = "win:toggle-fullscreen";
+      // Page Controls
+      else if (ctrl && !shift && !alt && key === "f") action = "page:find";
+      else if (ctrl && !alt && (key === "+" || key === "=" || code === "Equal" || code === "NumpadAdd")) action = "page:zoom-in";
+      else if (ctrl && !alt && (key === "-" || key === "_" || code === "Minus" || code === "NumpadSubtract")) action = "page:zoom-out";
+      else if (ctrl && !shift && !alt && (key === "0" || code === "Digit0" || code === "Numpad0")) action = "page:zoom-reset";
+      else if (ctrl && !shift && !alt && key === "d") action = "page:bookmark";
+      else if (ctrl && !shift && !alt && key === "h") action = "page:history";
+      else if (ctrl && !shift && !alt && key === "j") action = "page:downloads";
+      else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) action = "help:hotkeys";
+
+      if (action) {
+        e.preventDefault();
+        handleShortcutAction(action);
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleExitFullscreen, handleToggleFullscreen, handleTogglePiP]);
+  }, [handleExitFullscreen, handleTogglePiP, handleShortcutAction, isFindOpen, isHotkeysOpen]);
+
+  // Sync download events from Electron
+  useEffect(() => {
+    const forge = (window as any).forge;
+    if (!forge?.downloads) return;
+
+    const unsubs: Array<() => void> = [];
+
+    if (forge.downloads.onDownloadCreated) {
+      unsubs.push(
+        forge.downloads.onDownloadCreated((item: any) => {
+          useDownloadsStore.getState().addItem(item);
+          triggerToast(`⬇ Download started: ${item.filename}`);
+        })
+      );
+    }
+    if (forge.downloads.onDownloadUpdated) {
+      unsubs.push(
+        forge.downloads.onDownloadUpdated((item: any) => {
+          useDownloadsStore.getState().updateItem(item);
+        })
+      );
+    }
+    if (forge.downloads.onDownloadDone) {
+      unsubs.push(
+        forge.downloads.onDownloadDone((item: any) => {
+          useDownloadsStore.getState().updateItem(item);
+          if (item.state === "completed") {
+            triggerToast(`✓ Download completed: ${item.filename}`);
+          }
+        })
+      );
+    }
+    if (forge.downloads.getRecent) {
+      forge.downloads
+        .getRecent()
+        .then((recent: any[]) => {
+          if (Array.isArray(recent) && recent.length > 0) {
+            recent.forEach((item: any) => useDownloadsStore.getState().addItem(item));
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => unsubs.forEach((u) => u());
+  }, [triggerToast]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -638,6 +988,13 @@ export function BrowserLayout() {
 
         {/* WebViews (one per tab, only active is visible) */}
         <div className={`flex-1 overflow-hidden relative ${isFullscreen ? "w-screen h-screen bg-black" : "w-full h-full bg-[var(--forge-surface-elevated)]"}`}>
+          {/* Find In Page Floating Bar */}
+          <FindInPageBar
+            getActiveWebview={activeWebview}
+            isOpen={isFindOpen}
+            onClose={() => setIsFindOpen(false)}
+          />
+
           {tabs.map((tab) => (
             <WebView
               key={tab.id}
@@ -654,6 +1011,27 @@ export function BrowserLayout() {
       <div className={isFullscreen ? "hidden" : "w-full shrink-0"}>
         <DevToolsBar getActiveWebview={activeWebview} />
       </div>
+
+      {/* Zoom Indicator Pill */}
+      {zoomBadge !== null && (
+        <div className="fixed top-12 right-6 z-[10001] bg-black/85 backdrop-blur-md text-white font-mono text-xs px-3 py-1.5 rounded-full border border-white/15 shadow-2xl pointer-events-none animate-in fade-in duration-150 flex items-center gap-1.5">
+          <span>Zoom:</span>
+          <span className="text-[#FF6B00] font-bold">{zoomBadge}%</span>
+        </div>
+      )}
+
+      {/* Action / Bookmark Toast Pill */}
+      {toastMessage && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[10001] bg-black/85 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full border border-white/15 shadow-2xl pointer-events-none animate-in fade-in duration-150 font-medium">
+          {toastMessage}
+        </div>
+      )}
+
+      {/* Downloads Manager Modal (Ctrl + J) */}
+      <DownloadsModal />
+
+      {/* Hotkeys Cheatsheet Modal (F1 / Keyboard) */}
+      <HotkeysModal isOpen={isHotkeysOpen} onClose={() => setIsHotkeysOpen(false)} />
     </div>
   );
 }

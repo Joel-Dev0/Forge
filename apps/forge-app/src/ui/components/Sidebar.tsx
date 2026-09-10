@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Star, Clock, Trash2, Sun, Moon, Laptop, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
@@ -12,6 +12,15 @@ interface SidebarProps {
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"favorites" | "history">("favorites");
+
+  useEffect(() => {
+    const handleOpenHistory = () => {
+      setActiveSidebarTab("history");
+      setExpanded(true);
+    };
+    window.addEventListener("forge:open-history", handleOpenHistory);
+    return () => window.removeEventListener("forge:open-history", handleOpenHistory);
+  }, []);
 
   const { entries, clearHistory, removeEntry, searchQuery, setSearchQuery } = useHistoryStore();
   const favoriteItems = useFavoritesStore((s) => s.items);

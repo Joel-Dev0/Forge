@@ -1,10 +1,26 @@
 // electron/preload.ts
 var import_electron = require("electron");
+var guestPreloadPath = "";
+try {
+  guestPreloadPath = import_electron.ipcRenderer.sendSync("adblock:get-guest-preload-path-sync") || "";
+} catch {
+}
 var windowControls = {
-  minimize: () => import_electron.ipcRenderer.send("window:minimize"),
+  minimize: () => {
+    try {
+      import_electron.ipcRenderer.send("window:minimize");
+    } catch {
+    }
+    try {
+      import_electron.ipcRenderer.invoke("window:minimize").catch(() => {
+      });
+    } catch {
+    }
+  },
   maximize: () => import_electron.ipcRenderer.send("window:maximize"),
   restoreAndFocus: () => import_electron.ipcRenderer.send("window:restore-and-focus"),
   close: () => import_electron.ipcRenderer.send("window:close"),
+  openPrivate: () => import_electron.ipcRenderer.send("window:open-private"),
   isMaximized: () => import_electron.ipcRenderer.invoke("window:is-maximized"),
   setFullScreen: (flag) => import_electron.ipcRenderer.send("window:set-fullscreen", flag),
   isFullScreen: () => import_electron.ipcRenderer.invoke("window:is-fullscreen"),
@@ -14,9 +30,51 @@ var windowControls = {
 import_electron.contextBridge.exposeInMainWorld("electron", windowControls);
 import_electron.contextBridge.exposeInMainWorld("forge", {
   platform: process.platform,
-  ...windowControls,
+  minimize: windowControls.minimize,
+  maximize: windowControls.maximize,
+  restoreAndFocus: windowControls.restoreAndFocus,
+  close: windowControls.close,
+  openPrivate: windowControls.openPrivate,
+  isMaximized: windowControls.isMaximized,
+  setFullScreen: windowControls.setFullScreen,
+  isFullScreen: windowControls.isFullScreen,
+  setTheme: windowControls.setTheme,
   setTitle: (title) => import_electron.ipcRenderer.send("window:set-title", title),
-  restoreAndFocus: () => import_electron.ipcRenderer.send("window:restore-and-focus"),
+  shortcuts: {
+    onTrigger: (callback) => {
+      const listener = (_event, action) => callback(action);
+      import_electron.ipcRenderer.on("shortcut:trigger", listener);
+      return () => import_electron.ipcRenderer.removeListener("shortcut:trigger", listener);
+    }
+  },
+  tabs: {
+    onOpenTab: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("tabs:open-tab", listener);
+      return () => import_electron.ipcRenderer.removeListener("tabs:open-tab", listener);
+    }
+  },
+  downloads: {
+    getRecent: () => import_electron.ipcRenderer.invoke("downloads:get-recent"),
+    openFolder: () => import_electron.ipcRenderer.invoke("downloads:open-folder"),
+    openFile: (filePath) => import_electron.ipcRenderer.invoke("downloads:open-file", filePath),
+    showInFolder: (filePath) => import_electron.ipcRenderer.invoke("downloads:show-in-folder", filePath),
+    onDownloadCreated: (callback) => {
+      const listener = (_event, item) => callback(item);
+      import_electron.ipcRenderer.on("downloads:item-created", listener);
+      return () => import_electron.ipcRenderer.removeListener("downloads:item-created", listener);
+    },
+    onDownloadUpdated: (callback) => {
+      const listener = (_event, item) => callback(item);
+      import_electron.ipcRenderer.on("downloads:item-updated", listener);
+      return () => import_electron.ipcRenderer.removeListener("downloads:item-updated", listener);
+    },
+    onDownloadDone: (callback) => {
+      const listener = (_event, item) => callback(item);
+      import_electron.ipcRenderer.on("downloads:item-done", listener);
+      return () => import_electron.ipcRenderer.removeListener("downloads:item-done", listener);
+    }
+  },
   pip: {
     onActivateTabByContentsId: (callback) => {
       const listener = (_event, contentsId) => callback(contentsId);
@@ -86,6 +144,7 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     setCwd: (newCwd) => import_electron.ipcRenderer.invoke("terminal:set-cwd", newCwd)
   },
   adblock: {
+    guestPreloadPath,
     getState: () => import_electron.ipcRenderer.invoke("adblock:get-state"),
     setEnabled: (enabled) => import_electron.ipcRenderer.invoke("adblock:set-enabled", enabled),
     setFeature: (feature, enabled) => import_electron.ipcRenderer.invoke("adblock:set-feature", feature, enabled),
@@ -100,6 +159,7 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     clearLogs: () => import_electron.ipcRenderer.invoke("adblock:clear-logs"),
     getCosmeticCSS: (url) => import_electron.ipcRenderer.invoke("adblock:get-cosmetic-css", url),
     getScriptlet: (url) => import_electron.ipcRenderer.invoke("adblock:get-scriptlet", url),
+    evaluateRequest: (url) => import_electron.ipcRenderer.invoke("adblock:evaluate-request", url),
     updateLists: () => import_electron.ipcRenderer.invoke("adblock:update-lists"),
     getGuestPreloadPath: () => import_electron.ipcRenderer.invoke("adblock:get-guest-preload-path"),
     onRequestEntry: (callback) => {

@@ -153,18 +153,31 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
     });
   });
 
+  function getSourceUrl(details: { referrer?: string; webContentsId?: number; frame?: any }): string | undefined {
+    if (details.referrer) return details.referrer;
+    if (details.frame && details.frame.url) return details.frame.url;
+    if (details.webContentsId) {
+      const contents = contentsDebuggerMap.get(details.webContentsId);
+      if (contents && !contents.isDestroyed()) {
+        return contents.getURL();
+      }
+    }
+    return undefined;
+  }
+
   // 2. session.webRequest as fallback & global logger
   const ses = session.fromPartition("persist:forge");
 
   ses.webRequest.onBeforeRequest((details, callback) => {
     const entryId = String(details.id);
+    const sourceUrl = getSourceUrl(details);
 
     // 1. Evaluate with AdBlock Engine
     const adblock = evaluateAdBlockRequest({
       url: details.url,
       method: details.method,
       resourceType: details.resourceType,
-      referrer: details.referrer,
+      referrer: sourceUrl,
     });
 
     if (adblock.cancel) {
@@ -250,7 +263,7 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
         url: details.url,
         method: details.method,
         resourceType: details.resourceType,
-        sourceUrl: details.referrer,
+        sourceUrl: getSourceUrl(details),
       });
 
       // If matches an ad/tracking list or is a blocked tracker, strip Cookie & fingerprinting headers
@@ -277,7 +290,7 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
         url: details.url,
         method: details.method,
         resourceType: details.resourceType,
-        sourceUrl: details.referrer,
+        sourceUrl: getSourceUrl(details),
       });
 
       if (decision.blocked) {

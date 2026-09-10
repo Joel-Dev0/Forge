@@ -10,11 +10,21 @@ export interface Tab {
   canGoForward: boolean;
 }
 
+interface ClosedTabInfo {
+  url: string;
+  title: string;
+  favicon: string;
+}
+
 interface TabsState {
   tabs: Tab[];
   activeTabId: string;
+  recentlyClosedTabs: ClosedTabInfo[];
   openTab: (url?: string) => string;
   closeTab: (id: string) => void;
+  reopenClosedTab: () => void;
+  nextTab: () => void;
+  prevTab: () => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<Tab>) => void;
 }
@@ -88,6 +98,7 @@ const initialActiveId = saved ? saved.activeTabId : initialTab!.id;
 export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: initialTabs,
   activeTabId: initialActiveId,
+  recentlyClosedTabs: [],
 
   openTab(url) {
     const tab = makeTab(url);
@@ -100,8 +111,21 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   closeTab(id) {
-    const { tabs, activeTabId } = get();
+    const { tabs, activeTabId, recentlyClosedTabs } = get();
     if (tabs.length === 1) return; // never close last tab
+    const closingTab = tabs.find((t) => t.id === id);
+    const updatedClosed =
+      closingTab && closingTab.url && closingTab.url !== "about:blank"
+        ? [
+            ...recentlyClosedTabs.slice(-19), // keep last 20 closed tabs
+            {
+              url: closingTab.url,
+              title: closingTab.title || "New Tab",
+              favicon: closingTab.favicon || "",
+            },
+          ]
+        : recentlyClosedTabs;
+
     const idx = tabs.findIndex((t) => t.id === id);
     const next = tabs[idx === 0 ? 1 : idx - 1];
     const nextTabs = tabs.filter((t) => t.id !== id);
@@ -110,11 +134,52 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set({
       tabs: nextTabs,
       activeTabId: nextActiveId,
+      recentlyClosedTabs: updatedClosed,
     });
+  },
+
+  reopenClosedTab() {
+    const { recentlyClosedTabs } = get();
+    if (!recentlyClosedTabs || recentlyClosedTabs.length === 0) return;
+    const lastClosed = recentlyClosedTabs[recentlyClosedTabs.length - 1];
+    const nextClosed = recentlyClosedTabs.slice(0, -1);
+    const tab = makeTab(lastClosed.url);
+    tab.title = lastClosed.title || "New Tab";
+    tab.favicon = lastClosed.favicon || "";
+    set((s) => {
+      const nextTabs = [...s.tabs, tab];
+      saveSession(nextTabs, tab.id);
+      return {
+        tabs: nextTabs,
+        activeTabId: tab.id,
+        recentlyClosedTabs: nextClosed,
+      };
+    });
+  },
+
+  nextTab() {
+    const { tabs, activeTabId } = get();
+    if (tabs.length <= 1) return;
+    const idx = tabs.findIndex((t) => t.id === activeTabId);
+    const nextIdx = idx >= 0 ? (idx + 1) % tabs.length : 0;
+    const nextId = tabs[nextIdx].id;
+    saveSession(tabs, nextId);
+    set({ activeTabId: nextId });
+  },
+
+  prevTab() {
+    const { tabs, activeTabId } = get();
+    if (tabs.length <= 1) return;
+    const idx = tabs.findIndex((t) => t.id === activeTabId);
+    const prevIdx = idx >= 0 ? (idx - 1 + tabs.length) % tabs.length : 0;
+    const nextId = tabs[prevIdx].id;
+    saveSession(tabs, nextId);
+    set({ activeTabId: nextId });
   },
 
   setActiveTab(id) {
     const { tabs } = get();
+    if (!tabs.some((t) => t.id === id)) return;
     saveSession(tabs, id);
     set({ activeTabId: id });
   },

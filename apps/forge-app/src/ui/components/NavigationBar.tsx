@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, useEffect, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2 } from "lucide-react";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
@@ -25,6 +25,15 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const bookmarked = isBookmarked(urlBarValue);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
+    window.addEventListener("forge:focus-address-bar", handleFocus);
+    return () => window.removeEventListener("forge:focus-address-bar", handleFocus);
+  }, []);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {

@@ -1,5 +1,5 @@
 // electron/main.ts
-import { app as app5, BrowserWindow as BrowserWindow5, ipcMain as ipcMain5, nativeTheme, nativeImage, powerMonitor } from "electron";
+import { app as app5, BrowserWindow as BrowserWindow5, ipcMain as ipcMain5, nativeTheme, nativeImage, powerMonitor, session as session5, shell, Menu } from "electron";
 import path3 from "node:path";
 import fs3 from "node:fs";
 import os from "node:os";
@@ -767,14 +767,15 @@ var FilterList = class {
 // ../../packages/adblock-engine/src/filters/presets/easylist.ts
 var EASYLIST_PRESET_RULES = `
 ! Title: EasyList Core (Ad Blocking)
-! Description: Popular advertising networks, ad servers, banners, and video ad trackers
+! Description: Popular advertising networks, ad servers, banners, popunders, and video ad trackers
 ! Homepage: https://easylist.to/
 
-! --- Major Advertising Networks ---
+! --- Major Advertising & Programmatic Networks ---
 ||doubleclick.net^
 ||googlesyndication.com^
 ||adservice.google.com^
 ||pagead2.googlesyndication.com^
+||tpc.googlesyndication.com^
 ||adnxs.com^
 ||criteo.com^
 ||criteo.net^
@@ -790,6 +791,32 @@ var EASYLIST_PRESET_RULES = `
 ||adform.net^
 ||zedo.com^
 ||popads.net^
+||popcash.net^
+||adcash.com^
+||propellerads.com^
+||monetag.com^
+||hilltopads.net^
+||hilltopads.com^
+||adsterra.com^
+||richads.com^
+||clickadu.com^
+||trafficstars.com^
+||runative.com^
+||runative-syndicate.com^
+||runative-syndicate.net^
+||cdn.runative-syndicate.com^
+||syndication.runative.com^
+||zilla-networks.com/ads/*
+||player.zilla-networks.com/ads/*
+||onclickprediction.com^
+||onclickalgo.com^
+||onclickbright.com^
+||onclickperformance.com^
+||ad-maven.com^
+||ero-advertising.com^
+||juicyads.com^
+||yllix.com^
+||bidvertiser.com^
 ||buysellads.com^
 ||adroll.com^
 ||media.net^
@@ -797,6 +824,7 @@ var EASYLIST_PRESET_RULES = `
 ||inmobi.com^
 ||revcontent.com^
 ||adskeeper.co.uk^
+||adskeeper.com^
 ||mgid.com^
 ||bidswitch.net^
 ||yieldmo.com^
@@ -807,10 +835,10 @@ var EASYLIST_PRESET_RULES = `
 ||connatix.com^
 ||aniview.com^
 ||spotxchange.com^
+||spotx.tv^
 ||adtech.de^
 ||advertising.com^
 ||quantserve.com^
-||propellerads.com^
 ||adcolony.com^
 ||admob.com^
 ||unityads.unity3d.com^
@@ -824,12 +852,36 @@ var EASYLIST_PRESET_RULES = `
 ||adbutler.com^
 ||carbonads.net^
 ||adtrue.com^
-||adsterra.com^
 ||exoclick.com^
 ||trafficjunky.com^
 ||trafficfactory.biz^
+||zergnet.com^
+||mediavine.com^
+||raptive.com^
+||adthrive.com^
+||infolinks.com^
+||chitika.com^
+||skimresources.com^
+||viglink.com^
+||gumgum.com^
+||undertone.com^
+||conversantmedia.com^
+||yieldlove.com^
+||snigelweb.com^
+||shemedia.com^
+||playwire.com^
+||ezoic.com^
+||ezoic.net^
+||a-ads.com^
+||coinzilla.com^
+||bitmedia.io^
+||cointraffic.io^
+||clksite.com^
+||revenuehits.com^
+||popmyads.com^
+||clicksor.com^
 
-! --- Ad Paths and Generic Banner Patterns ---
+! --- Ad Paths, Redirects and Generic Banner Patterns ---
 /pagead/
 /ads/banner/*
 /adserver/*
@@ -839,6 +891,14 @@ var EASYLIST_PRESET_RULES = `
 *banner_ad*
 *ads.min.js
 /dfp_ads.js
+/popunder*
+/popup/*
+/click.php?*
+/track/click*
+/serving/ad*
+*ad-delivery*
+*ad-provider*
+*ad-placement*
 ||ads.*^$script
 ||adserver.*^
 ||advert.*^
@@ -876,6 +936,17 @@ var EASYLIST_PRESET_RULES = `
 ||serving-sys.com^
 ||vidazoo.com^
 ||kargo.com^
+||primis.tech^
+||streamrail.com^
+||brightroll.com^
+||stickyadstv.com^
+||videologygroup.com^
+||brid.tv^
+||targetspot.com^
+||adswizz.com^
+||truvid.com^
+||insticator.com^
+||anyclip.com^
 `;
 
 // ../../packages/adblock-engine/src/filters/presets/easyprivacy.ts
@@ -897,7 +968,7 @@ var EASYPRIVACY_PRESET_RULES = `
 ||optimizely.com^
 ||sentry.io/api/*/envelope^
 ||pixel.facebook.com^
-||connect.facebook.net/en_US/fbevents.js
+||connect.facebook.net^$script
 ||analytics.tiktok.com^
 ||mc.yandex.ru^
 ||scorecardresearch.com^
@@ -916,17 +987,47 @@ var EASYPRIVACY_PRESET_RULES = `
 ||kissmetrics.com^
 ||woopra.com^
 ||nr-data.net^
+||bam.nr-data.net^
 ||datadoghq-browser-agent.com^
+||browser-intake-datadoghq.com^
 ||branch.io^
 ||appsflyer.com^
 ||adjust.com^
 ||kochava.com^
 ||singular.net^
+||tr.snapchat.com^
+||sc-static.net^
+||ct.pinterest.com^
+||snap.licdn.com^
+||ads-twitter.com^
+||static.ads-twitter.com^
+||analytics.twitter.com^
+||q.quora.com^
+||chartbeat.com^
+||chartbeat.net^
+||parsely.com^
+||matomo.org^
+||piwik.pro^
+||snowplowanalytics.com^
+||omtrdc.net^
+||demdex.net^
+||everesttech.net^
+||bluekai.com^
+||crwdcntrl.net^
+||rlcdn.com^
+||agkn.com^
+||exelator.com^
+||tapad.com^
+||liveramp.com^
+||id5-sync.com^
 
 ! --- Telemetry & Tracker Patterns ---
 ||telemetry.*^
 ||tracker.*^
 ||beacon.*^
+/analytics.js
+/gtag/js
+/fbevents.js
 `;
 
 // ../../packages/adblock-engine/src/filters/presets/quickfixes.ts
@@ -1006,7 +1107,10 @@ var MALVERTISING_PRESET_RULES = `
 ||ero-advertising.com^
 ||adsterra.com^
 ||propellerads.com^
+||monetag.com^
+||richads.com^
 ||hilltopads.net^
+||hilltopads.com^
 ||clickadu.com^
 ||juicyads.com^
 ||yllix.com^
@@ -1019,6 +1123,33 @@ var MALVERTISING_PRESET_RULES = `
 ||bestadbid.com^
 ||adclicker.info^
 ||redirect-ad.com^
+||go.ad2up.com^
+||runative.com^
+||runative-syndicate.com^
+||runative-syndicate.net^
+||cdn.runative-syndicate.com^
+||syndication.runative.com^
+||onclickprediction.com^
+||onclickalgo.com^
+||onclickbright.com^
+||onclickperformance.com^
+||*casino*^$popup
+||*casinon*^$popup
+||*spelpaus*^$popup
+
+! --- Push Notification Spam, Fake Captchas & Click-Hijackers ---
+||pushsdk.com^
+||push-notification.org^
+||notification-hub.*^
+||subscriber-alert.*^
+||web-push.*^
+||click-push.*^
+||robot-verification.*^
+||verify-captcha.*^
+||press-allow.*^
+||click-allow.*^
+||confirm-not-robot.*^
+||check-robot.*^
 
 ! --- Phishing Ads, Fake Antivirus & Tech Support Scams ---
 ||*-update-alert.com^
@@ -1040,14 +1171,118 @@ var MALVERTISING_PRESET_RULES = `
 // ../../packages/adblock-engine/src/cosmetic/cosmeticRules.ts
 function getCosmeticCSS(urlStr) {
   let css = `
-    /* Generic ad banners & sponsor placeholders */
+    /* Generic ad banners, wrappers & sponsor placeholders */
     .ad-container,
     .ad-banner,
     .ad-placeholder,
+    .ad-slot,
+    .ad-box,
+    .ad-wrapper,
+    .ad-unit,
+    .ad-placement,
+    .ad-sidebar,
+    .ad-header,
+    .ad-footer,
+    .banner-ad,
+    .floating-ad,
+    .sticky-ad,
+    .bottom-ad,
+    .top-ad,
+    [class*="banner-ad" i],
+    [class*="sticky-ad" i],
+    [class*="floating-ad" i],
+    [class*="ad-slot" i],
+    [class*="ad-wrapper" i],
+    [class*="ad-box" i],
+    [class*="ad-sense" i],
+    [id*="advertisement" i],
+    [class*="advertisement" i],
+    [aria-label="advertisement" i],
+    [aria-label="ad" i],
+    [data-ad-unit],
+    [data-ad-slot],
+    [data-ad-client],
+    [data-ad-format],
+    [data-google-query-id],
     [id^="google_ads_iframe"],
     [id^="div-gpt-ad"],
-    .adsbygoogle {
+    .adsbygoogle,
+
+    /* Native content recommendation ad widgets */
+    .trc_related_container,
+    .trc_rbox_div,
+    [id^="taboola-"],
+    .tbl-feed-container,
+    .OUTBRAIN,
+    [class*="ob-widget"],
+    [id^="outbrain_widget_"],
+    .ob-cards,
+    [id^="MarketGid"],
+    .mgid-widget,
+    [id^="rc-widget-"],
+    .rc-ad-item,
+    [class*="adsterra" i],
+    [class*="exoclick" i],
+    [id*="adsterra" i],
+
+    /* Video player ad overlays and VAST/IMA/VPAID containers */
+    .video-ads,
+    .video-ad,
+    .video-ad-overlay,
+    .vast-ad-container,
+    .vjs-ad-playing,
+    .ima-ad-container,
+    .ima-container,
+    [id*="vdo_ai"],
+    .fluid_video_wrapper .vast_ad,
+    [class*="preroll" i],
+    [class*="midroll" i],
+
+    /* Popunders, interstitials & floating modals */
+    [class*="interstitial" i],
+    [class*="overlay-ad" i],
+    [class*="modal-ad" i],
+    [class*="popup-ad" i],
+    [class*="popunder" i],
+    [id*="interstitial" i],
+    [id*="overlay-ad" i],
+    [id*="modal-ad" i],
+    [id*="popup-ad" i],
+    [id*="popunder" i],
+    div[style*="z-index: 2147483647"]:not(:has(video)):not(#__forge_theater_backdrop),
+    div[style*="z-index: 2147483646"]:not(:has(video)):not(#__forge_video_fullscreen_pill),
+    div[style*="z-index: 999999"]:not(:has(video)),
+    div[style*="z-index: 99999"]:not(:has(video)),
+    iframe[src*="adsterra" i],
+    iframe[src*="exoclick" i],
+    iframe[src*="monetag" i],
+    iframe[src*="propeller" i],
+    iframe[src*="popads" i],
+    iframe[src*="popcash" i],
+    iframe[src*="hilltop" i],
+    iframe[src*="richads" i],
+    iframe[src*="trafficstars" i],
+    iframe[src*="onclick" i],
+    iframe[src*="doubleclick" i],
+
+    /* Anti-adblock warning modals, popups and block screens */
+    .fc-ab-root,
+    [class*="adblock-overlay" i],
+    [id*="adblock-notice" i],
+    [class*="adblock-warning" i],
+    [id*="adblock-modal" i],
+    .adblocker-overlay,
+    [class*="blocking-warning" i],
+    .sp-message-open,
+    #sp-message-container {
       display: none !important;
+      height: 0 !important;
+      max-height: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      opacity: 0 !important;
     }
   `;
   if (!urlStr) return css;
@@ -1997,15 +2232,28 @@ function initAdBlockAdapter(mainWindowGetter) {
     broadcastEvent("adblock:state-changed", getFullBroadcastState());
     return result;
   });
+  ipcMain.handle("adblock:evaluate-request", (_event, url) => {
+    return evaluateAdBlockRequest({ url });
+  });
   ipcMain.handle("adblock:get-guest-preload-path", () => {
     const guestPreload2 = path2.join(__dirname, "guestPreload.cjs");
     return pathToFileURL(guestPreload2).toString();
   });
+  ipcMain.on("adblock:get-guest-preload-path-sync", (event) => {
+    try {
+      const guestPreload2 = path2.join(__dirname, "guestPreload.cjs");
+      event.returnValue = pathToFileURL(guestPreload2).toString();
+    } catch {
+      event.returnValue = "";
+    }
+  });
   const ses = session.fromPartition("persist:forge");
   const guestPreload = path2.join(__dirname, "guestPreload.cjs");
+  let guestPreloadCode = "";
   if (fs2.existsSync(guestPreload)) {
     try {
       ses.setPreloads([guestPreload]);
+      guestPreloadCode = fs2.readFileSync(guestPreload, "utf-8");
     } catch (err) {
       console.warn("[AdBlock] Could not register guest preload script:", err);
     }
@@ -2017,14 +2265,105 @@ function initAdBlockAdapter(mainWindowGetter) {
       activeWebviewContents.delete(contents);
     });
     contents.setWindowOpenHandler((details) => {
-      if (!engine.isEnabled()) {
-        return { action: "allow" };
-      }
-      const { cancel } = evaluateAdBlockRequest({ url: details.url });
-      if (cancel) {
+      const targetUrl = details.url || "";
+      const urlLower = targetUrl.toLowerCase();
+      if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
+        console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
         return { action: "deny" };
       }
-      return { action: "allow" };
+      if (engine.isEnabled()) {
+        const { cancel } = evaluateAdBlockRequest({ url: targetUrl });
+        if (cancel) {
+          console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl);
+          return { action: "deny" };
+        }
+        const isAdOrPopunder = [
+          "popads",
+          "popcash",
+          "adcash",
+          "propellerads",
+          "monetag",
+          "hilltopads",
+          "adsterra",
+          "richads",
+          "clickadu",
+          "trafficstars",
+          "onclickprediction",
+          "onclickalgo",
+          "onclickbright",
+          "onclickperformance",
+          "ad2up",
+          "ero-advertising",
+          "juicyads",
+          "yllix",
+          "bidvertiser",
+          "doubleclick",
+          "googlesyndication",
+          "adnxs",
+          "criteo",
+          "taboola",
+          "outbrain",
+          "bet365",
+          "1xbet",
+          "redirect",
+          "click.php",
+          "track/click",
+          "serving/ad",
+          "adserver",
+          "clksite",
+          "revenuehits",
+          "rotator",
+          "popunder",
+          "fastclick",
+          "adservice",
+          "go.ad2up",
+          "ad-maven",
+          "directrev",
+          "clkmon",
+          "bestadbid",
+          "adclicker",
+          "trafficjunky",
+          "trafficfactory",
+          "runative",
+          "syndicate",
+          "casino",
+          "casinon",
+          "spelpaus",
+          "zilla-networks"
+        ].some((k) => urlLower.includes(k));
+        if (isAdOrPopunder) {
+          console.warn("[Forge Shield] Denied popunder by network filter:", targetUrl);
+          return { action: "deny" };
+        }
+        const isPopupWindow = details.features && (details.features.includes("width=") || details.features.includes("height=") || details.features.includes("location=0") || details.features.includes("menubar=0") || details.features.includes("toolbar=0"));
+        const isLegitimateAuth = [
+          "accounts.google.com",
+          "appleid.apple.com",
+          "github.com/login",
+          "login.microsoftonline.com",
+          "facebook.com/dialog",
+          "facebook.com/v",
+          "twitter.com/i/oauth2",
+          "x.com/i/oauth2",
+          "discord.com/oauth2",
+          "paypal.com/signin",
+          "auth0.com",
+          "okta.com"
+        ].some((domain) => urlLower.includes(domain));
+        if (isPopupWindow && !isLegitimateAuth) {
+          console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
+          return { action: "deny" };
+        }
+      }
+      try {
+        const win = getWin ? getWin() : null;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("tabs:open-tab", { url: targetUrl });
+        }
+      } catch (err) {
+        console.error("[Forge Shield] Error routing link to tab:", err);
+      }
+      return { action: "deny" };
     });
     const injectCosmeticsAndScriptlets = async () => {
       try {
@@ -2035,6 +2374,10 @@ function initAdBlockAdapter(mainWindowGetter) {
       try {
         const url = contents.getURL();
         if (!url || url === "about:blank") return;
+        if (guestPreloadCode) {
+          await contents.executeJavaScript(guestPreloadCode).catch(() => {
+          });
+        }
         const css = engine.getCosmeticCSS(url);
         if (css) {
           await contents.insertCSS(css);
@@ -2217,14 +2560,26 @@ function initNetworkMonitor(getMainWindow) {
       contentsDebuggerMap.delete(contentsId);
     });
   });
+  function getSourceUrl(details) {
+    if (details.referrer) return details.referrer;
+    if (details.frame && details.frame.url) return details.frame.url;
+    if (details.webContentsId) {
+      const contents = contentsDebuggerMap.get(details.webContentsId);
+      if (contents && !contents.isDestroyed()) {
+        return contents.getURL();
+      }
+    }
+    return void 0;
+  }
   const ses = session2.fromPartition("persist:forge");
   ses.webRequest.onBeforeRequest((details, callback) => {
     const entryId = String(details.id);
+    const sourceUrl = getSourceUrl(details);
     const adblock = evaluateAdBlockRequest({
       url: details.url,
       method: details.method,
       resourceType: details.resourceType,
-      referrer: details.referrer
+      referrer: sourceUrl
     });
     if (adblock.cancel) {
       const entry = {
@@ -2298,7 +2653,7 @@ function initNetworkMonitor(getMainWindow) {
         url: details.url,
         method: details.method,
         resourceType: details.resourceType,
-        sourceUrl: details.referrer
+        sourceUrl: getSourceUrl(details)
       });
       if (decision.blocked) {
         delete requestHeaders["Cookie"];
@@ -2319,7 +2674,7 @@ function initNetworkMonitor(getMainWindow) {
         url: details.url,
         method: details.method,
         resourceType: details.resourceType,
-        sourceUrl: details.referrer
+        sourceUrl: getSourceUrl(details)
       });
       if (decision.blocked) {
         delete responseHeaders["Set-Cookie"];
@@ -3595,6 +3950,9 @@ function initVpnAdapter(getMainWindow) {
 // electron/main.ts
 var __filename2 = fileURLToPath2(import.meta.url);
 var __dirname2 = path3.dirname(__filename2);
+if (process.platform === "win32") {
+  app5.setAppUserModelId("com.forge.browser");
+}
 var gotTheLock = app5.requestSingleInstanceLock();
 if (!gotTheLock) {
   app5.quit();
@@ -3643,8 +4001,108 @@ app5.on("render-process-gone", (_event, webContents, details) => {
   }
 });
 var mainWindow = null;
+var allWindows = /* @__PURE__ */ new Set();
 var terminalCwd = process.cwd();
 var isMediaPlaying = false;
+var recentDownloads = [];
+function setupDownloadListeners(sess) {
+  sess.on("will-download", (_event, item, webContents) => {
+    const filename = item.getFilename();
+    const savePath = path3.join(app5.getPath("downloads"), filename);
+    item.setSavePath(savePath);
+    const record = {
+      id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      filename,
+      path: savePath,
+      size: item.getTotalBytes(),
+      receivedBytes: 0,
+      state: "progressing",
+      startTime: Date.now(),
+      url: item.getURL()
+    };
+    recentDownloads.unshift(record);
+    const win = BrowserWindow5.fromWebContents(webContents) || mainWindow;
+    win?.webContents.send("downloads:item-created", record);
+    item.on("updated", (_e, state) => {
+      record.receivedBytes = item.getReceivedBytes();
+      record.state = state;
+      win?.webContents.send("downloads:item-updated", record);
+    });
+    item.once("done", (_e, state) => {
+      record.state = state;
+      win?.webContents.send("downloads:item-done", record);
+    });
+  });
+}
+function registerShortcutInterception(contents) {
+  contents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const isMac = process.platform === "darwin";
+    const ctrl = isMac ? input.meta : input.control;
+    const shift = input.shift;
+    const alt = input.alt;
+    const key = input.key ? input.key.toLowerCase() : "";
+    const code = input.code || "";
+    let action = null;
+    if (ctrl && !shift && !alt && key === "t") {
+      action = "tab:new";
+    } else if (ctrl && !shift && !alt && key === "w") {
+      action = "tab:close";
+    } else if (ctrl && shift && !alt && key === "t") {
+      action = "tab:reopen";
+    } else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) {
+      action = "tab:next";
+    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) {
+      action = "tab:prev";
+    } else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) {
+      action = "tab:prev";
+    } else if (ctrl && !shift && !alt && /^[1-9]$/.test(key)) {
+      action = `tab:select-${key}`;
+    } else if (ctrl && !shift && !alt && key === "l" || alt && !ctrl && !shift && key === "d") {
+      action = "nav:focus-address";
+    } else if (ctrl && shift && !alt && key === "n") {
+      action = "win:private";
+    } else if (alt && !ctrl && !shift && (key === "arrowleft" || code === "ArrowLeft")) {
+      action = "nav:back";
+    } else if (alt && !ctrl && !shift && (key === "arrowright" || code === "ArrowRight")) {
+      action = "nav:forward";
+    } else if (!ctrl && !shift && !alt && (key === "f5" || code === "F5")) {
+      action = "nav:reload";
+    } else if (ctrl && !shift && !alt && key === "r") {
+      action = "nav:reload";
+    } else if (!ctrl && !shift && !alt && (key === "f11" || code === "F11")) {
+      action = "win:toggle-fullscreen";
+    } else if (ctrl && !shift && !alt && key === "f") {
+      action = "page:find";
+    } else if (ctrl && !alt && (key === "+" || key === "=" || code === "Equal" || code === "NumpadAdd")) {
+      action = "page:zoom-in";
+    } else if (ctrl && !alt && (key === "-" || key === "_" || code === "Minus" || code === "NumpadSubtract")) {
+      action = "page:zoom-out";
+    } else if (ctrl && !shift && !alt && (key === "0" || code === "Digit0" || code === "Numpad0")) {
+      action = "page:zoom-reset";
+    } else if (ctrl && !shift && !alt && key === "d") {
+      action = "page:bookmark";
+    } else if (ctrl && !shift && !alt && key === "h") {
+      action = "page:history";
+    } else if (ctrl && !shift && !alt && key === "j") {
+      action = "page:downloads";
+    } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
+      action = "help:hotkeys";
+    }
+    if (action) {
+      event.preventDefault();
+      if (action === "win:private") {
+        createWindow(true);
+        return;
+      }
+      const host = contents.hostWebContents;
+      const targetWin = BrowserWindow5.fromWebContents(contents) || (host ? BrowserWindow5.fromWebContents(host) : null) || BrowserWindow5.getFocusedWindow() || mainWindow;
+      if (targetWin && !targetWin.isDestroyed()) {
+        targetWin.webContents.send("shortcut:trigger", action);
+      }
+    }
+  });
+}
 powerMonitor.on("suspend", () => {
   console.log("[PowerMonitor] System entering sleep / hibernation");
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3712,60 +4170,118 @@ function updateTaskbarMediaButtons(win, isPlaying) {
     console.error("[Main] Error setting thumbar buttons:", err);
   }
 }
-function createWindow() {
-  mainWindow = new BrowserWindow5({
+function createWindow(isIncognito = false) {
+  const icoPath = path3.join(__dirname2, "../public/icon.ico");
+  const pngPath = path3.join(__dirname2, "../public/logo.png");
+  const appIcon = fs3.existsSync(icoPath) ? icoPath : pngPath;
+  const win = new BrowserWindow5({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    titleBarStyle: "hidden",
-    backgroundColor: "#0d0f17",
+    minimizable: true,
+    maximizable: true,
+    closable: true,
+    titleBarStyle: process.platform === "darwin" ? "hidden" : void 0,
+    backgroundColor: isIncognito ? "#090a0f" : "#0d0f17",
     show: false,
-    icon: path3.join(__dirname2, "../public/logo.png"),
+    icon: appIcon,
     webPreferences: {
       preload: path3.join(__dirname2, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true
+      webviewTag: true,
+      partition: isIncognito ? `incognito-${Date.now()}` : void 0
+    }
+  });
+  allWindows.add(win);
+  if (!isIncognito && !mainWindow) {
+    mainWindow = win;
+  }
+  win.on("closed", () => {
+    allWindows.delete(win);
+    if (mainWindow === win) {
+      mainWindow = allWindows.values().next().value || null;
     }
   });
   try {
-    mainWindow.webContents.setMaxListeners(50);
+    win.webContents.setMaxListeners(50);
   } catch {
   }
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.maximize();
-    mainWindow?.show();
-    if (mainWindow) {
-      updateTaskbarMediaButtons(mainWindow, false);
+  win.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    webPreferences.nodeIntegrationInSubFrames = true;
+  });
+  win.once("ready-to-show", () => {
+    win.maximize();
+    win.show();
+    if (!isIncognito) {
+      updateTaskbarMediaButtons(win, false);
     }
   });
+  const query = isIncognito ? "?incognito=1" : "";
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    mainWindow.loadFile(path3.join(__dirname2, "../dist/index.html"));
+    win.loadFile(path3.join(__dirname2, "../dist/index.html"), {
+      query: isIncognito ? { incognito: "1" } : void 0
+    });
   }
+  return win;
+}
+function getTargetBrowserWindow(event) {
+  if (event) {
+    const fromSender = BrowserWindow5.fromWebContents(event.sender);
+    if (fromSender && !fromSender.isDestroyed()) return fromSender;
+  }
+  const focused = BrowserWindow5.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) return focused;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  for (const win of allWindows) {
+    if (win && !win.isDestroyed()) return win;
+  }
+  const anyWin = BrowserWindow5.getAllWindows()[0];
+  if (anyWin && !anyWin.isDestroyed()) return anyWin;
+  return null;
 }
 ipcMain5.on("window:minimize", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
-  win?.minimize();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isFullScreen()) {
+      win.setFullScreen(false);
+    }
+    win.minimize();
+  }
+});
+ipcMain5.handle("window:minimize", (event) => {
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isFullScreen()) {
+      win.setFullScreen(false);
+    }
+    win.minimize();
+    return true;
+  }
+  return false;
 });
 ipcMain5.on("window:maximize", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
-  if (!win) return;
-  if (win.isMaximized()) {
-    win.unmaximize();
-  } else {
-    win.maximize();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
   }
 });
 ipcMain5.on("window:close", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
-  win?.close();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    win.close();
+  }
 });
 ipcMain5.handle("window:is-maximized", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
+  const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
 ipcMain5.on("window:set-fullscreen", (event, flag) => {
@@ -3790,27 +4306,65 @@ ipcMain5.on("window:set-title", (_event, title) => {
 });
 function restoreAndFocusWindow(win) {
   if (!win || win.isDestroyed()) return;
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  win.show();
-  win.focus();
   try {
-    win.setAlwaysOnTop(true);
-    win.setAlwaysOnTop(false);
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.show();
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.moveTop();
+    win.focus();
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) {
+        win.setAlwaysOnTop(false);
+        win.focus();
+      }
+    }, 100);
   } catch {
   }
 }
+function applyPipWindowIcon() {
+  if (process.platform !== "win32") return;
+  const scriptPath = path3.join(__dirname2, "setPipIcon.ps1");
+  const fallbackScript = path3.join(__dirname2, "../electron/setPipIcon.ps1");
+  const psPath = fs3.existsSync(scriptPath) ? scriptPath : fallbackScript;
+  const icoPath = path3.join(__dirname2, "../public/icon.ico");
+  if (!fs3.existsSync(psPath) || !fs3.existsSync(icoPath)) return;
+  let attempts = 0;
+  const interval = setInterval(() => {
+    attempts++;
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psPath}" -IcoPath "${icoPath}" -TargetPid ${process.pid}`, (err, stdout) => {
+      if (!err && stdout && parseInt(stdout.trim(), 10) > 0) {
+        clearInterval(interval);
+      }
+    });
+    if (attempts >= 10) clearInterval(interval);
+  }, 200);
+}
+app5.on("browser-window-created", (_event, win) => {
+  try {
+    const icoPath = path3.join(__dirname2, "../public/icon.ico");
+    const pngPath = path3.join(__dirname2, "../public/logo.png");
+    const appIcon = fs3.existsSync(icoPath) ? icoPath : pngPath;
+    win.setIcon(appIcon);
+  } catch {
+  }
+});
 ipcMain5.on("window:restore-and-focus", (event) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
+var recentlyExitedPipWebContents = /* @__PURE__ */ new Map();
 app5.on("web-contents-created", (_event, contents) => {
   try {
     contents.setMaxListeners(50);
   } catch {
   }
+  registerShortcutInterception(contents);
+  contents.setWindowOpenHandler(() => {
+    return { action: "deny" };
+  });
   if (contents.getType() !== "webview") return;
   contents.on("enter-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3831,10 +4385,13 @@ app5.on("web-contents-created", (_event, contents) => {
     if (typeof message !== "string") return;
     if (message.includes("__FORGE_PIP_ENTER__")) {
       pipActiveWebContents.add(contents.id);
+      applyPipWindowIcon();
     } else if (message.includes("__FORGE_PIP_LEAVE__")) {
       pipActiveWebContents.delete(contents.id);
+      recentlyExitedPipWebContents.set(contents.id, Date.now());
     } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
       pipActiveWebContents.delete(contents.id);
+      recentlyExitedPipWebContents.set(contents.id, Date.now());
       restoreAndFocusWindow(mainWindow);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
@@ -3842,7 +4399,9 @@ app5.on("web-contents-created", (_event, contents) => {
     }
   });
   contents.on("focus", () => {
-    if (pipActiveWebContents.has(contents.id)) {
+    const isRecent = Date.now() - (recentlyExitedPipWebContents.get(contents.id) || 0) < 3500;
+    if (pipActiveWebContents.has(contents.id) || isRecent) {
+      recentlyExitedPipWebContents.delete(contents.id);
       restoreAndFocusWindow(mainWindow);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
@@ -3851,6 +4410,7 @@ app5.on("web-contents-created", (_event, contents) => {
   });
   contents.on("destroyed", () => {
     pipActiveWebContents.delete(contents.id);
+    recentlyExitedPipWebContents.delete(contents.id);
   });
 });
 ipcMain5.on("media:status-update", (_event, data) => {
@@ -3916,11 +4476,11 @@ ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell
       return { stdout: "", stderr: `Drive '${trimmed}' does not exist.`, cwd: terminalCwd, exitCode: 1 };
     }
   }
-  const shell = process.platform === "win32" ? shellType === "cmd" ? "cmd.exe" : "powershell.exe" : process.env.SHELL || "/bin/bash";
+  const shell2 = process.platform === "win32" ? shellType === "cmd" ? "cmd.exe" : "powershell.exe" : process.env.SHELL || "/bin/bash";
   return new Promise((resolve) => {
     exec(trimmed, {
       cwd: terminalCwd,
-      shell,
+      shell: shell2,
       maxBuffer: 15 * 1024 * 1024,
       env: { ...process.env }
     }, (error, stdout, stderr) => {
@@ -3933,7 +4493,47 @@ ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell
     });
   });
 });
+ipcMain5.on("window:open-private", () => {
+  createWindow(true);
+});
+ipcMain5.handle("downloads:get-recent", () => recentDownloads);
+ipcMain5.handle("downloads:open-folder", () => {
+  shell.openPath(app5.getPath("downloads"));
+  return true;
+});
+ipcMain5.handle("downloads:open-file", (_event, filePath) => {
+  if (filePath && fs3.existsSync(filePath)) {
+    shell.openPath(filePath);
+    return true;
+  }
+  return false;
+});
+ipcMain5.handle("downloads:show-in-folder", (_event, filePath) => {
+  if (filePath && fs3.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  shell.openPath(app5.getPath("downloads"));
+  return true;
+});
 app5.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+  try {
+    setupDownloadListeners(session5.defaultSession);
+    const forgeSession = session5.fromPartition("persist:forge");
+    setupDownloadListeners(forgeSession);
+    forgeSession.setPermissionCheckHandler((_webContents, permission) => {
+      if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
+        return true;
+      }
+      return true;
+    });
+    forgeSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(true);
+    });
+  } catch (err) {
+    console.error("[Main] Error initializing download listeners or session permissions:", err);
+  }
   initAdBlockAdapter(() => mainWindow);
   initNetworkMonitor(() => mainWindow);
   initSecureNetworkAdapter(() => mainWindow);

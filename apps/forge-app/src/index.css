@@ -61,20 +61,38 @@ html, body, #root {
 ::-webkit-scrollbar-thumb { background: var(--forge-scrollbar); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--forge-scrollbar-hover); }
 
-/* Frameless Window Drag Regions */
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Frameless Window Drag & Interactive Control Regions */
 .titlebar-drag {
-  -webkit-app-region: drag;
-  app-region: drag;
+  -webkit-app-region: drag !important;
   user-select: none;
 }
 
 .titlebar-no-drag,
+.titlebar-no-drag *,
+.window-control-btn,
+.window-control-btn *,
 .titlebar-drag button,
 .titlebar-drag input,
 .titlebar-drag select,
 .titlebar-drag a,
 .titlebar-drag [role="button"] {
   -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
-  cursor: pointer;
+}
+
+.window-control-btn {
+  cursor: pointer !important;
+}
+
+.window-control-btn svg,
+.window-control-btn svg * {
+  pointer-events: none !important;
 }

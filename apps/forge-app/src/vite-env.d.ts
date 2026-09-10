@@ -108,6 +108,10 @@ declare global {
     closeDevTools: () => void;
     isDevToolsOpened: () => boolean;
     getWebContentsId?: () => number;
+    findInPage?: (text: string, options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean }) => number;
+    stopFindInPage?: (action: "clearSelection" | "keepSelection" | "activateSelection") => void;
+    getZoomFactor?: (callback: (factor: number) => void) => void;
+    setZoomFactor?: (factor: number) => void;
     addEventListener: (event: string, listener: (...args: any[]) => void) => void;
     removeEventListener: (event: string, listener: (...args: any[]) => void) => void;
   }
@@ -118,6 +122,7 @@ declare global {
       maximize: () => void;
       restoreAndFocus?: () => void;
       close: () => void;
+      openPrivate?: () => void;
       isMaximized?: () => Promise<boolean>;
       setFullScreen?: (flag: boolean) => void;
       isFullScreen?: () => Promise<boolean>;
@@ -129,11 +134,27 @@ declare global {
       maximize?: () => void;
       restoreAndFocus?: () => void;
       close?: () => void;
+      openPrivate?: () => void;
       isMaximized?: () => Promise<boolean>;
       setFullScreen?: (flag: boolean) => void;
       isFullScreen?: () => Promise<boolean>;
       setTheme?: (mode: string) => void;
       setTitle?: (title: string) => void;
+      shortcuts?: {
+        onTrigger: (callback: (action: string) => void) => () => void;
+      };
+      tabs?: {
+        onOpenTab: (callback: (data: { url: string }) => void) => () => void;
+      };
+      downloads?: {
+        getRecent: () => Promise<any[]>;
+        openFolder: () => Promise<boolean>;
+        openFile: (filePath: string) => Promise<boolean>;
+        showInFolder: (filePath: string) => Promise<boolean>;
+        onDownloadCreated: (callback: (item: any) => void) => () => void;
+        onDownloadUpdated: (callback: (item: any) => void) => () => void;
+        onDownloadDone: (callback: (item: any) => void) => () => void;
+      };
       pip?: {
         onActivateTabByContentsId: (callback: (contentsId: number) => void) => () => void;
       };
@@ -285,9 +306,16 @@ declare global {
         allowpopups?: boolean | string;
         allowFullScreen?: boolean | string;
         allowfullscreen?: boolean | string;
+        nodeintegrationinsubframes?: boolean | string;
         preload?: string;
       };
     }
+  }
+}
+
+declare module "react" {
+  interface WebViewHTMLAttributes<T> extends HTMLAttributes<T> {
+    nodeintegrationinsubframes?: boolean | string;
   }
 }
 

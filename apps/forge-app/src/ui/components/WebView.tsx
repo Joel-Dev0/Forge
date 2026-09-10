@@ -6,12 +6,12 @@ import { useConsoleStore } from "../../core/console/useConsoleStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { NewTabHome } from "./NewTabHome";
 
-let globalGuestPreloadPath: string | undefined = undefined;
-if (typeof window !== "undefined" && (window as any).forge?.adblock?.getGuestPreloadPath) {
-  (window as any).forge.adblock.getGuestPreloadPath().then((p: string) => {
-    globalGuestPreloadPath = p;
-  }).catch(() => {});
-}
+const getInitialGuestPreload = (): string | undefined => {
+  if (typeof window === "undefined") return undefined;
+  return (window as any).forge?.adblock?.guestPreloadPath;
+};
+
+let globalGuestPreloadPath: string | undefined = getInitialGuestPreload();
 
 interface Props {
   tabId: string;
@@ -22,16 +22,24 @@ interface Props {
 
 export function WebView({ tabId, url, isActive, onRef }: Props) {
   const ref = useRef<WebviewElement | null>(null);
-  const [guestPreload, setGuestPreload] = useState<string | undefined>(globalGuestPreloadPath);
+  const [guestPreload, setGuestPreload] = useState<string | undefined>(
+    () => globalGuestPreloadPath || getInitialGuestPreload()
+  );
 
   useEffect(() => {
-    if (!guestPreload && (window as any).forge?.adblock?.getGuestPreloadPath) {
-      (window as any).forge.adblock.getGuestPreloadPath().then((p: string) => {
-        if (p) {
-          globalGuestPreloadPath = p;
-          setGuestPreload(p);
-        }
-      }).catch(() => {});
+    if (!guestPreload) {
+      const syncPath = getInitialGuestPreload();
+      if (syncPath) {
+        globalGuestPreloadPath = syncPath;
+        setGuestPreload(syncPath);
+      } else if ((window as any).forge?.adblock?.getGuestPreloadPath) {
+        (window as any).forge.adblock.getGuestPreloadPath().then((p: string) => {
+          if (p) {
+            globalGuestPreloadPath = p;
+            setGuestPreload(p);
+          }
+        }).catch(() => {});
+      }
     }
   }, [guestPreload]);
   // Persist initial URL: NEVER allow React to mutate the DOM `src` attribute on re-render.
@@ -177,30 +185,66 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       }
     };
 
-    const onNewWindow = (e: any) => {
+    const onNewWindow = async (e: any) => {
       e.preventDefault();
-      if (!e.url) return;
-
-      // Filter out popup ad windows
-      const urlLower = e.url.toLowerCase();
-      if (
-        urlLower.includes("doubleclick") ||
-        urlLower.includes("googlesyndication") ||
-        urlLower.includes("adservice") ||
-        urlLower.includes("popads") ||
-        urlLower.includes("adroll") ||
-        urlLower.includes("trafficjunky") ||
-        urlLower.includes("exoclick") ||
-        urlLower.includes("adnxs") ||
-        urlLower.includes("criteo") ||
-        urlLower.includes("taboola") ||
-        urlLower.includes("outbrain") ||
-        urlLower.includes("adsterra")
-      ) {
+      const targetUrl = e.url;
+      if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
+        console.warn("[Forge Shield] Dropped blank/script tab request:", targetUrl);
         return;
       }
 
-      useTabsStore.getState().openTab(e.url);
+      const urlLower = targetUrl.toLowerCase();
+
+      // Quick filter for known ad networks & popunder patterns
+      const isKnownAd = [
+        "doubleclick", "googlesyndication", "adservice", "popads", "popcash",
+        "adcash", "adroll", "trafficjunky", "exoclick", "adnxs", "criteo",
+        "taboola", "outbrain", "adsterra", "propellerads", "monetag", "hilltopads",
+        "richads", "clickadu", "trafficstars", "onclickprediction", "onclickalgo",
+        "onclickbright", "onclickperformance", "ad2up", "ero-advertising", "juicyads",
+        "yllix", "bidvertiser", "bet365", "1xbet", "redirect", "click.php",
+        "track/click", "serving/ad", "adserver", "clksite", "revenuehits",
+        "rotator", "popunder", "fastclick", "go.ad2up", "ad-maven", "directrev",
+        "clkmon", "bestadbid", "adclicker", "trafficfactory"
+      ].some((k) => urlLower.includes(k));
+
+      if (isKnownAd) {
+        console.warn(`[Forge Shield] Dropped popup ad tab: ${targetUrl}`);
+        return;
+      }
+
+      // Check against AdBlock Engine
+      try {
+        const forgeAdblock = (window as any).forge?.adblock;
+        if (forgeAdblock?.evaluateRequest) {
+          const result = await forgeAdblock.evaluateRequest(targetUrl);
+          if (result?.cancel) {
+            console.warn(`[Forge Shield] Dropped blocked ad tab: ${targetUrl}`);
+            return;
+          }
+        }
+      } catch {}
+
+      // If disposition is new-window or features indicate popup, verify if it is a legitimate OAuth login
+      const isPopupWindow = (e.disposition === "new-window" || (e.options && (e.options.width < 1000 || e.options.height < 700)));
+      const isLegitimateAuth = [
+        "accounts.google.com",
+        "appleid.apple.com",
+        "github.com/login",
+        "login.microsoftonline.com",
+        "facebook.com/dialog",
+        "twitter.com/i/oauth2",
+        "x.com/i/oauth2",
+        "discord.com/oauth2",
+        "paypal.com"
+      ].some((domain) => urlLower.includes(domain));
+
+      if (isPopupWindow && !isLegitimateAuth) {
+        console.warn(`[Forge Shield] Dropped non-OAuth popup tab: ${targetUrl}`);
+        return;
+      }
+
+      useTabsStore.getState().openTab(targetUrl);
     };
 
     // Pipe guest page console logs to Forge Console IA & handle PiP return to page
@@ -208,7 +252,39 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       const msg = e.message || "";
       if (typeof msg === "string" && msg.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
         useTabsStore.getState().setActiveTab(tabId);
-        (window as any).forge?.restoreAndFocus?.();
+        useFullscreenStore.getState().setFullscreen(false);
+        const bridge = (window as any).forge || (window as any).electron;
+        bridge?.restoreAndFocus?.();
+        try {
+          ref.current?.focus();
+          ref.current?.executeJavaScript(`
+            (function() {
+              window.focus();
+              function focusAndScroll(root) {
+                const doc = root || document;
+                const v = doc.pictureInPictureElement || doc.querySelector('video');
+                if (v) {
+                  v.focus?.();
+                  v.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+                  return true;
+                }
+                const iframes = doc.querySelectorAll('iframe');
+                for (let i = 0; i < iframes.length; i++) {
+                  try {
+                    if (iframes[i].contentDocument && focusAndScroll(iframes[i].contentDocument)) return true;
+                  } catch(e) {}
+                  try {
+                    if (iframes[i].contentWindow) {
+                      iframes[i].contentWindow.postMessage({ type: '__FORGE_FOCUS_VIDEO__' }, '*');
+                    }
+                  } catch(e) {}
+                }
+                return false;
+              }
+              focusAndScroll();
+            })()
+          `).catch(() => {});
+        } catch {}
         return;
       }
       if (typeof msg === "string" && (msg.includes("__FORGE_PIP_ENTER__") || msg.includes("__FORGE_PIP_LEAVE__"))) {
@@ -324,7 +400,7 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       style={{ display: isActive ? "flex" : "none" }}
     >
       {isBlank && (
-        <div className="absolute inset-0 z-10">
+        <div className="absolute inset-0 z-10 bg-[var(--forge-bg)]">
           <NewTabHome
             onNavigate={(targetUrl) => {
               lastNavigatedUrl.current = targetUrl;
@@ -341,8 +417,9 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         className="w-full h-full"
         style={{ display: isBlank ? "none" : "flex" }}
         partition="persist:forge"
-        allowpopups={true}
+        allowpopups={"true" as any}
         allowFullScreen={true}
+        nodeintegrationinsubframes={"true" as any}
         preload={guestPreload || globalGuestPreloadPath}
       />
     </div>

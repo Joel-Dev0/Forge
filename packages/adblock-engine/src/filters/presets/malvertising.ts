@@ -34,7 +34,10 @@ export const MALVERTISING_PRESET_RULES = `
 ||ero-advertising.com^
 ||adsterra.com^
 ||propellerads.com^
+||monetag.com^
+||richads.com^
 ||hilltopads.net^
+||hilltopads.com^
 ||clickadu.com^
 ||juicyads.com^
 ||yllix.com^
@@ -47,6 +50,33 @@ export const MALVERTISING_PRESET_RULES = `
 ||bestadbid.com^
 ||adclicker.info^
 ||redirect-ad.com^
+||go.ad2up.com^
+||runative.com^
+||runative-syndicate.com^
+||runative-syndicate.net^
+||cdn.runative-syndicate.com^
+||syndication.runative.com^
+||onclickprediction.com^
+||onclickalgo.com^
+||onclickbright.com^
+||onclickperformance.com^
+||*casino*^$popup
+||*casinon*^$popup
+||*spelpaus*^$popup
+
+! --- Push Notification Spam, Fake Captchas & Click-Hijackers ---
+||pushsdk.com^
+||push-notification.org^
+||notification-hub.*^
+||subscriber-alert.*^
+||web-push.*^
+||click-push.*^
+||robot-verification.*^
+||verify-captcha.*^
+||press-allow.*^
+||click-allow.*^
+||confirm-not-robot.*^
+||check-robot.*^
 
 ! --- Phishing Ads, Fake Antivirus & Tech Support Scams ---
 ||*-update-alert.com^

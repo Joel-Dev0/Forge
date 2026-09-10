@@ -199,23 +199,38 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
     return result;
   });
 
+  ipcMain.handle("adblock:evaluate-request", (_event, url: string) => {
+    return evaluateAdBlockRequest({ url });
+  });
+
   ipcMain.handle("adblock:get-guest-preload-path", () => {
     const guestPreload = path.join(__dirname, "guestPreload.cjs");
     return pathToFileURL(guestPreload).toString();
   });
 
+  ipcMain.on("adblock:get-guest-preload-path-sync", (event) => {
+    try {
+      const guestPreload = path.join(__dirname, "guestPreload.cjs");
+      event.returnValue = pathToFileURL(guestPreload).toString();
+    } catch {
+      event.returnValue = "";
+    }
+  });
+
   // Register guest preload script for session partition 'persist:forge'
   const ses = session.fromPartition("persist:forge");
   const guestPreload = path.join(__dirname, "guestPreload.cjs");
+  let guestPreloadCode = "";
   if (fs.existsSync(guestPreload)) {
     try {
       ses.setPreloads([guestPreload]);
+      guestPreloadCode = fs.readFileSync(guestPreload, "utf-8");
     } catch (err) {
       console.warn("[AdBlock] Could not register guest preload script:", err);
     }
   }
 
-  // Automatically inject cosmetic CSS and ad-skipping scriptlets into all webviews
+  // Automatically inject cosmetic CSS, scriptlets and guest preload into all webviews
   app.on("web-contents-created", (_event, contents) => {
     if (contents.getType() !== "webview") return;
 
@@ -224,16 +239,85 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
       activeWebviewContents.delete(contents);
     });
 
-    // Block popup ad windows
+    // Block popup ad windows & popunders with extreme vigilance
     contents.setWindowOpenHandler((details) => {
-      if (!engine.isEnabled()) {
-        return { action: "allow" };
-      }
-      const { cancel } = evaluateAdBlockRequest({ url: details.url });
-      if (cancel) {
+      const targetUrl = details.url || "";
+      const urlLower = targetUrl.toLowerCase();
+
+      // 1. Instantly deny blank, javascript or data popunders
+      if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
+        console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
         return { action: "deny" };
       }
-      return { action: "allow" };
+
+      if (engine.isEnabled()) {
+        // 2. Evaluate with AdBlock Engine
+        const { cancel } = evaluateAdBlockRequest({ url: targetUrl });
+        if (cancel) {
+          console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl);
+          return { action: "deny" };
+        }
+
+        // 3. Deny known ad/popunder keywords & networks
+        const isAdOrPopunder = [
+          "popads", "popcash", "adcash", "propellerads", "monetag", "hilltopads",
+          "adsterra", "richads", "clickadu", "trafficstars", "onclickprediction",
+          "onclickalgo", "onclickbright", "onclickperformance", "ad2up", "ero-advertising",
+          "juicyads", "yllix", "bidvertiser", "doubleclick", "googlesyndication",
+          "adnxs", "criteo", "taboola", "outbrain", "bet365", "1xbet", "redirect",
+          "click.php", "track/click", "serving/ad", "adserver", "clksite", "revenuehits",
+          "rotator", "popunder", "fastclick", "adservice", "go.ad2up", "ad-maven",
+          "directrev", "clkmon", "bestadbid", "adclicker", "trafficjunky", "trafficfactory",
+          "runative", "syndicate", "casino", "casinon", "spelpaus", "zilla-networks"
+        ].some((k) => urlLower.includes(k));
+
+        if (isAdOrPopunder) {
+          console.warn("[Forge Shield] Denied popunder by network filter:", targetUrl);
+          return { action: "deny" };
+        }
+
+        // 4. If features indicate a popup window (dimensions or hidden navigation), only allow legitimate OAuth logins
+        const isPopupWindow = details.features && (
+          details.features.includes("width=") ||
+          details.features.includes("height=") ||
+          details.features.includes("location=0") ||
+          details.features.includes("menubar=0") ||
+          details.features.includes("toolbar=0")
+        );
+
+        const isLegitimateAuth = [
+          "accounts.google.com",
+          "appleid.apple.com",
+          "github.com/login",
+          "login.microsoftonline.com",
+          "facebook.com/dialog",
+          "facebook.com/v",
+          "twitter.com/i/oauth2",
+          "x.com/i/oauth2",
+          "discord.com/oauth2",
+          "paypal.com/signin",
+          "auth0.com",
+          "okta.com"
+        ].some((domain) => urlLower.includes(domain));
+
+        if (isPopupWindow && !isLegitimateAuth) {
+          console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
+          return { action: "deny" };
+        }
+      }
+
+      // Route legitimate navigation into a new tab in Forge UI
+      try {
+        const win = (getWin ? getWin() : null);
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("tabs:open-tab", { url: targetUrl });
+        }
+      } catch (err) {
+        console.error("[Forge Shield] Error routing link to tab:", err);
+      }
+
+      // CRITICAL: STRICTLY ALWAYS return { action: "deny" } so Electron NEVER spawns a native OS BrowserWindow!
+      return { action: "deny" };
     });
 
     const injectCosmeticsAndScriptlets = async () => {
@@ -246,6 +330,11 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
       try {
         const url = contents.getURL();
         if (!url || url === "about:blank") return;
+
+        // Double guarantee: Inject guest preload script directly into the page if not already active!
+        if (guestPreloadCode) {
+          await contents.executeJavaScript(guestPreloadCode).catch(() => {});
+        }
 
         const css = engine.getCosmeticCSS(url);
         if (css) {

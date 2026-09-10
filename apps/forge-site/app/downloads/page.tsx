@@ -13,6 +13,10 @@ import {
   CheckCircle2,
   Eye,
   Sparkles,
+  Keyboard,
+  Layers,
+  Compass,
+  SlidersHorizontal,
 } from "lucide-react";
 
 function WindowsIcon({ className }: { className?: string }) {
@@ -411,6 +415,195 @@ export default function Downloads() {
                     {isVpnSimulatedOn
                       ? "On untrusted public networks (airports, hotels, cafes), administrators and eavesdroppers see zero usable information."
                       : "Rogue hotspots can intercept insecure traffic, spoof DNS, or capture browsing activity."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ============================================================== */}
+        {/* BUILT-IN HOTKEYS & KEYBOARD SHORTCUTS */}
+        {/* ============================================================== */}
+        <div className="mt-28 mb-12">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold uppercase tracking-wider mb-4">
+              <Keyboard className="w-4 h-4" /> Native Productivity
+            </div>
+            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-3">
+              Built-In Keyboard Shortcuts
+            </h2>
+            <p className="text-foreground/70 max-w-xl mx-auto text-sm md:text-base">
+              Control your tabs, navigation, and web pages without ever touching your mouse.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Managing Tabs */}
+            <div className="p-6 rounded-2xl bg-surface-1 border border-surface-2 flex flex-col">
+              <div className="flex items-center gap-2.5 mb-5 pb-3 border-b border-surface-2">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-lg">Managing Tabs</h3>
+              </div>
+              <div className="space-y-3 flex-1">
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Open a new tab</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">T</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Close the current tab</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">W</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Reopen the last closed tab</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Shift</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">T</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Switch to the next tab</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Tab</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Switch to previous tab</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Shift</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Tab</kbd>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation and Windows */}
+            <div className="p-6 rounded-2xl bg-surface-1 border border-surface-2 flex flex-col">
+              <div className="flex items-center gap-2.5 mb-5 pb-3 border-b border-surface-2">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                  <Compass className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-lg">Navigation & Windows</h3>
+              </div>
+              <div className="space-y-3 flex-1">
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Jump to address bar</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex gap-0.5">
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">L</kbd>
+                    </div>
+                    <span className="text-[10px] text-foreground/40">or</span>
+                    <div className="flex gap-0.5">
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Alt</kbd>
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">D</kbd>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Open private / incognito window</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Shift</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">N</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Go back to previous page</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Alt</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">←</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Go forward to next page</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Alt</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">→</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Refresh current page</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">F5</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Toggle full-screen mode</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">F11</kbd>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Page Controls */}
+            <div className="p-6 rounded-2xl bg-surface-1 border border-surface-2 flex flex-col">
+              <div className="flex items-center gap-2.5 mb-5 pb-3 border-b border-surface-2">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-lg">Page Controls</h3>
+              </div>
+              <div className="space-y-3 flex-1">
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Find text on page</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">F</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Zoom in or zoom out</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex gap-0.5">
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">+</kbd>
+                    </div>
+                    <span className="text-[10px] text-foreground/40">/</span>
+                    <div className="flex gap-0.5">
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">-</kbd>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Reset zoom to default</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">0</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Bookmark current page</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">D</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Open browsing history</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">H</kbd>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">View downloads manager</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Ctrl</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">J</kbd>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, nativeImage, powerMonitor } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, nativeImage, powerMonitor, session, shell, Menu } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -13,6 +13,10 @@ import { initVpnAdapter } from "./network/vpnAdapter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.forge.browser");
+}
 
 // Single instance lock to prevent duplicate instances on wake/restart
 const gotTheLock = app.requestSingleInstanceLock();
@@ -82,8 +86,139 @@ app.on("render-process-gone", (_event, webContents, details) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+const allWindows = new Set<BrowserWindow>();
 let terminalCwd = process.cwd();
 let isMediaPlaying = false;
+
+interface DownloadRecord {
+  id: string;
+  filename: string;
+  path: string;
+  size: number;
+  receivedBytes: number;
+  state: "progressing" | "completed" | "cancelled" | "interrupted";
+  startTime: number;
+  url: string;
+}
+
+const recentDownloads: DownloadRecord[] = [];
+
+function setupDownloadListeners(sess: Electron.Session) {
+  sess.on("will-download", (_event, item, webContents) => {
+    const filename = item.getFilename();
+    const savePath = path.join(app.getPath("downloads"), filename);
+    item.setSavePath(savePath);
+
+    const record: DownloadRecord = {
+      id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      filename,
+      path: savePath,
+      size: item.getTotalBytes(),
+      receivedBytes: 0,
+      state: "progressing",
+      startTime: Date.now(),
+      url: item.getURL(),
+    };
+    recentDownloads.unshift(record);
+
+    const win = BrowserWindow.fromWebContents(webContents) || mainWindow;
+    win?.webContents.send("downloads:item-created", record);
+
+    item.on("updated", (_e, state) => {
+      record.receivedBytes = item.getReceivedBytes();
+      record.state = state as any;
+      win?.webContents.send("downloads:item-updated", record);
+    });
+
+    item.once("done", (_e, state) => {
+      record.state = state as any;
+      win?.webContents.send("downloads:item-done", record);
+    });
+  });
+}
+
+function registerShortcutInterception(contents: Electron.WebContents) {
+  contents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+
+    const isMac = process.platform === "darwin";
+    const ctrl = isMac ? input.meta : input.control;
+    const shift = input.shift;
+    const alt = input.alt;
+    const key = input.key ? input.key.toLowerCase() : "";
+    const code = input.code || "";
+
+    let action: string | null = null;
+
+    // Managing Tabs
+    if (ctrl && !shift && !alt && key === "t") {
+      action = "tab:new";
+    } else if (ctrl && !shift && !alt && key === "w") {
+      action = "tab:close";
+    } else if (ctrl && shift && !alt && key === "t") {
+      action = "tab:reopen";
+    } else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) {
+      action = "tab:next";
+    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) {
+      action = "tab:prev";
+    } else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) {
+      action = "tab:prev";
+    } else if (ctrl && !shift && !alt && /^[1-9]$/.test(key)) {
+      action = `tab:select-${key}`;
+    }
+    // Navigation and Windows
+    else if ((ctrl && !shift && !alt && key === "l") || (alt && !ctrl && !shift && key === "d")) {
+      action = "nav:focus-address";
+    } else if (ctrl && shift && !alt && key === "n") {
+      action = "win:private";
+    } else if (alt && !ctrl && !shift && (key === "arrowleft" || code === "ArrowLeft")) {
+      action = "nav:back";
+    } else if (alt && !ctrl && !shift && (key === "arrowright" || code === "ArrowRight")) {
+      action = "nav:forward";
+    } else if (!ctrl && !shift && !alt && (key === "f5" || code === "F5")) {
+      action = "nav:reload";
+    } else if (ctrl && !shift && !alt && key === "r") {
+      action = "nav:reload";
+    } else if (!ctrl && !shift && !alt && (key === "f11" || code === "F11")) {
+      action = "win:toggle-fullscreen";
+    }
+    // Page Controls
+    else if (ctrl && !shift && !alt && key === "f") {
+      action = "page:find";
+    } else if (ctrl && !alt && (key === "+" || key === "=" || code === "Equal" || code === "NumpadAdd")) {
+      action = "page:zoom-in";
+    } else if (ctrl && !alt && (key === "-" || key === "_" || code === "Minus" || code === "NumpadSubtract")) {
+      action = "page:zoom-out";
+    } else if (ctrl && !shift && !alt && (key === "0" || code === "Digit0" || code === "Numpad0")) {
+      action = "page:zoom-reset";
+    } else if (ctrl && !shift && !alt && key === "d") {
+      action = "page:bookmark";
+    } else if (ctrl && !shift && !alt && key === "h") {
+      action = "page:history";
+    } else if (ctrl && !shift && !alt && key === "j") {
+      action = "page:downloads";
+    } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
+      action = "help:hotkeys";
+    }
+
+    if (action) {
+      event.preventDefault();
+      if (action === "win:private") {
+        createWindow(true);
+        return;
+      }
+      const host = (contents as any).hostWebContents;
+      const targetWin =
+        BrowserWindow.fromWebContents(contents) ||
+        (host ? BrowserWindow.fromWebContents(host) : null) ||
+        BrowserWindow.getFocusedWindow() ||
+        mainWindow;
+      if (targetWin && !targetWin.isDestroyed()) {
+        targetWin.webContents.send("shortcut:trigger", action);
+      }
+    }
+  });
+}
 
 // Handle system sleep / hibernation events cleanly
 powerMonitor.on("suspend", () => {
@@ -160,67 +295,133 @@ function updateTaskbarMediaButtons(win: BrowserWindow | null, isPlaying: boolean
   }
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function createWindow(isIncognito = false) {
+  const icoPath = path.join(__dirname, "../public/icon.ico");
+  const pngPath = path.join(__dirname, "../public/logo.png");
+  const appIcon = fs.existsSync(icoPath) ? icoPath : pngPath;
+
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    titleBarStyle: "hidden",
-    backgroundColor: "#0d0f17",
+    minimizable: true,
+    maximizable: true,
+    closable: true,
+    titleBarStyle: process.platform === "darwin" ? "hidden" : undefined,
+    backgroundColor: isIncognito ? "#090a0f" : "#0d0f17",
     show: false,
-    icon: path.join(__dirname, "../public/logo.png"),
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      partition: isIncognito ? `incognito-${Date.now()}` : undefined,
     },
   });
 
-  try {
-    mainWindow.webContents.setMaxListeners(50);
-  } catch {}
+  allWindows.add(win);
+  if (!isIncognito && !mainWindow) {
+    mainWindow = win;
+  }
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.maximize();
-    mainWindow?.show();
-    if (mainWindow) {
-      updateTaskbarMediaButtons(mainWindow, false);
+  win.on("closed", () => {
+    allWindows.delete(win);
+    if (mainWindow === win) {
+      mainWindow = allWindows.values().next().value || null;
     }
   });
 
+  try {
+    win.webContents.setMaxListeners(50);
+  } catch {}
+
+  win.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    webPreferences.nodeIntegrationInSubFrames = true;
+  });
+
+  win.once("ready-to-show", () => {
+    win.maximize();
+    win.show();
+    if (!isIncognito) {
+      updateTaskbarMediaButtons(win, false);
+    }
+  });
+
+  const query = isIncognito ? "?incognito=1" : "";
   if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    win.loadFile(path.join(__dirname, "../dist/index.html"), {
+      query: isIncognito ? { incognito: "1" } : undefined,
+    });
   }
+
+  return win;
+}
+
+// Helper to reliably find target window for window controls IPC
+function getTargetBrowserWindow(event?: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): BrowserWindow | null {
+  if (event) {
+    const fromSender = BrowserWindow.fromWebContents(event.sender);
+    if (fromSender && !fromSender.isDestroyed()) return fromSender;
+  }
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) return focused;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  for (const win of allWindows) {
+    if (win && !win.isDestroyed()) return win;
+  }
+  const anyWin = BrowserWindow.getAllWindows()[0];
+  if (anyWin && !anyWin.isDestroyed()) return anyWin;
+  return null;
 }
 
 // Window controls IPC
 ipcMain.on("window:minimize", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
-  win?.minimize();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isFullScreen()) {
+      win.setFullScreen(false);
+    }
+    win.minimize();
+  }
+});
+
+ipcMain.handle("window:minimize", (event) => {
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isFullScreen()) {
+      win.setFullScreen(false);
+    }
+    win.minimize();
+    return true;
+  }
+  return false;
 });
 
 ipcMain.on("window:maximize", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
-  if (!win) return;
-  if (win.isMaximized()) {
-    win.unmaximize();
-  } else {
-    win.maximize();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
   }
 });
 
 ipcMain.on("window:close", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
-  win?.close();
+  const win = getTargetBrowserWindow(event);
+  if (win && !win.isDestroyed()) {
+    win.close();
+  }
 });
 
 ipcMain.handle("window:is-maximized", (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
+  const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
 
@@ -251,16 +452,51 @@ ipcMain.on("window:set-title", (_event, title: string) => {
 
 function restoreAndFocusWindow(win: BrowserWindow | null) {
   if (!win || win.isDestroyed()) return;
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  win.show();
-  win.focus();
   try {
-    win.setAlwaysOnTop(true);
-    win.setAlwaysOnTop(false);
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.show();
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.moveTop();
+    win.focus();
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) {
+        win.setAlwaysOnTop(false);
+        win.focus();
+      }
+    }, 100);
   } catch {}
 }
+
+function applyPipWindowIcon() {
+  if (process.platform !== "win32") return;
+  const scriptPath = path.join(__dirname, "setPipIcon.ps1");
+  const fallbackScript = path.join(__dirname, "../electron/setPipIcon.ps1");
+  const psPath = fs.existsSync(scriptPath) ? scriptPath : fallbackScript;
+  const icoPath = path.join(__dirname, "../public/icon.ico");
+  if (!fs.existsSync(psPath) || !fs.existsSync(icoPath)) return;
+
+  let attempts = 0;
+  const interval = setInterval(() => {
+    attempts++;
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psPath}" -IcoPath "${icoPath}" -TargetPid ${process.pid}`, (err, stdout) => {
+      if (!err && stdout && parseInt(stdout.trim(), 10) > 0) {
+        clearInterval(interval);
+      }
+    });
+    if (attempts >= 10) clearInterval(interval);
+  }, 200);
+}
+
+app.on("browser-window-created", (_event, win) => {
+  try {
+    const icoPath = path.join(__dirname, "../public/icon.ico");
+    const pngPath = path.join(__dirname, "../public/logo.png");
+    const appIcon = fs.existsSync(icoPath) ? icoPath : pngPath;
+    win.setIcon(appIcon);
+  } catch {}
+});
 
 ipcMain.on("window:restore-and-focus", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
@@ -271,11 +507,20 @@ ipcMain.on("window:restore-and-focus", (event) => {
 // Note: We intentionally notify the renderer to expand the webview inside the window without calling
 // mainWindow.setFullScreen(true) on frameless windows, preventing Windows D3D exclusive fullscreen hangs.
 const pipActiveWebContents = new Set<number>();
+const recentlyExitedPipWebContents = new Map<number, number>();
 
 app.on("web-contents-created", (_event, contents) => {
   try {
     contents.setMaxListeners(50);
   } catch {}
+
+  // Intercept hotkeys across all webviews and main windows
+  registerShortcutInterception(contents);
+
+  // CRITICAL: NEVER allow any WebContents in Forge to spawn a native OS BrowserWindow popup!
+  contents.setWindowOpenHandler(() => {
+    return { action: "deny" };
+  });
 
   if (contents.getType() !== "webview") return;
 
@@ -304,10 +549,13 @@ app.on("web-contents-created", (_event, contents) => {
 
     if (message.includes("__FORGE_PIP_ENTER__")) {
       pipActiveWebContents.add(contents.id);
+      applyPipWindowIcon();
     } else if (message.includes("__FORGE_PIP_LEAVE__")) {
       pipActiveWebContents.delete(contents.id);
+      recentlyExitedPipWebContents.set(contents.id, Date.now());
     } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
       pipActiveWebContents.delete(contents.id);
+      recentlyExitedPipWebContents.set(contents.id, Date.now());
       restoreAndFocusWindow(mainWindow);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
@@ -317,7 +565,9 @@ app.on("web-contents-created", (_event, contents) => {
 
   // When user clicks native "Back to tab" in PiP window, Chromium focuses the guest WebContents
   contents.on("focus", () => {
-    if (pipActiveWebContents.has(contents.id)) {
+    const isRecent = Date.now() - (recentlyExitedPipWebContents.get(contents.id) || 0) < 3500;
+    if (pipActiveWebContents.has(contents.id) || isRecent) {
+      recentlyExitedPipWebContents.delete(contents.id);
       restoreAndFocusWindow(mainWindow);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
@@ -327,6 +577,7 @@ app.on("web-contents-created", (_event, contents) => {
 
   contents.on("destroyed", () => {
     pipActiveWebContents.delete(contents.id);
+    recentlyExitedPipWebContents.delete(contents.id);
   });
 });
 
@@ -427,7 +678,54 @@ ipcMain.handle("terminal:exec", async (_event, command: string, shellType: "powe
   });
 });
 
+// Window controls & downloads IPC
+ipcMain.on("window:open-private", () => {
+  createWindow(true);
+});
+
+ipcMain.handle("downloads:get-recent", () => recentDownloads);
+ipcMain.handle("downloads:open-folder", () => {
+  shell.openPath(app.getPath("downloads"));
+  return true;
+});
+ipcMain.handle("downloads:open-file", (_event, filePath: string) => {
+  if (filePath && fs.existsSync(filePath)) {
+    shell.openPath(filePath);
+    return true;
+  }
+  return false;
+});
+ipcMain.handle("downloads:show-in-folder", (_event, filePath: string) => {
+  if (filePath && fs.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  shell.openPath(app.getPath("downloads"));
+  return true;
+});
+
 app.whenReady().then(() => {
+  // Completely disable Chromium's default application menu ("File Edit View Window")
+  Menu.setApplicationMenu(null);
+
+  // Attach download listeners and grant universal video/media permissions
+  try {
+    setupDownloadListeners(session.defaultSession);
+    const forgeSession = session.fromPartition("persist:forge");
+    setupDownloadListeners(forgeSession);
+    forgeSession.setPermissionCheckHandler((_webContents, permission) => {
+      if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
+        return true;
+      }
+      return true;
+    });
+    forgeSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(true);
+    });
+  } catch (err) {
+    console.error("[Main] Error initializing download listeners or session permissions:", err);
+  }
+
   initAdBlockAdapter(() => mainWindow);
   initNetworkMonitor(() => mainWindow);
   initSecureNetworkAdapter(() => mainWindow);

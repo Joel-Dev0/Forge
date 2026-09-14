@@ -7,6 +7,17 @@
 (function() {
   const currentUrl = window.location.href || "";
   const isYouTube = currentUrl.includes("youtube.com") || currentUrl.includes("youtu.be");
+  const hostname = (window.location.hostname || "").toLowerCase();
+  const isSearchEngine =
+    hostname.includes("google.") ||
+    hostname.includes("bing.com") ||
+    hostname.includes("duckduckgo.com") ||
+    hostname.includes("ecosia.org") ||
+    hostname.includes("brave.com") ||
+    hostname.includes("yahoo.com") ||
+    hostname.includes("yandex.") ||
+    hostname.includes("baidu.com") ||
+    hostname.includes("startpage.com");
 
   // 1. YouTube-specific DOM & scriptlet injection at document-start
   const youtubeCode = `
@@ -283,15 +294,51 @@
       if (window.__forge_universal_adblock_active) return;
       window.__forge_universal_adblock_active = true;
 
+      // EXEMPT SEARCH ENGINES & MAJOR TRUSTED SITES:
+      // Search engines (Google, Bing, DuckDuckGo, Yahoo, Brave, etc.) don't have popunders,
+      // video ads, or click-traps. Running popunder blockers or DOM-deleting click-trap cleaners
+      // or monkey-patching prototypes completely breaks search engines!
+      const hostname = (window.location.hostname || '').toLowerCase();
+      if (
+        hostname.includes('google.') ||
+        hostname.includes('bing.com') ||
+        hostname.includes('duckduckgo.com') ||
+        hostname.includes('ecosia.org') ||
+        hostname.includes('brave.com') ||
+        hostname.includes('yahoo.com') ||
+        hostname.includes('yandex.') ||
+        hostname.includes('baidu.com') ||
+        hostname.includes('startpage.com')
+      ) {
+        return;
+      }
+
+      // Universal Ad / Popunder Keywords (declared in parent scope so all handlers can access)
+      const adUrlKeywords = [
+        'popads', 'popcash', 'adcash', 'propellerads', 'monetag', 'hilltopads',
+        'adsterra', 'richads', 'clickadu', 'trafficstars', 'onclickprediction',
+        'onclickalgo', 'onclickbright', 'onclickperformance', 'ad2up', 'ero-advertising',
+        'juicyads', 'yllix', 'bidvertiser', 'doubleclick', 'googlesyndication',
+        'adnxs', 'criteo', 'taboola', 'outbrain', 'bet365', '1xbet',
+        'click.php', 'track/click', 'serving/ad', 'adserver', 'clksite', 'revenuehits',
+        'rotator', 'popunder', 'fastclick', 'adservice', 'runative', 'syndicate',
+        'casino', 'casinon', 'spelpaus', 'zilla-networks'
+      ];
+
+      const isAdUrlString = function(url) {
+        try {
+          if (!url || typeof url !== 'string') return false;
+          const str = url.toLowerCase();
+          return adUrlKeywords.some(k => str.includes(k));
+        } catch {
+          return false;
+        }
+      };
+
       // 1. Anti-Adblock Evasion Stubs
       try {
         window.canRunAds = true;
         window.isAdBlockActive = false;
-        window.adsbygoogle = window.adsbygoogle || [];
-        if (!window.adsbygoogle.loaded) {
-          window.adsbygoogle.loaded = true;
-        }
-        window.adsbygoogle.push = function() { return 0; };
       } catch {}
 
       // 2. Universal Popunder & Unsolicited Window.Open Defuser
@@ -304,16 +351,6 @@
         window.addEventListener('keydown', recordUserAction, true);
 
         const originalOpen = window.open;
-        const adUrlKeywords = [
-          'popads', 'popcash', 'adcash', 'propellerads', 'monetag', 'hilltopads',
-          'adsterra', 'richads', 'clickadu', 'trafficstars', 'onclickprediction',
-          'onclickalgo', 'onclickbright', 'onclickperformance', 'ad2up', 'ero-advertising',
-          'juicyads', 'yllix', 'bidvertiser', 'doubleclick', 'googlesyndication',
-          'adnxs', 'criteo', 'taboola', 'outbrain', 'bet365', '1xbet', 'redirect',
-          'click.php', 'track/click', 'serving/ad', 'adserver', 'clksite', 'revenuehits',
-          'rotator', 'popunder', 'fastclick', 'adservice', 'runative', 'syndicate',
-          'casino', 'casinon', 'spelpaus', 'zilla-networks'
-        ];
 
         // Defuse Runative & Tabup Popunder SDKs
         try {
@@ -350,8 +387,7 @@
           }
 
           // Block if matches known ad/popunder keywords
-          const isAdUrl = adUrlKeywords.some(k => urlStr.includes(k));
-          if (isAdUrl) {
+          if (isAdUrlString(urlStr)) {
             console.warn('[Forge Shield] Blocked ad popunder URL:', url);
             return createDummyWindow();
           }
@@ -375,34 +411,29 @@
 
       // 3. Synthetic Link Click, Form Submit & Event Dispatch Interceptor
       try {
-        const isAdUrlString = function(url) {
-          const str = String(url || '').toLowerCase();
-          return adUrlKeywords.some(k => str.includes(k));
-        };
-
         // Capture-phase click interceptor to catch ad link clicks before handlers fire
         window.addEventListener('click', function(e) {
           if (window.__forge_adblock_enabled === false) return;
-          const target = e.target && e.target.closest ? e.target.closest('a') : null;
-          if (target && target.href) {
-            const hrefLower = String(target.href).toLowerCase();
-            if (isAdUrlString(hrefLower)) {
+          try {
+            const target = e.target && e.target.closest ? e.target.closest('a') : null;
+            if (target && target.href && isAdUrlString(target.href)) {
               e.preventDefault();
               e.stopPropagation();
               e.stopImmediatePropagation();
               console.warn('[Forge Shield] Prevented click on ad link:', target.href);
             }
-          }
+          } catch {}
         }, true);
 
         const originalAnchorClick = HTMLAnchorElement.prototype.click;
         HTMLAnchorElement.prototype.click = function() {
           if (window.__forge_adblock_enabled !== false) {
-            const h = String(this.href || '').toLowerCase();
-            if (isAdUrlString(h) || !h || h === 'about:blank' || h.startsWith('javascript:')) {
-              console.warn('[Forge Shield] Blocked synthetic ad link click:', this.href);
-              return;
-            }
+            try {
+              if (this.href && isAdUrlString(this.href)) {
+                console.warn('[Forge Shield] Blocked synthetic ad link click:', this.href);
+                return;
+              }
+            } catch {}
           }
           return originalAnchorClick.apply(this, arguments);
         };
@@ -410,10 +441,12 @@
         const originalFormSubmit = HTMLFormElement.prototype.submit;
         HTMLFormElement.prototype.submit = function() {
           if (window.__forge_adblock_enabled !== false) {
-            if (isAdUrlString(this.action)) {
-              console.warn('[Forge Shield] Blocked ad form submit:', this.action);
-              return;
-            }
+            try {
+              if (this.action && isAdUrlString(this.action)) {
+                console.warn('[Forge Shield] Blocked ad form submit:', this.action);
+                return;
+              }
+            } catch {}
           }
           return originalFormSubmit.apply(this, arguments);
         };
@@ -421,10 +454,12 @@
         const origDispatch = EventTarget.prototype.dispatchEvent;
         EventTarget.prototype.dispatchEvent = function(evt) {
           if (window.__forge_adblock_enabled !== false && evt && evt.type === 'click') {
-            if (this instanceof HTMLAnchorElement && isAdUrlString(this.href)) {
-              console.warn('[Forge Shield] Blocked synthetic dispatchEvent click on ad:', this.href);
-              return false;
-            }
+            try {
+              if (this instanceof HTMLAnchorElement && this.href && isAdUrlString(this.href)) {
+                console.warn('[Forge Shield] Blocked synthetic dispatchEvent click on ad:', this.href);
+                return false;
+              }
+            } catch {}
           }
           return origDispatch.apply(this, arguments);
         };
@@ -497,7 +532,7 @@
       }
       setInterval(removeClickTraps, 800);
 
-      // 5. Neutralize Google IMA SDK
+      // 6. Neutralize Google IMA SDK on video players
       try {
         window.google = window.google || {};
         window.google.ima = window.google.ima || {
@@ -533,7 +568,7 @@
         };
       } catch {}
 
-      // 6. Fast-forward generic HTML5 video ads
+      // 7. Fast-forward generic HTML5 video ads
       function skipGenericVideoAds() {
         if (window.__forge_adblock_enabled === false) return;
         const adSelectors = [
@@ -1437,6 +1472,7 @@
   // Inject JavaScript into main world (for YouTube & adblock scriptlets)
   const injectScript = () => {
     try {
+      if (isSearchEngine) return;
       const script = document.createElement("script");
       script.textContent = isYouTube ? youtubeCode : universalVideoCode;
       const target = document.head || document.documentElement;

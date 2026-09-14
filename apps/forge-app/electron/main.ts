@@ -157,9 +157,13 @@ function registerShortcutInterception(contents: Electron.WebContents) {
       action = "tab:close";
     } else if (ctrl && shift && !alt && key === "t") {
       action = "tab:reopen";
+    } else if (ctrl && shift && !alt && (key === "pagedown" || code === "PageDown")) {
+      action = "tab:move-right";
+    } else if (ctrl && shift && !alt && (key === "pageup" || code === "PageUp")) {
+      action = "tab:move-left";
     } else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) {
       action = "tab:next";
-    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) {
+    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab")) {
       action = "tab:prev";
     } else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) {
       action = "tab:prev";
@@ -199,6 +203,8 @@ function registerShortcutInterception(contents: Electron.WebContents) {
       action = "page:downloads";
     } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
       action = "help:hotkeys";
+    } else if (alt && !ctrl && !shift && (key === "p" || code === "KeyP")) {
+      action = "media:pip";
     }
 
     if (action) {
@@ -518,7 +524,19 @@ app.on("web-contents-created", (_event, contents) => {
   registerShortcutInterception(contents);
 
   // CRITICAL: NEVER allow any WebContents in Forge to spawn a native OS BrowserWindow popup!
-  contents.setWindowOpenHandler(() => {
+  // Instead, route legitimate target="_blank" links into a new tab in Forge UI.
+  contents.setWindowOpenHandler((details) => {
+    const targetUrl = details.url;
+    if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
+      try {
+        const win = BrowserWindow.getFocusedWindow() || mainWindow;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("tabs:open-tab", { url: targetUrl });
+        }
+      } catch (err) {
+        console.error("[Main] Error routing link to tab:", err);
+      }
+    }
     return { action: "deny" };
   });
 
@@ -713,6 +731,16 @@ app.whenReady().then(() => {
     setupDownloadListeners(session.defaultSession);
     const forgeSession = session.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
+
+    // Set clean standard Chrome User-Agent without Electron tokens so search engines and modern web apps work smoothly
+    const defaultUA = forgeSession.getUserAgent();
+    const cleanUA = defaultUA
+      .replace(/Electron\/[0-9.]+\s?/gi, "")
+      .replace(/forge(-app)?\/[0-9.]+\s?/gi, "")
+      .trim();
+    forgeSession.setUserAgent(cleanUA);
+    session.defaultSession.setUserAgent(cleanUA);
+
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;

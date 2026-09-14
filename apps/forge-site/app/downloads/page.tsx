@@ -606,6 +606,13 @@ export default function Downloads() {
                     <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">J</kbd>
                   </div>
                 </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2/40">
+                  <span className="text-xs text-foreground/80">Toggle Picture-in-Picture (PiP)</span>
+                  <div className="flex gap-1 shrink-0">
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">Alt</kbd>
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-background border border-surface-2 rounded shadow-xs">P</kbd>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -12,6 +12,7 @@ interface NetworkState {
 
   initNetworkListener: () => () => void;
   addOrUpdateEntry: (entry: NetworkEntry) => void;
+  addOrUpdateBatch: (entries: NetworkEntry[]) => void;
   setSelectedId: (id: string | null) => void;
   setFilterType: (filter: FilterCategory) => void;
   setSearchQuery: (query: string) => void;
@@ -45,10 +46,19 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     const forgeNet = (window as any).forge?.network;
     if (!forgeNet?.onEntry) return () => {};
 
-    const unsubEntry = forgeNet.onEntry((entry: NetworkEntry) => {
-      if (!get().isRecording) return;
-      get().addOrUpdateEntry(entry);
-    });
+    const unsubEntry = forgeNet.onBatch
+      ? forgeNet.onBatch((batch: NetworkEntry[]) => {
+          if (!get().isRecording) return;
+          get().addOrUpdateBatch(batch);
+        })
+      : forgeNet.onEntry((entryOrBatch: any) => {
+          if (!get().isRecording) return;
+          if (Array.isArray(entryOrBatch)) {
+            get().addOrUpdateBatch(entryOrBatch);
+          } else {
+            get().addOrUpdateEntry(entryOrBatch);
+          }
+        });
 
     const unsubClear = forgeNet.onClear?.(() => {
       set({ entries: [], selectedId: null });
@@ -61,14 +71,27 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   addOrUpdateEntry: (entry) => {
+    get().addOrUpdateBatch([entry]);
+  },
+
+  addOrUpdateBatch: (items) => {
+    if (!items.length) return;
     set((state) => {
-      const idx = state.entries.findIndex((e) => e.id === entry.id);
-      if (idx >= 0) {
-        const next = [...state.entries];
-        next[idx] = { ...next[idx], ...entry };
-        return { entries: next };
+      const entryMap = new Map<string, number>();
+      state.entries.forEach((e, i) => entryMap.set(e.id, i));
+      const next = [...state.entries];
+
+      for (const item of items) {
+        const idx = entryMap.get(item.id);
+        if (idx !== undefined) {
+          next[idx] = { ...next[idx], ...item };
+        } else {
+          entryMap.set(item.id, next.length);
+          next.push(item);
+        }
       }
-      return { entries: [...state.entries, entry].slice(-500) };
+
+      return { entries: next.slice(-500) };
     });
   },
 

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { RotateCw, Smartphone, Tablet, Monitor, Watch, ZoomIn } from "lucide-react";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
-import { useNavigationStore } from "../../core/navigation/useNavigationStore";
+import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useConsoleStore } from "../../core/console/useConsoleStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
+import { useInspectorStore } from "../../core/inspector/useInspectorStore";
+import { DEVICE_PRESETS, getPresetById } from "../../core/inspector/devicePresets.ts";
 import { NewTabHome } from "./NewTabHome";
 
 const getInitialGuestPreload = (): string | undefined => {
@@ -25,6 +28,7 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   const [guestPreload, setGuestPreload] = useState<string | undefined>(
     () => globalGuestPreloadPath || getInitialGuestPreload()
   );
+  const [isDragging, setIsDragging] = useState<"right" | "bottom" | "corner" | null>(null);
 
   useEffect(() => {
     if (!guestPreload) {
@@ -53,6 +57,47 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   const updateTab = useTabsStore((s) => s.updateTab);
   const setUrlBarValue = useNavigationStore((s) => s.setUrlBarValue);
   const addEntry = useHistoryStore((s) => s.addEntry);
+  const viewportMode = useInspectorStore((s) => s.viewportMode);
+  const viewportOrientation = useInspectorStore((s) => s.viewportOrientation);
+  const selectedDeviceId = useInspectorStore((s) => s.selectedDeviceId);
+  const viewportWidth = useInspectorStore((s) => s.viewportWidth);
+  const viewportHeight = useInspectorStore((s) => s.viewportHeight);
+  const deviceScale = useInspectorStore((s) => s.deviceScale);
+  const setViewportMode = useInspectorStore((s) => s.setViewportMode);
+  const selectDevicePreset = useInspectorStore((s) => s.selectDevicePreset);
+  const setViewportDimensions = useInspectorStore((s) => s.setViewportDimensions);
+  const toggleViewportOrientation = useInspectorStore((s) => s.toggleViewportOrientation);
+  const setDeviceScale = useInspectorStore((s) => s.setDeviceScale);
+
+  // Synchronize simulated device User-Agent when active and viewportMode/device changes
+  useEffect(() => {
+    if (!isActive || !ref.current) return;
+    const el = ref.current;
+    try {
+      if (typeof (el as any).setUserAgent === "function") {
+        const preset = getPresetById(selectedDeviceId);
+        if (preset?.userAgent) {
+          (el as any).setUserAgent(preset.userAgent);
+        } else if (viewportMode === "watch") {
+          (el as any).setUserAgent(
+            "Mozilla/5.0 (Apple-Watch; CPU WatchOS 10_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+          );
+        } else if (viewportMode === "mobile") {
+          (el as any).setUserAgent(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+          );
+        } else if (viewportMode === "tablet") {
+          (el as any).setUserAgent(
+            "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+          );
+        } else {
+          (el as any).setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+          );
+        }
+      }
+    } catch {}
+  }, [isActive, viewportMode, selectedDeviceId]);
 
   useEffect(() => {
     onRef(tabId, ref.current);
@@ -64,18 +109,39 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
     const el = ref.current;
     if (!el || !url || url === "about:blank") return;
 
-    // Skip if the webview already navigated to this URL internally
-    if (url === lastNavigatedUrl.current) return;
+    if (lastNavigatedUrl.current === url) return;
+    lastNavigatedUrl.current = url;
 
+    // Skip if already at the requested URL
     try {
-      const currentUrl = el.getURL();
-      if (currentUrl !== url) {
-        lastNavigatedUrl.current = url;
-        el.loadURL(url);
+      if (typeof el.getURL === "function" && el.getURL() === url) {
+        return;
       }
-    } catch {
-      // Element might not be attached yet
-    }
+    } catch {}
+
+    const navigate = () => {
+      try {
+        if (typeof el.loadURL === "function") {
+          el.loadURL(url);
+        } else {
+          el.setAttribute("src", url);
+        }
+      } catch {
+        const onReady = () => {
+          el.removeEventListener("dom-ready", onReady);
+          try {
+            if (el.getURL() !== url) {
+              el.loadURL(url);
+            }
+          } catch {
+            try { el.setAttribute("src", url); } catch {}
+          }
+        };
+        el.addEventListener("dom-ready", onReady);
+      }
+    };
+
+    navigate();
   }, [url]);
 
   useEffect(() => {
@@ -225,8 +291,16 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         }
       } catch {}
 
-      // If disposition is new-window or features indicate popup, verify if it is a legitimate OAuth login
-      const isPopupWindow = (e.disposition === "new-window" || (e.options && (e.options.width < 1000 || e.options.height < 700)));
+      // Only treat as popup if specifically requesting miniature window dimensions or disabled chrome
+      const isMiniPopupWindow = Boolean(
+        e.options &&
+        ((e.options.width && e.options.width < 700) ||
+         (e.options.height && e.options.height < 500) ||
+         e.options.menubar === false ||
+         e.options.toolbar === false ||
+         e.options.location === false)
+      );
+
       const isLegitimateAuth = [
         "accounts.google.com",
         "appleid.apple.com",
@@ -239,8 +313,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         "paypal.com"
       ].some((domain) => urlLower.includes(domain));
 
-      if (isPopupWindow && !isLegitimateAuth) {
-        console.warn(`[Forge Shield] Dropped non-OAuth popup tab: ${targetUrl}`);
+      if (isMiniPopupWindow && !isLegitimateAuth) {
+        console.warn(`[Forge Shield] Dropped suspicious miniature popup window: ${targetUrl}`);
         return;
       }
 
@@ -304,29 +378,6 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       });
     };
 
-    // Inject cosmetic CSS and YouTube ad-skipper scriptlets
-    const injectAdBlockProtection = async () => {
-      try {
-        const currentUrl = el.getURL();
-        if (!currentUrl || currentUrl === "about:blank") return;
-
-        const forgeAdblock = (window as any).forge?.adblock;
-        if (!forgeAdblock) return;
-
-        const [css, scriptlet] = await Promise.all([
-          forgeAdblock.getCosmeticCSS ? forgeAdblock.getCosmeticCSS(currentUrl) : Promise.resolve(""),
-          forgeAdblock.getScriptlet ? forgeAdblock.getScriptlet(currentUrl) : Promise.resolve(""),
-        ]);
-
-        if (css) {
-          await el.insertCSS(css);
-        }
-        if (scriptlet) {
-          await el.executeJavaScript(scriptlet);
-        }
-      } catch {}
-    };
-
     const onEnterHtmlFullScreen = () => {
       useFullscreenStore.getState().setFullscreen(true, tabId);
     };
@@ -337,10 +388,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
 
     el.addEventListener("did-start-loading", onStart);
     el.addEventListener("did-stop-loading", onStop);
-    el.addEventListener("dom-ready", injectAdBlockProtection);
     el.addEventListener("did-navigate", onNavigate);
     el.addEventListener("did-navigate-in-page", onNavigate);
-    el.addEventListener("did-navigate-in-page", injectAdBlockProtection);
     el.addEventListener("page-title-updated", onTitle);
     el.addEventListener("page-favicon-updated", onFavicon);
     el.addEventListener("did-fail-load", onFailLoad);
@@ -353,10 +402,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
     return () => {
       el.removeEventListener("did-start-loading", onStart);
       el.removeEventListener("did-stop-loading", onStop);
-      el.removeEventListener("dom-ready", injectAdBlockProtection);
       el.removeEventListener("did-navigate", onNavigate);
       el.removeEventListener("did-navigate-in-page", onNavigate);
-      el.removeEventListener("did-navigate-in-page", injectAdBlockProtection);
       el.removeEventListener("page-title-updated", onTitle);
       el.removeEventListener("page-favicon-updated", onFavicon);
       el.removeEventListener("did-fail-load", onFailLoad);
@@ -377,6 +424,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
           setUrlBarValue(currentUrl);
         } else if (url && url !== "about:blank") {
           setUrlBarValue(url);
+        } else {
+          setUrlBarValue("");
         }
         const currentTitle = ref.current?.getTitle();
         if (currentTitle && currentTitle !== "about:blank") {
@@ -387,12 +436,370 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
           document.title = "Forge Browser";
         }
       } catch {
-        if (url) setUrlBarValue(url);
+        if (url && url !== "about:blank") setUrlBarValue(url);
+        else setUrlBarValue("");
       }
     }
   }, [isActive, url, setUrlBarValue]);
 
+  const handleDragStart = (e: React.PointerEvent, type: "right" | "bottom" | "corner") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(type);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = viewportWidth;
+    const startH = viewportHeight;
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const deltaX = moveEv.clientX - startX;
+      const deltaY = moveEv.clientY - startY;
+      let nextW = startW;
+      let nextH = startH;
+
+      if (type === "right" || type === "corner") {
+        nextW = Math.max(180, Math.min(3840, startW + Math.round(deltaX)));
+      }
+      if (type === "bottom" || type === "corner") {
+        nextH = Math.max(180, Math.min(2160, startH + Math.round(deltaY)));
+      }
+      setViewportDimensions(nextW, nextH);
+    };
+
+    const onPointerUp = () => {
+      setIsDragging(null);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
   const isBlank = !url || url === "about:blank";
+  const isSimulatedDevice = isActive && viewportMode !== "desktop";
+
+  const currentPreset = getPresetById(selectedDeviceId);
+  const isWatch = viewportMode === "watch";
+  const isCircularWatch = isWatch && (currentPreset?.isCircular || selectedDeviceId === "galaxy-watch-6");
+  const isMobile = viewportMode === "mobile";
+  const isTablet = viewportMode === "tablet";
+  const scaleVal = typeof deviceScale === "number" ? deviceScale : 1;
+
+  if (isSimulatedDevice) {
+    return (
+      <div
+        className="w-full h-full relative flex flex-col items-center bg-[#07080c] overflow-hidden select-none"
+        style={{ display: isActive ? "flex" : "none" }}
+      >
+        {/* Top Floating Simulator Control Bar */}
+        <div className="w-full h-8 bg-[#0d0f17] border-b border-[var(--forge-border)] px-4 flex items-center justify-between text-[10px] text-[var(--forge-text-muted)] shrink-0 z-20">
+          {/* Left: Category Icons & Preset Selector */}
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#FF6B00] animate-pulse" />
+
+            {/* Quick Category Switcher */}
+            <div className="flex items-center gap-0.5 bg-[var(--forge-surface)] p-0.5 rounded border border-[var(--forge-border)]">
+              <button
+                type="button"
+                onClick={() => setViewportMode("desktop")}
+                title="Desktop"
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  (viewportMode as string) === "desktop" ? "bg-[var(--forge-input)] text-[#FF6B00]" : "text-[var(--forge-text-muted)] hover:text-white"
+                }`}
+              >
+                <Monitor size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportMode("tablet")}
+                title="Tablet"
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  viewportMode === "tablet" ? "bg-[var(--forge-input)] text-[#FF6B00]" : "text-[var(--forge-text-muted)] hover:text-white"
+                }`}
+              >
+                <Tablet size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportMode("mobile")}
+                title="Mobile"
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  viewportMode === "mobile" ? "bg-[var(--forge-input)] text-[#FF6B00]" : "text-[var(--forge-text-muted)] hover:text-white"
+                }`}
+              >
+                <Smartphone size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportMode("watch")}
+                title="Smart Watch"
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  viewportMode === "watch" ? "bg-[var(--forge-input)] text-[#FF6B00]" : "text-[var(--forge-text-muted)] hover:text-white"
+                }`}
+              >
+                <Watch size={11} />
+              </button>
+            </div>
+
+            {/* Device Presets Dropdown */}
+            <select
+              value={selectedDeviceId}
+              onChange={(e) => selectDevicePreset(e.target.value)}
+              className="bg-[var(--forge-surface)] text-[var(--forge-text)] border border-[var(--forge-border)] rounded px-2 py-0.5 text-[10px] cursor-pointer outline-none max-w-[170px] font-sans hover:border-[#FF6B00]/60 transition-colors"
+              title="Select a popular device preset"
+            >
+              <optgroup label="⌚ Smart Watches">
+                {DEVICE_PRESETS.filter((p) => p.category === "watch").map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.width}×{p.height})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="📱 Mobile Phones">
+                {DEVICE_PRESETS.filter((p) => p.category === "mobile").map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.width}×{p.height})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="💻 Tablets">
+                {DEVICE_PRESETS.filter((p) => p.category === "tablet").map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.width}×{p.height})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="🖥️ Laptops / Desktops">
+                {DEVICE_PRESETS.filter((p) => p.category === "desktop").map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.width}×{p.height})
+                  </option>
+                ))}
+              </optgroup>
+              {selectedDeviceId === "custom" && (
+                <option value="custom">✏️ Custom ({viewportWidth}×{viewportHeight})</option>
+              )}
+            </select>
+          </div>
+
+          {/* Center: Manual Pixel Inputs (W × H) */}
+          <div className="flex items-center gap-1.5 font-mono text-[10px] bg-[var(--forge-surface)] px-2 py-0.5 rounded border border-[var(--forge-border)]">
+            <span className="text-[var(--forge-text-muted)] font-semibold">W:</span>
+            <input
+              type="number"
+              min={180}
+              max={3840}
+              value={viewportWidth}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val)) setViewportDimensions(val, viewportHeight);
+              }}
+              className="w-12 bg-transparent text-center text-[10px] text-[#FF6B00] font-bold outline-none"
+              title="Manual Width in pixels"
+            />
+            <span className="text-[var(--forge-text-muted)]">×</span>
+            <span className="text-[var(--forge-text-muted)] font-semibold">H:</span>
+            <input
+              type="number"
+              min={180}
+              max={2160}
+              value={viewportHeight}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val)) setViewportDimensions(viewportWidth, val);
+              }}
+              className="w-12 bg-transparent text-center text-[10px] text-[#FF6B00] font-bold outline-none"
+              title="Manual Height in pixels"
+            />
+            <span className="text-[var(--forge-text-muted)]">px</span>
+          </div>
+
+          {/* Right: Scale Selector, Rotate, and Exit */}
+          <div className="flex items-center gap-2">
+            {/* Scale Selector */}
+            <div className="flex items-center gap-1 bg-[var(--forge-surface)] px-1.5 py-0.5 rounded border border-[var(--forge-border)]">
+              <ZoomIn size={10} className="text-[var(--forge-text-muted)]" />
+              <select
+                value={scaleVal}
+                onChange={(e) => setDeviceScale(parseFloat(e.target.value))}
+                className="bg-transparent text-[var(--forge-text)] text-[10px] outline-none cursor-pointer"
+                title="Display Zoom / Scale factor"
+              >
+                <option value={0.5}>50%</option>
+                <option value={0.75}>75%</option>
+                <option value={1}>100%</option>
+                <option value={1.25}>125%</option>
+                <option value={1.5}>150%</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleViewportOrientation}
+              title={`Rotate Orientation (currently ${viewportOrientation})`}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-white text-[10px] transition-colors cursor-pointer"
+            >
+              <RotateCw size={10} />
+              <span>Rotate</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewportMode("desktop")}
+              title="Exit Device Mode & return to full Desktop viewport"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#FF6B00]/20 hover:bg-[#FF6B00]/30 text-[#FF6B00] text-[10px] font-semibold transition-colors cursor-pointer"
+            >
+              <Monitor size={10} />
+              <span>Exit Device Mode</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Centered Device Chassis Frame Container */}
+        <div className="flex-1 w-full overflow-auto flex items-center justify-center p-4 sm:p-8 bg-[#07080c]">
+          <div
+            className="transition-transform duration-150 origin-center"
+            style={{
+              transform: `scale(${scaleVal})`,
+            }}
+          >
+            {/* Device Frame Body */}
+            <div
+              className={`relative flex flex-col transition-all duration-200 shadow-[0_25px_60px_rgba(0,0,0,0.9)] ${
+                isCircularWatch
+                  ? "rounded-full p-4 bg-gradient-to-b from-[#2e3343] via-[#1c1f2b] to-[#13151f] border-2 border-[#434b60]"
+                  : isWatch
+                  ? "rounded-[46px] p-3.5 bg-gradient-to-b from-[#2e3343] via-[#1c1f2b] to-[#13151f] border-2 border-[#434b60]"
+                  : isMobile
+                  ? "rounded-[38px] p-2.5 bg-gradient-to-b from-[#1f2330] to-[#12141c] border-2 border-[#313749]"
+                  : isTablet
+                  ? "rounded-[22px] p-3 bg-[#161823] border-2 border-[#2c3244]"
+                  : "rounded-[14px] p-2 bg-[#161823] border border-[#2c3244]"
+              }`}
+              style={{
+                width: `${viewportWidth + (isCircularWatch ? 32 : isWatch ? 28 : isMobile ? 20 : isTablet ? 24 : 16)}px`,
+                height: `${viewportHeight + (isCircularWatch ? 32 : isWatch ? 28 : isMobile ? 20 : isTablet ? 24 : 16)}px`,
+              }}
+            >
+              {/* ================= SMART WATCH DETAILS ================= */}
+              {isWatch && (
+                <>
+                  {/* Top Strap Lug */}
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-28 h-3 bg-[#161822] rounded-t-md border-t border-[#343b4f] z-10 pointer-events-none" />
+                  {/* Bottom Strap Lug */}
+                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-28 h-3 bg-[#161822] rounded-b-md border-b border-[#343b4f] z-10 pointer-events-none" />
+                  {/* Digital Crown on upper right */}
+                  <div className="absolute -right-3 top-10 w-2.5 h-9 bg-gradient-to-b from-[#4b536c] via-[#757f9e] to-[#4b536c] rounded-r-xs border border-[#596381] shadow-md z-10 pointer-events-none flex flex-col justify-between py-1">
+                    <div className="h-0.5 bg-[#2a2e3d]" />
+                    <div className="h-0.5 bg-[#2a2e3d]" />
+                    <div className="h-0.5 bg-[#2a2e3d]" />
+                  </div>
+                  {/* Flush Action Button on lower right */}
+                  <div className="absolute -right-2 top-24 w-1.5 h-7 bg-[#343949] rounded-r-xs border border-[#485066] z-10 pointer-events-none" />
+                </>
+              )}
+
+              {/* ================= PHONE DETAILS ================= */}
+              {isMobile && viewportOrientation === "portrait" && (
+                <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-24 h-4 bg-black rounded-full z-30 pointer-events-none flex items-center justify-between px-3">
+                  <div className="w-2 h-2 rounded-full bg-[#14161f]" />
+                  <div className="w-8 h-1 rounded-full bg-[#14161f]" />
+                </div>
+              )}
+
+              {/* ================= TABLET DETAILS ================= */}
+              {isTablet && (
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#262b3b] rounded-full z-30 pointer-events-none" />
+              )}
+
+              {/* Inner Screen Container */}
+              <div
+                className={`w-full h-full overflow-hidden relative flex-1 ${
+                  isCircularWatch
+                    ? "rounded-full bg-black"
+                    : isWatch
+                    ? "rounded-[34px] bg-black"
+                    : isMobile
+                    ? "rounded-[28px] bg-white"
+                    : isTablet
+                    ? "rounded-[14px] bg-white"
+                    : "rounded-[8px] bg-white"
+                }`}
+              >
+                {isBlank && (
+                  <div className="absolute inset-0 z-10 bg-[var(--forge-bg)]">
+                    <NewTabHome
+                      onNavigate={(targetUrl) => {
+                        const currentEngine = useNavigationStore.getState().searchEngine;
+                        const cleanUrl = normalizeUrl(targetUrl, currentEngine);
+                        updateTab(tabId, { url: cleanUrl });
+                        setUrlBarValue(cleanUrl);
+                      }}
+                    />
+                  </div>
+                )}
+                <webview
+                  ref={ref as any}
+                  src={initialUrl.current}
+                  className="w-full h-full"
+                  style={{
+                    width: `${viewportWidth}px`,
+                    height: `${viewportHeight}px`,
+                    visibility: isBlank ? "hidden" : "visible",
+                    position: isBlank ? "absolute" : "relative",
+                    pointerEvents: isBlank ? "none" : "auto",
+                  }}
+                  partition="persist:forge"
+                  allowpopups={"true" as any}
+                  allowFullScreen={true}
+                  nodeintegrationinsubframes={"true" as any}
+                  preload={guestPreload || globalGuestPreloadPath}
+                />
+              </div>
+
+              {/* ================= INTERACTIVE RESIZE HANDLES ================= */}
+              {/* Right edge: width resize */}
+              <div
+                onPointerDown={(e) => handleDragStart(e, "right")}
+                title="Drag to resize width"
+                className="absolute right-0 top-1/4 bottom-1/4 w-4 cursor-ew-resize flex items-center justify-center -mr-2 z-40 group"
+              >
+                <div className="w-1.5 h-12 rounded-full bg-[var(--forge-border)] group-hover:bg-[#FF6B00] group-hover:scale-y-125 transition-all shadow-md" />
+              </div>
+
+              {/* Bottom edge: height resize */}
+              <div
+                onPointerDown={(e) => handleDragStart(e, "bottom")}
+                title="Drag to resize height"
+                className="absolute bottom-0 left-1/4 right-1/4 h-4 cursor-ns-resize flex items-center justify-center -mb-2 z-40 group"
+              >
+                <div className="h-1.5 w-12 rounded-full bg-[var(--forge-border)] group-hover:bg-[#FF6B00] group-hover:scale-x-125 transition-all shadow-md" />
+              </div>
+
+              {/* Corner: both width & height */}
+              <div
+                onPointerDown={(e) => handleDragStart(e, "corner")}
+                title="Drag to resize width and height"
+                className="absolute -bottom-2 -right-2 w-5 h-5 cursor-nwse-resize flex items-center justify-center z-40 group"
+              >
+                <div className="w-3.5 h-3.5 rounded-br-md border-r-2 border-b-2 border-[var(--forge-border)] group-hover:border-[#FF6B00] group-hover:scale-125 transition-all" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Drag Dimensions Floating Badge */}
+        {isDragging && (
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#FF6B00] text-white px-3.5 py-1 rounded-full text-xs font-mono font-bold shadow-2xl z-50 animate-pulse flex items-center gap-1.5 pointer-events-none">
+            <span>{viewportWidth}px</span>
+            <span>×</span>
+            <span>{viewportHeight}px</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -403,10 +810,10 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         <div className="absolute inset-0 z-10 bg-[var(--forge-bg)]">
           <NewTabHome
             onNavigate={(targetUrl) => {
-              lastNavigatedUrl.current = targetUrl;
-              ref.current?.loadURL(targetUrl);
-              updateTab(tabId, { url: targetUrl });
-              setUrlBarValue(targetUrl);
+              const currentEngine = useNavigationStore.getState().searchEngine;
+              const cleanUrl = normalizeUrl(targetUrl, currentEngine);
+              updateTab(tabId, { url: cleanUrl });
+              setUrlBarValue(cleanUrl);
             }}
           />
         </div>
@@ -415,7 +822,11 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         ref={ref as any}
         src={initialUrl.current}
         className="w-full h-full"
-        style={{ display: isBlank ? "none" : "flex" }}
+        style={{
+          visibility: isBlank ? "hidden" : "visible",
+          position: isBlank ? "absolute" : "relative",
+          pointerEvents: isBlank ? "none" : "auto",
+        }}
         partition="persist:forge"
         allowpopups={"true" as any}
         allowFullScreen={true}

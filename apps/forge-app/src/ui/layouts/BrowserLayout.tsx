@@ -13,6 +13,7 @@ import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { useDownloadsStore } from "../../core/downloads/useDownloadsStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
+import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
 import { Minimize2 } from "lucide-react";
 
 export function BrowserLayout() {
@@ -23,6 +24,22 @@ export function BrowserLayout() {
   const webviewRefs = useRef<Map<string, WebviewElement>>(new Map());
   const [showExitHint, setShowExitHint] = useState(false);
   const exitHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Preserve stable DOM hierarchy for WebViews: reordering tabs in TabBar
+  // must never detach, remount, or alter DOM hierarchy of <webview> elements.
+  const [stableTabs, setStableTabs] = useState(tabs);
+  useEffect(() => {
+    setStableTabs((prev) => {
+      const currentTabMap = new Map(tabs.map((t) => [t.id, t]));
+      // Keep previous ordering of IDs for stable DOM, but ALWAYS use fresh tab data from tabs store
+      const updated = prev
+        .filter((t) => currentTabMap.has(t.id))
+        .map((t) => currentTabMap.get(t.id)!);
+      const prevIds = new Set(updated.map((t) => t.id));
+      const added = tabs.filter((t) => !prevIds.has(t.id));
+      return [...updated, ...added];
+    });
+  }, [tabs]);
 
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [isHotkeysOpen, setIsHotkeysOpen] = useState(false);
@@ -355,6 +372,12 @@ export function BrowserLayout() {
         case "tab:prev":
           useTabsStore.getState().prevTab();
           break;
+        case "tab:move-left":
+          useTabsStore.getState().moveTabLeft();
+          break;
+        case "tab:move-right":
+          useTabsStore.getState().moveTabRight();
+          break;
 
         // Navigation and Windows
         case "nav:focus-address":
@@ -432,6 +455,9 @@ export function BrowserLayout() {
         case "page:downloads":
           useDownloadsStore.getState().toggleOpen();
           break;
+        case "media:pip":
+          handleTogglePiP();
+          break;
         case "help:hotkeys":
           setIsHotkeysOpen((prev) => !prev);
           break;
@@ -449,7 +475,7 @@ export function BrowserLayout() {
           break;
       }
     },
-    [activeWebview, handleToggleFullscreen, tabs, activeTabId, triggerZoomBadge, triggerToast]
+    [activeWebview, handleToggleFullscreen, handleTogglePiP, tabs, activeTabId, triggerZoomBadge, triggerToast]
   );
 
   // Listen for shortcuts from Electron IPC (intercepted from webviews or main window)
@@ -521,8 +547,10 @@ export function BrowserLayout() {
       if (ctrl && !shift && !alt && key === "t") action = "tab:new";
       else if (ctrl && !shift && !alt && key === "w") action = "tab:close";
       else if (ctrl && shift && !alt && key === "t") action = "tab:reopen";
+      else if (ctrl && shift && !alt && (key === "pagedown" || code === "PageDown")) action = "tab:move-right";
+      else if (ctrl && shift && !alt && (key === "pageup" || code === "PageUp")) action = "tab:move-left";
       else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) action = "tab:next";
-      else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) action = "tab:prev";
+      else if (ctrl && shift && !alt && (key === "tab" || code === "Tab")) action = "tab:prev";
       else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) action = "tab:prev";
       else if (ctrl && !shift && !alt && /^[1-9]$/.test(key)) action = `tab:select-${key}`;
       // Navigation and Windows
@@ -940,8 +968,11 @@ export function BrowserLayout() {
   }, []);
 
   const handleNavigate = (url: string) => {
-    activeWebview()?.loadURL(url);
-    updateTab(activeTabId, { url });
+    const currentActiveId = useTabsStore.getState().activeTabId;
+    const currentEngine = useNavigationStore.getState().searchEngine;
+    const cleanUrl = normalizeUrl(url, currentEngine);
+    updateTab(currentActiveId, { url: cleanUrl });
+    useNavigationStore.getState().setUrlBarValue(cleanUrl);
   };
 
   const handleBack    = () => activeWebview()?.goBack();
@@ -995,7 +1026,7 @@ export function BrowserLayout() {
             onClose={() => setIsFindOpen(false)}
           />
 
-          {tabs.map((tab) => (
+          {stableTabs.map((tab) => (
             <WebView
               key={tab.id}
               tabId={tab.id}

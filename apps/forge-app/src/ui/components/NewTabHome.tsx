@@ -1,5 +1,7 @@
-﻿import { useState } from "react";
-import { Search, Globe, Terminal, ArrowRight, ShieldCheck, Flame, BookOpen, Layers, Code2 } from "lucide-react";
+import { useState } from "react";
+import { Globe, Terminal, ArrowRight, BookOpen, Layers, Code2, X, Flame, ShieldCheck } from "lucide-react";
+import { normalizeUrl, useNavigationStore, SEARCH_ENGINES } from "../../core/navigation/useNavigationStore";
+import { SearchEngineDropdown } from "./SearchEngineDropdown";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -23,16 +25,14 @@ const DEV_SHORTCUTS = [
 export function NewTabHome({ onNavigate }: Props) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
+  const { searchEngine } = useNavigationStore();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
-    if (/^https?:\/\//i.test(q) || (q.includes(".") && !q.includes(" "))) {
-      onNavigate(q.startsWith("http") ? q : `https://${q}`);
-    } else {
-      onNavigate(`https://www.google.com/search?q=${encodeURIComponent(q)}`);
-    }
+    const url = normalizeUrl(q, searchEngine);
+    onNavigate(url);
   };
 
   return (
@@ -59,7 +59,7 @@ export function NewTabHome({ onNavigate }: Props) {
         {/* Search bar */}
         <form onSubmit={handleSearch} className="w-full">
           <div
-            className="flex items-center h-11 rounded-xl overflow-hidden transition-all duration-200"
+            className="flex items-center h-11 rounded-xl transition-all duration-200"
             style={{
               background: "var(--forge-surface)",
               border: focused
@@ -70,21 +70,42 @@ export function NewTabHome({ onNavigate }: Props) {
                 : "0 1px 4px rgba(0,0,0,0.15)",
             }}
           >
-            <Search size={15} className="ml-3.5 shrink-0 text-[var(--forge-text-muted)]" />
+            {/* Search Engine Dropdown */}
+            <div className="ml-2 shrink-0">
+              <SearchEngineDropdown variant="home" />
+            </div>
+
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              placeholder="Search or enter address..."
-              className="flex-1 h-full px-3 text-[13px] bg-transparent border-none outline-none text-center text-[var(--forge-text)] placeholder-[var(--forge-text-muted)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
+                  handleSearch(e);
+                }
+              }}
+              placeholder={SEARCH_ENGINES[searchEngine]?.placeholder || "Search or enter address..."}
+              className="flex-1 h-full px-3 text-[13px] bg-transparent border-none outline-none text-center text-[var(--forge-text)] placeholder-[var(--forge-text-muted)] min-w-0"
               autoFocus
             />
+
+            {query.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                title="Clear"
+                className="w-5 h-5 mr-1 flex items-center justify-center rounded-full text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
+              >
+                <X size={12} />
+              </button>
+            )}
+
             <button
               type="submit"
-              title="Navigate"
-              className="h-full px-3.5 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-colors duration-150 cursor-pointer border-l border-[var(--forge-border)]"
+              title="Search (Enter)"
+              className="h-full px-3.5 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-colors duration-150 cursor-pointer border-l border-[var(--forge-border)] shrink-0"
             >
               <ArrowRight size={15} />
             </button>

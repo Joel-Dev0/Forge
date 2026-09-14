@@ -389,7 +389,7 @@ async function request(options, redirectCount = 0) {
 }
 
 // electron/network/networkMonitor.ts
-import { app as app3, ipcMain as ipcMain2, session as session2 } from "electron";
+import { app as app4, ipcMain as ipcMain4, session as session4 } from "electron";
 
 // electron/adblock/adblockAdapter.ts
 import path2 from "node:path";
@@ -2430,321 +2430,8 @@ function getEngineInstance() {
   return engine;
 }
 
-// electron/network/networkMonitor.ts
-var entries = /* @__PURE__ */ new Map();
-var contentsDebuggerMap = /* @__PURE__ */ new Map();
-function getBaseName(urlStr) {
-  try {
-    const parsed = new URL(urlStr);
-    const pathname = parsed.pathname;
-    const parts = pathname.split("/").filter(Boolean);
-    const last = parts[parts.length - 1];
-    if (last) {
-      return parsed.search ? `${last}${parsed.search.substring(0, 20)}` : last;
-    }
-    return parsed.hostname + (parsed.pathname === "/" ? "" : parsed.pathname);
-  } catch {
-    return urlStr.substring(0, 40);
-  }
-}
-function normalizeType(type) {
-  if (!type) return "other";
-  const lower = type.toLowerCase();
-  if (lower.includes("xhr")) return "xhr";
-  if (lower.includes("fetch")) return "fetch";
-  if (lower.includes("document") || lower.includes("doc")) return "document";
-  if (lower.includes("script") || lower.includes("js")) return "script";
-  if (lower.includes("stylesheet") || lower.includes("css")) return "stylesheet";
-  if (lower.includes("image") || lower.includes("img") || lower.includes("png") || lower.includes("jpg") || lower.includes("svg")) return "image";
-  if (lower.includes("font")) return "font";
-  if (lower.includes("media") || lower.includes("video") || lower.includes("audio")) return "media";
-  return "other";
-}
-function initNetworkMonitor(getMainWindow) {
-  function broadcastEntry(entry) {
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("network:entry-update", entry);
-    }
-  }
-  app3.on("web-contents-created", (_event, contents) => {
-    if (contents.getType() !== "webview") return;
-    const contentsId = contents.id;
-    contentsDebuggerMap.set(contentsId, contents);
-    const attachCdp = () => {
-      try {
-        if (!contents.debugger.isAttached()) {
-          contents.debugger.attach("1.3");
-        }
-        contents.debugger.sendCommand("Network.enable", {
-          maxPostDataSize: 10 * 1024 * 1024,
-          maxResourceBufferSize: 10 * 1024 * 1024,
-          maxTotalBufferSize: 50 * 1024 * 1024
-        }).catch(() => {
-        });
-        contents.debugger.on("message", async (_dbgEvent, method, params) => {
-          if (method === "Network.requestWillBeSent") {
-            const req = params.request;
-            const entryId = String(params.requestId);
-            const startTime = Math.round(params.timestamp * 1e3);
-            const existing = entries.get(entryId);
-            const entry = {
-              id: entryId,
-              url: req.url,
-              name: getBaseName(req.url),
-              method: req.method || "GET",
-              resourceType: normalizeType(params.type),
-              status: existing ? existing.status : 0,
-              statusText: existing ? existing.statusText : "Pending",
-              mimeType: void 0,
-              requestHeaders: req.headers || {},
-              responseHeaders: existing ? existing.responseHeaders : {},
-              postData: req.postData || (req.hasPostData ? "(Payload available)" : void 0),
-              size: 0,
-              startTime: startTime || Date.now(),
-              duration: 0,
-              state: "pending",
-              initiator: params.initiator?.type
-            };
-            entries.set(entryId, entry);
-            broadcastEntry(entry);
-          } else if (method === "Network.responseReceived") {
-            const entryId = String(params.requestId);
-            const entry = entries.get(entryId);
-            const resp = params.response;
-            if (entry && resp) {
-              entry.status = resp.status;
-              entry.statusText = resp.statusText || String(resp.status);
-              entry.mimeType = resp.mimeType;
-              entry.responseHeaders = resp.headers || {};
-              if (params.type) entry.resourceType = normalizeType(params.type);
-              broadcastEntry(entry);
-            }
-          } else if (method === "Network.loadingFinished") {
-            const entryId = String(params.requestId);
-            const entry = entries.get(entryId);
-            if (entry) {
-              const finishTime = Math.round(params.timestamp * 1e3);
-              entry.duration = finishTime > entry.startTime ? finishTime - entry.startTime : 1;
-              entry.size = params.encodedDataLength || entry.size;
-              entry.state = "completed";
-              try {
-                const bodyResult = await contents.debugger.sendCommand("Network.getResponseBody", {
-                  requestId: params.requestId
-                });
-                if (bodyResult && bodyResult.body) {
-                  entry.responseBody = bodyResult.base64Encoded ? Buffer.from(bodyResult.body, "base64").toString("utf-8") : bodyResult.body;
-                  entry.hasResponseBody = true;
-                }
-              } catch {
-              }
-              broadcastEntry(entry);
-            }
-          } else if (method === "Network.loadingFailed") {
-            const entryId = String(params.requestId);
-            const entry = entries.get(entryId);
-            if (entry) {
-              entry.state = "failed";
-              entry.error = params.errorText || "Request failed";
-              if (params.canceled) entry.error = "Canceled";
-              broadcastEntry(entry);
-            }
-          }
-        });
-      } catch (err) {
-        console.warn("Forge Network Monitor: Could not attach CDP debugger:", err);
-      }
-    };
-    contents.once("dom-ready", attachCdp);
-    contents.on("destroyed", () => {
-      contentsDebuggerMap.delete(contentsId);
-    });
-  });
-  function getSourceUrl(details) {
-    if (details.referrer) return details.referrer;
-    if (details.frame && details.frame.url) return details.frame.url;
-    if (details.webContentsId) {
-      const contents = contentsDebuggerMap.get(details.webContentsId);
-      if (contents && !contents.isDestroyed()) {
-        return contents.getURL();
-      }
-    }
-    return void 0;
-  }
-  const ses = session2.fromPartition("persist:forge");
-  ses.webRequest.onBeforeRequest((details, callback) => {
-    const entryId = String(details.id);
-    const sourceUrl = getSourceUrl(details);
-    const adblock = evaluateAdBlockRequest({
-      url: details.url,
-      method: details.method,
-      resourceType: details.resourceType,
-      referrer: sourceUrl
-    });
-    if (adblock.cancel) {
-      const entry = {
-        id: entryId,
-        url: details.url,
-        name: getBaseName(details.url),
-        method: details.method || "GET",
-        resourceType: normalizeType(details.resourceType),
-        status: 0,
-        statusText: "Blocked by AdBlock",
-        requestHeaders: {},
-        responseHeaders: {},
-        size: 0,
-        startTime: Date.now(),
-        duration: 0,
-        state: "failed",
-        error: `net::ERR_BLOCKED_BY_CLIENT (${adblock.decision.rule?.raw || "AdBlock"})`
-      };
-      entries.set(entryId, entry);
-      broadcastEntry(entry);
-      callback({ cancel: true });
-      return;
-    }
-    const engine2 = getEngineInstance();
-    if (engine2.isEnabled() && engine2.isFeatureEnabled("trackerProtection")) {
-      const stripped = stripTrackingParameters(details.url);
-      if (stripped.strippedParams.length > 0 && stripped.cleanUrl !== details.url) {
-        callback({ redirectURL: stripped.cleanUrl });
-        return;
-      }
-    }
-    let postData;
-    if (details.uploadData && details.uploadData.length > 0) {
-      try {
-        const parts = details.uploadData.map((u) => u.bytes ? u.bytes.toString("utf-8") : "").filter(Boolean);
-        if (parts.length > 0) postData = parts.join("");
-      } catch {
-      }
-    }
-    if (!entries.has(entryId)) {
-      const entry = {
-        id: entryId,
-        url: details.url,
-        name: getBaseName(details.url),
-        method: details.method || "GET",
-        resourceType: normalizeType(details.resourceType),
-        status: 0,
-        statusText: "Pending",
-        requestHeaders: {},
-        responseHeaders: {},
-        postData,
-        size: 0,
-        startTime: Date.now(),
-        duration: 0,
-        state: "pending"
-      };
-      entries.set(entryId, entry);
-      broadcastEntry(entry);
-    } else if (postData) {
-      const entry = entries.get(entryId);
-      entry.postData = postData;
-      broadcastEntry(entry);
-    }
-    callback({});
-  });
-  ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    const requestHeaders = { ...details.requestHeaders };
-    const engine2 = getEngineInstance();
-    if (engine2 && engine2.isEnabled()) {
-      const decision = engine2.match({
-        url: details.url,
-        method: details.method,
-        resourceType: details.resourceType,
-        sourceUrl: getSourceUrl(details)
-      });
-      if (decision.blocked) {
-        delete requestHeaders["Cookie"];
-        delete requestHeaders["cookie"];
-        delete requestHeaders["Sec-CH-UA"];
-        delete requestHeaders["sec-ch-ua"];
-      }
-    }
-    callback({ requestHeaders });
-  });
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    const entryId = String(details.id);
-    const entry = entries.get(entryId);
-    const responseHeaders = { ...details.responseHeaders };
-    const engine2 = getEngineInstance();
-    if (engine2 && engine2.isEnabled()) {
-      const decision = engine2.match({
-        url: details.url,
-        method: details.method,
-        resourceType: details.resourceType,
-        sourceUrl: getSourceUrl(details)
-      });
-      if (decision.blocked) {
-        delete responseHeaders["Set-Cookie"];
-        delete responseHeaders["set-cookie"];
-      }
-    }
-    for (const key of Object.keys(responseHeaders)) {
-      const lower = key.toLowerCase();
-      if (lower === "permissions-policy" || lower === "feature-policy") {
-        const val = responseHeaders[key];
-        if (Array.isArray(val)) {
-          responseHeaders[key] = val.map(
-            (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*")
-          );
-        } else if (typeof val === "string") {
-          responseHeaders[key] = val.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*");
-        }
-      }
-    }
-    if (entry) {
-      entry.status = details.statusCode;
-      entry.statusText = details.statusLine ? details.statusLine.replace(/^HTTP\/\d\.\d\s+\d+\s*/, "") : "OK";
-      if (responseHeaders) {
-        const headers = {};
-        for (const [k, v] of Object.entries(responseHeaders)) {
-          headers[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : v;
-        }
-        entry.responseHeaders = headers;
-        if (headers["content-type"]) {
-          entry.mimeType = headers["content-type"].split(";")[0].trim();
-        }
-      }
-      broadcastEntry(entry);
-    }
-    callback({ responseHeaders });
-  });
-  ses.webRequest.onCompleted((details) => {
-    const entryId = String(details.id);
-    const entry = entries.get(entryId);
-    if (entry) {
-      entry.status = details.statusCode;
-      entry.state = "completed";
-      entry.duration = Math.max(1, Date.now() - entry.startTime);
-      broadcastEntry(entry);
-    }
-  });
-  ses.webRequest.onErrorOccurred((details) => {
-    const entryId = String(details.id);
-    const entry = entries.get(entryId);
-    if (entry) {
-      entry.state = "failed";
-      entry.error = details.error || "Network error";
-      broadcastEntry(entry);
-    }
-  });
-  ipcMain2.handle("network:get-body", (_event, requestId) => {
-    const entry = entries.get(requestId);
-    return entry?.responseBody || null;
-  });
-  ipcMain2.on("network:clear", () => {
-    entries.clear();
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("network:cleared");
-    }
-  });
-}
-
-// electron/network/secureNetworkAdapter.ts
-import { app as app4, ipcMain as ipcMain3, session as session3, net as net2 } from "electron";
+// electron/network/vpnAdapter.ts
+import { ipcMain as ipcMain3 } from "electron";
 
 // ../../packages/network-core/src/providers/DirectProvider.ts
 var DirectProvider = class {
@@ -3670,6 +3357,7 @@ var VpnManager = class {
 };
 
 // electron/network/secureNetworkAdapter.ts
+import { app as app3, ipcMain as ipcMain2, session as session2, net as net2 } from "electron";
 var networkManager = null;
 var activeProxyCredentials = null;
 function getNetworkManager() {
@@ -3690,10 +3378,10 @@ function initSecureNetworkAdapter(getMainWindow) {
     broadcastStatus(status2);
   });
   const getTargetSessions = () => [
-    session3.fromPartition("persist:forge"),
-    session3.defaultSession
+    session2.fromPartition("persist:forge"),
+    session2.defaultSession
   ];
-  app4.on("login", (event, _webContents, _request, authInfo, callback) => {
+  app3.on("login", (event, _webContents, _request, authInfo, callback) => {
     if (authInfo.isProxy && activeProxyCredentials?.username) {
       event.preventDefault();
       callback(activeProxyCredentials.username, activeProxyCredentials.password || "");
@@ -3712,10 +3400,10 @@ function initSecureNetworkAdapter(getMainWindow) {
       return await res.json();
     }
   };
-  ipcMain3.handle("secure-network:get-status", async () => {
+  ipcMain2.handle("secure-network:get-status", async () => {
     return manager.getStatus();
   });
-  ipcMain3.handle(
+  ipcMain2.handle(
     "secure-network:connect",
     async (_event, payload) => {
       const { mode, config } = payload;
@@ -3760,7 +3448,7 @@ function initSecureNetworkAdapter(getMainWindow) {
       }
     }
   );
-  ipcMain3.handle("secure-network:disconnect", async () => {
+  ipcMain2.handle("secure-network:disconnect", async () => {
     try {
       activeProxyCredentials = null;
       const sessions = getTargetSessions();
@@ -3775,7 +3463,7 @@ function initSecureNetworkAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain3.handle("secure-network:refresh-ip", async () => {
+  ipcMain2.handle("secure-network:refresh-ip", async () => {
     try {
       const location = await manager.resolveLocation(sessionFetch);
       const status2 = await manager.getStatus();
@@ -3785,7 +3473,7 @@ function initSecureNetworkAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain3.handle("secure-network:test-connection", async (_event, targetUrl) => {
+  ipcMain2.handle("secure-network:test-connection", async (_event, targetUrl) => {
     try {
       const testFetch = async (url) => {
         return net2.fetch(url, { method: "HEAD" });
@@ -3815,13 +3503,27 @@ function initSecureNetworkAdapter(getMainWindow) {
 }
 
 // electron/network/vpnAdapter.ts
-import { ipcMain as ipcMain4, session as session4 } from "electron";
 var vpnManager = null;
 function getVpnManager() {
   if (!vpnManager) {
     vpnManager = new VpnManager();
   }
   return vpnManager;
+}
+function checkVpnKillSwitch(urlStr) {
+  try {
+    const manager = getVpnManager();
+    const status2 = manager.getStatus();
+    if (!status2.killSwitchEngaged) return false;
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || parsed.protocol === "file:" || parsed.protocol === "devtools:" || parsed.protocol === "chrome-extension:") {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 function initVpnAdapter(getMainWindow) {
   const manager = getVpnManager();
@@ -3835,33 +3537,10 @@ function initVpnAdapter(getMainWindow) {
   manager.onVpnStatusChange((status2) => {
     broadcastStatus(status2);
   });
-  const targetSessions = [
-    session4.fromPartition("persist:forge"),
-    session4.defaultSession
-  ];
-  for (const ses of targetSessions) {
-    ses.webRequest.onBeforeRequest((details, callback) => {
-      const status2 = manager.getStatus();
-      if (status2.killSwitchEngaged) {
-        try {
-          const parsed = new URL(details.url);
-          const hostname = parsed.hostname.toLowerCase();
-          if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || parsed.protocol === "file:" || parsed.protocol === "devtools:" || parsed.protocol === "chrome-extension:") {
-            callback({});
-            return;
-          }
-        } catch {
-        }
-        callback({ cancel: true });
-        return;
-      }
-      callback({});
-    });
-  }
-  ipcMain4.handle("vpn:get-status", () => {
+  ipcMain3.handle("vpn:get-status", () => {
     return manager.getStatus();
   });
-  ipcMain4.handle("vpn:connect", async (_event, profileIdOrConfig) => {
+  ipcMain3.handle("vpn:connect", async (_event, profileIdOrConfig) => {
     try {
       const status2 = await manager.connect(profileIdOrConfig);
       await netManager.switchProvider("wireguard", manager.getActiveProfile()?.config);
@@ -3871,7 +3550,7 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, status: manager.getStatus(), error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:disconnect", async () => {
+  ipcMain3.handle("vpn:disconnect", async () => {
     try {
       const status2 = await manager.disconnect();
       await netManager.disconnect().catch(() => {
@@ -3882,15 +3561,15 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, status: manager.getStatus(), error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:set-kill-switch", (_event, enabled) => {
+  ipcMain3.handle("vpn:set-kill-switch", (_event, enabled) => {
     const status2 = manager.setKillSwitch(Boolean(enabled));
     broadcastStatus(status2);
     return { ok: true, status: status2 };
   });
-  ipcMain4.handle("vpn:get-locations", () => {
+  ipcMain3.handle("vpn:get-locations", () => {
     return manager.getLocations();
   });
-  ipcMain4.handle("vpn:select-location", async (_event, locationId) => {
+  ipcMain3.handle("vpn:select-location", async (_event, locationId) => {
     try {
       const status2 = await manager.selectLocation(locationId);
       broadcastStatus(status2);
@@ -3899,10 +3578,10 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:get-profiles", () => {
+  ipcMain3.handle("vpn:get-profiles", () => {
     return manager.getProfiles();
   });
-  ipcMain4.handle("vpn:save-profile", (_event, profile) => {
+  ipcMain3.handle("vpn:save-profile", (_event, profile) => {
     try {
       const saved = manager.saveProfile(profile);
       return { ok: true, profile: saved };
@@ -3910,7 +3589,7 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:delete-profile", (_event, profileId) => {
+  ipcMain3.handle("vpn:delete-profile", (_event, profileId) => {
     try {
       const success = manager.deleteProfile(profileId);
       return { ok: success };
@@ -3918,7 +3597,7 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:import-config", (_event, rawText, name) => {
+  ipcMain3.handle("vpn:import-config", (_event, rawText, name) => {
     try {
       const profile = manager.importConfig(rawText, name);
       return { ok: true, profile };
@@ -3926,7 +3605,7 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:export-config", (_event, profileId) => {
+  ipcMain3.handle("vpn:export-config", (_event, profileId) => {
     try {
       const conf = manager.exportConfig(profileId);
       return { ok: true, conf };
@@ -3934,7 +3613,7 @@ function initVpnAdapter(getMainWindow) {
       return { ok: false, error: err.message || String(err) };
     }
   });
-  ipcMain4.handle("vpn:test-latency", async (_event, locationId) => {
+  ipcMain3.handle("vpn:test-latency", async (_event, locationId) => {
     const loc = manager.getLocations().find((l) => l.id === locationId);
     if (!loc) {
       return { ok: false, pingMs: -1, error: "Location not found" };
@@ -3944,6 +3623,338 @@ function initVpnAdapter(getMainWindow) {
     const measured = Math.max(12, basePing + jitter);
     loc.pingMs = measured;
     return { ok: true, pingMs: measured };
+  });
+}
+
+// electron/network/networkMonitor.ts
+var entries = /* @__PURE__ */ new Map();
+var contentsDebuggerMap = /* @__PURE__ */ new Map();
+var requestContentsMap = /* @__PURE__ */ new Map();
+function getBaseName(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const pathname = parsed.pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) {
+      return parsed.search ? `${last}${parsed.search.substring(0, 20)}` : last;
+    }
+    return parsed.hostname + (parsed.pathname === "/" ? "" : parsed.pathname);
+  } catch {
+    return urlStr.substring(0, 40);
+  }
+}
+function normalizeType(type) {
+  if (!type) return "other";
+  const lower = type.toLowerCase();
+  if (lower.includes("xhr")) return "xhr";
+  if (lower.includes("fetch")) return "fetch";
+  if (lower.includes("document") || lower.includes("doc")) return "document";
+  if (lower.includes("script") || lower.includes("js")) return "script";
+  if (lower.includes("stylesheet") || lower.includes("css")) return "stylesheet";
+  if (lower.includes("image") || lower.includes("img") || lower.includes("png") || lower.includes("jpg") || lower.includes("svg")) return "image";
+  if (lower.includes("font")) return "font";
+  if (lower.includes("media") || lower.includes("video") || lower.includes("audio")) return "media";
+  return "other";
+}
+function initNetworkMonitor(getMainWindow) {
+  let pendingBatch = [];
+  let throttleTimer = null;
+  function flushBatch() {
+    throttleTimer = null;
+    if (pendingBatch.length === 0) return;
+    const batch = pendingBatch;
+    pendingBatch = [];
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("network:entries-batch", batch);
+    }
+  }
+  function broadcastEntry(entry) {
+    pendingBatch.push(entry);
+    if (!throttleTimer) {
+      throttleTimer = setTimeout(flushBatch, 50);
+    }
+  }
+  app4.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() !== "webview") return;
+    const contentsId = contents.id;
+    contentsDebuggerMap.set(contentsId, contents);
+    const attachCdp = () => {
+      try {
+        if (!contents.debugger.isAttached()) {
+          contents.debugger.attach("1.3");
+        }
+        contents.debugger.sendCommand("Network.enable", {
+          maxPostDataSize: 10 * 1024 * 1024,
+          maxResourceBufferSize: 10 * 1024 * 1024,
+          maxTotalBufferSize: 50 * 1024 * 1024
+        }).catch(() => {
+        });
+        contents.debugger.on("message", async (_dbgEvent, method, params) => {
+          if (method === "Network.requestWillBeSent") {
+            const req = params.request;
+            const entryId = String(params.requestId);
+            const startTime = Math.round(params.timestamp * 1e3);
+            requestContentsMap.set(entryId, contentsId);
+            const existing = entries.get(entryId);
+            const entry = {
+              id: entryId,
+              url: req.url,
+              name: getBaseName(req.url),
+              method: req.method || "GET",
+              resourceType: normalizeType(params.type),
+              status: existing ? existing.status : 0,
+              statusText: existing ? existing.statusText : "Pending",
+              mimeType: void 0,
+              requestHeaders: req.headers || {},
+              responseHeaders: existing ? existing.responseHeaders : {},
+              postData: req.postData || (req.hasPostData ? "(Payload available)" : void 0),
+              size: 0,
+              startTime: startTime || Date.now(),
+              duration: 0,
+              state: "pending",
+              initiator: params.initiator?.type
+            };
+            entries.set(entryId, entry);
+            broadcastEntry(entry);
+          } else if (method === "Network.responseReceived") {
+            const entryId = String(params.requestId);
+            const entry = entries.get(entryId);
+            const resp = params.response;
+            if (entry && resp) {
+              entry.status = resp.status;
+              entry.statusText = resp.statusText || String(resp.status);
+              entry.mimeType = resp.mimeType;
+              entry.responseHeaders = resp.headers || {};
+              if (params.type) entry.resourceType = normalizeType(params.type);
+              broadcastEntry(entry);
+            }
+          } else if (method === "Network.loadingFinished") {
+            const entryId = String(params.requestId);
+            const entry = entries.get(entryId);
+            if (entry) {
+              const finishTime = Math.round(params.timestamp * 1e3);
+              entry.duration = finishTime > entry.startTime ? finishTime - entry.startTime : 1;
+              entry.size = params.encodedDataLength || entry.size;
+              entry.state = "completed";
+              broadcastEntry(entry);
+            }
+          } else if (method === "Network.loadingFailed") {
+            const entryId = String(params.requestId);
+            const entry = entries.get(entryId);
+            if (entry) {
+              entry.state = "failed";
+              entry.error = params.errorText || "Request failed";
+              if (params.canceled) entry.error = "Canceled";
+              broadcastEntry(entry);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn("Forge Network Monitor: Could not attach CDP debugger:", err);
+      }
+    };
+    contents.once("dom-ready", attachCdp);
+    contents.on("destroyed", () => {
+      contentsDebuggerMap.delete(contentsId);
+    });
+  });
+  function getSourceUrl(details) {
+    try {
+      if (details.referrer) return details.referrer;
+      if (details.frame && details.frame.url) return details.frame.url;
+      if (details.webContentsId) {
+        const contents = contentsDebuggerMap.get(details.webContentsId);
+        if (contents && !contents.isDestroyed()) {
+          return contents.getURL();
+        }
+      }
+    } catch {
+    }
+    return void 0;
+  }
+  const ses = session4.fromPartition("persist:forge");
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    try {
+      const entryId = String(details.id);
+      const sourceUrl = getSourceUrl(details);
+      if (checkVpnKillSwitch(details.url)) {
+        callback({ cancel: true });
+        return;
+      }
+      const adblock = evaluateAdBlockRequest({
+        url: details.url,
+        method: details.method,
+        resourceType: details.resourceType,
+        referrer: sourceUrl
+      });
+      if (adblock.cancel) {
+        const entry = {
+          id: entryId,
+          url: details.url,
+          name: getBaseName(details.url),
+          method: details.method || "GET",
+          resourceType: normalizeType(details.resourceType),
+          status: 0,
+          statusText: "Blocked by AdBlock",
+          requestHeaders: {},
+          responseHeaders: {},
+          size: 0,
+          startTime: Date.now(),
+          duration: 0,
+          state: "failed",
+          error: `net::ERR_BLOCKED_BY_CLIENT (${adblock.decision.rule?.raw || "AdBlock"})`
+        };
+        entries.set(entryId, entry);
+        broadcastEntry(entry);
+        callback({ cancel: true });
+        return;
+      }
+      const engine2 = getEngineInstance();
+      if (engine2.isEnabled() && engine2.isFeatureEnabled("trackerProtection")) {
+        const stripped = stripTrackingParameters(details.url);
+        if (stripped.strippedParams.length > 0 && stripped.cleanUrl !== details.url) {
+          callback({ redirectURL: stripped.cleanUrl });
+          return;
+        }
+      }
+      let postData;
+      if (details.uploadData && details.uploadData.length > 0) {
+        try {
+          const parts = details.uploadData.map((u) => u.bytes ? u.bytes.toString("utf-8") : "").filter(Boolean);
+          if (parts.length > 0) postData = parts.join("");
+        } catch {
+        }
+      }
+      if (!entries.has(entryId)) {
+        const entry = {
+          id: entryId,
+          url: details.url,
+          name: getBaseName(details.url),
+          method: details.method || "GET",
+          resourceType: normalizeType(details.resourceType),
+          status: 0,
+          statusText: "Pending",
+          requestHeaders: {},
+          responseHeaders: {},
+          postData,
+          size: 0,
+          startTime: Date.now(),
+          duration: 0,
+          state: "pending"
+        };
+        entries.set(entryId, entry);
+        broadcastEntry(entry);
+      } else if (postData) {
+        const entry = entries.get(entryId);
+        entry.postData = postData;
+        broadcastEntry(entry);
+      }
+      callback({});
+    } catch (err) {
+      console.warn("[NetworkMonitor] onBeforeRequest error:", err);
+      callback({});
+    }
+  });
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    try {
+      callback({ requestHeaders: details.requestHeaders });
+    } catch {
+      callback({});
+    }
+  });
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    try {
+      const entryId = String(details.id);
+      const entry = entries.get(entryId);
+      const responseHeaders = { ...details.responseHeaders || {} };
+      for (const key of Object.keys(responseHeaders)) {
+        const lower = key.toLowerCase();
+        if (lower === "permissions-policy" || lower === "feature-policy") {
+          const val = responseHeaders[key];
+          if (Array.isArray(val)) {
+            responseHeaders[key] = val.map(
+              (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*")
+            );
+          } else if (typeof val === "string") {
+            responseHeaders[key] = val.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*");
+          }
+        }
+      }
+      if (entry) {
+        entry.status = details.statusCode;
+        entry.statusText = details.statusLine ? details.statusLine.replace(/^HTTP\/\d\.\d\s+\d+\s*/, "") : "OK";
+        if (responseHeaders) {
+          const headers = {};
+          for (const [k, v] of Object.entries(responseHeaders)) {
+            headers[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : v;
+          }
+          entry.responseHeaders = headers;
+          if (headers["content-type"]) {
+            entry.mimeType = headers["content-type"].split(";")[0].trim();
+          }
+        }
+        broadcastEntry(entry);
+      }
+      callback({ responseHeaders });
+    } catch {
+      callback({ responseHeaders: details.responseHeaders });
+    }
+  });
+  ses.webRequest.onCompleted((details) => {
+    const entryId = String(details.id);
+    const entry = entries.get(entryId);
+    if (entry) {
+      entry.status = details.statusCode;
+      entry.state = "completed";
+      entry.duration = Math.max(1, Date.now() - entry.startTime);
+      broadcastEntry(entry);
+    }
+  });
+  ses.webRequest.onErrorOccurred((details) => {
+    const entryId = String(details.id);
+    const entry = entries.get(entryId);
+    if (entry) {
+      entry.state = "failed";
+      entry.error = details.error || "Network error";
+      broadcastEntry(entry);
+    }
+  });
+  ipcMain4.handle("network:get-body", async (_event, requestId) => {
+    const entry = entries.get(requestId);
+    if (entry?.responseBody) return entry.responseBody;
+    const cId = requestContentsMap.get(requestId);
+    if (cId) {
+      const contents = contentsDebuggerMap.get(cId);
+      if (contents && !contents.isDestroyed()) {
+        try {
+          if (contents.debugger.isAttached()) {
+            const bodyResult = await contents.debugger.sendCommand("Network.getResponseBody", {
+              requestId
+            });
+            if (bodyResult && bodyResult.body) {
+              const body = bodyResult.base64Encoded ? Buffer.from(bodyResult.body, "base64").toString("utf-8") : bodyResult.body;
+              if (entry) {
+                entry.responseBody = body;
+                entry.hasResponseBody = true;
+              }
+              return body;
+            }
+          }
+        } catch {
+        }
+      }
+    }
+    return entry?.responseBody || null;
+  });
+  ipcMain4.on("network:clear", () => {
+    entries.clear();
+    requestContentsMap.clear();
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("network:cleared");
+    }
   });
 }
 
@@ -4050,9 +4061,13 @@ function registerShortcutInterception(contents) {
       action = "tab:close";
     } else if (ctrl && shift && !alt && key === "t") {
       action = "tab:reopen";
+    } else if (ctrl && shift && !alt && (key === "pagedown" || code === "PageDown")) {
+      action = "tab:move-right";
+    } else if (ctrl && shift && !alt && (key === "pageup" || code === "PageUp")) {
+      action = "tab:move-left";
     } else if (ctrl && !shift && !alt && (key === "tab" || code === "Tab" || key === "pagedown" || code === "PageDown")) {
       action = "tab:next";
-    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab" || key === "pageup" || code === "PageUp")) {
+    } else if (ctrl && shift && !alt && (key === "tab" || code === "Tab")) {
       action = "tab:prev";
     } else if (ctrl && !shift && !alt && (key === "pageup" || code === "PageUp")) {
       action = "tab:prev";
@@ -4088,6 +4103,8 @@ function registerShortcutInterception(contents) {
       action = "page:downloads";
     } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
       action = "help:hotkeys";
+    } else if (alt && !ctrl && !shift && (key === "p" || code === "KeyP")) {
+      action = "media:pip";
     }
     if (action) {
       event.preventDefault();
@@ -4362,7 +4379,18 @@ app5.on("web-contents-created", (_event, contents) => {
   } catch {
   }
   registerShortcutInterception(contents);
-  contents.setWindowOpenHandler(() => {
+  contents.setWindowOpenHandler((details) => {
+    const targetUrl = details.url;
+    if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
+      try {
+        const win = BrowserWindow5.getFocusedWindow() || mainWindow;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("tabs:open-tab", { url: targetUrl });
+        }
+      } catch (err) {
+        console.error("[Main] Error routing link to tab:", err);
+      }
+    }
     return { action: "deny" };
   });
   if (contents.getType() !== "webview") return;
@@ -4522,6 +4550,10 @@ app5.whenReady().then(() => {
     setupDownloadListeners(session5.defaultSession);
     const forgeSession = session5.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
+    const defaultUA = forgeSession.getUserAgent();
+    const cleanUA = defaultUA.replace(/Electron\/[0-9.]+\s?/gi, "").replace(/forge(-app)?\/[0-9.]+\s?/gi, "").trim();
+    forgeSession.setUserAgent(cleanUA);
+    session5.defaultSession.setUserAgent(cleanUA);
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;

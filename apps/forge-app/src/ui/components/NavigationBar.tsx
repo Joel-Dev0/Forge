@@ -1,10 +1,11 @@
-import { useRef, useState, useEffect, type KeyboardEvent } from "react";
-import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2 } from "lucide-react";
+import { useRef, useState, useEffect, type KeyboardEvent, type FormEvent } from "react";
+import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2, ArrowRight, X } from "lucide-react";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
-import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
+import { useNavigationStore, normalizeUrl, SEARCH_ENGINES } from "../../core/navigation/useNavigationStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
 import { ShieldsButton } from "./ShieldsButton";
 import { SecureNetworkButton } from "./SecureNetworkButton";
+import { SearchEngineDropdown } from "./SearchEngineDropdown";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -18,7 +19,7 @@ interface Props {
 
 export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggleFullscreen, isFullscreen, onTogglePiP }: Props) {
   const { tabs, activeTabId } = useTabsStore();
-  const { urlBarValue, setUrlBarValue } = useNavigationStore();
+  const { urlBarValue, setUrlBarValue, searchEngine } = useNavigationStore();
   const { addBookmark, removeBookmark, isBookmarked } = useBookmarksStore();
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -26,21 +27,45 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const bookmarked = isBookmarked(urlBarValue);
 
+  const isSelectingOnFocus = useRef(false);
+
   useEffect(() => {
-    const handleFocus = () => {
+    const handleFocusEvent = () => {
       inputRef.current?.focus();
       inputRef.current?.select();
     };
-    window.addEventListener("forge:focus-address-bar", handleFocus);
-    return () => window.removeEventListener("forge:focus-address-bar", handleFocus);
+    window.addEventListener("forge:focus-address-bar", handleFocusEvent);
+    return () => window.removeEventListener("forge:focus-address-bar", handleFocusEvent);
   }, []);
 
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setFocused(true);
+    isSelectingOnFocus.current = true;
+    e.target.select();
+  };
+
+  const handleInputMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (isSelectingOnFocus.current) {
+      isSelectingOnFocus.current = false;
+      e.preventDefault();
+      e.currentTarget.select();
+    }
+  };
+
+  const handleSubmit = (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = (urlBarValue || "").trim();
+    if (!trimmed || trimmed === "about:blank") return;
+    const url = normalizeUrl(trimmed, searchEngine);
+    setUrlBarValue(url);
+    onNavigate(url);
+    inputRef.current?.blur();
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      const url = normalizeUrl(urlBarValue);
-      setUrlBarValue(url);
-      onNavigate(url);
-      inputRef.current?.blur();
+    if (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
+      e.preventDefault();
+      handleSubmit();
     }
     if (e.key === "Escape") inputRef.current?.blur();
   };
@@ -76,28 +101,58 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
       {/* Divider */}
       <div className="w-px h-5 bg-[var(--forge-border)]" />
 
-      {/* URL bar */}
-      <div
-        className={`flex-1 flex items-center gap-2 h-6 px-2.5 rounded-md transition-all ${
+      {/* URL bar Form */}
+      <form
+        onSubmit={handleSubmit}
+        className={`flex-1 flex items-center gap-1.5 h-6 px-2 rounded-md transition-all ${
           focused
             ? "bg-[var(--forge-surface)] ring-1 ring-[#FF6B00] shadow-sm"
             : "bg-[var(--forge-input)] hover:bg-[var(--forge-hover)]"
         }`}
       >
         <ShieldsButton currentUrl={activeTab?.url || urlBarValue} onReload={onReload} />
+
+        {/* Search Engine Dropdown */}
+        <SearchEngineDropdown variant="compact" />
+
         <input
           ref={inputRef}
           type="text"
-          value={urlBarValue}
+          value={urlBarValue === "about:blank" ? "" : urlBarValue}
           onChange={(e) => setUrlBarValue(e.target.value)}
-          onFocus={() => { setFocused(true); inputRef.current?.select(); }}
+          onFocus={handleInputFocus}
+          onMouseUp={handleInputMouseUp}
           onBlur={() => setFocused(false)}
           onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent text-[var(--forge-text)] text-sm outline-none placeholder-[var(--forge-text-muted)] font-mono selection:bg-[#FF6B00]/20"
-          placeholder="Search or enter address..."
+          className="flex-1 bg-transparent text-[var(--forge-text)] text-sm outline-none placeholder-[var(--forge-text-muted)] font-mono selection:bg-[#FF6B00]/20 min-w-0"
+          placeholder={SEARCH_ENGINES[searchEngine]?.placeholder || "Search or enter address..."}
           spellCheck={false}
         />
-      </div>
+
+        {/* Clear button if text entered */}
+        {urlBarValue && urlBarValue !== "about:blank" && (
+          <button
+            type="button"
+            onClick={() => {
+              setUrlBarValue("");
+              inputRef.current?.focus();
+            }}
+            title="Clear"
+            className="w-4 h-4 flex items-center justify-center rounded-full text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
+          >
+            <X size={11} />
+          </button>
+        )}
+
+        {/* Search / Enter Submit Button */}
+        <button
+          type="submit"
+          title="Search or Go (Enter)"
+          className="w-5 h-5 flex items-center justify-center rounded text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
+        >
+          <ArrowRight size={13} />
+        </button>
+      </form>
 
       {/* Video & Page Fullscreen Toggle */}
       <button

@@ -17,6 +17,31 @@ export function getVpnManager(): VpnManager {
   return vpnManager;
 }
 
+export function checkVpnKillSwitch(urlStr: string): boolean {
+  try {
+    const manager = getVpnManager();
+    const status = manager.getStatus();
+    if (!status.killSwitchEngaged) return false;
+
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname.toLowerCase();
+    // Allow local developer servers and loopback
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      parsed.protocol === "file:" ||
+      parsed.protocol === "devtools:" ||
+      parsed.protocol === "chrome-extension:"
+    ) {
+      return false;
+    }
+    return true; // Kill switch engaged: block
+  } catch {
+    return false;
+  }
+}
+
 export function initVpnAdapter(getMainWindow: () => BrowserWindow | null) {
   const manager = getVpnManager();
   const netManager = getNetworkManager();
@@ -31,45 +56,6 @@ export function initVpnAdapter(getMainWindow: () => BrowserWindow | null) {
   manager.onVpnStatusChange((status) => {
     broadcastStatus(status);
   });
-
-  // 1. Hook sessions for Kill Switch enforcement
-  const targetSessions = [
-    session.fromPartition("persist:forge"),
-    session.defaultSession,
-  ];
-
-  for (const ses of targetSessions) {
-    // Intercept network requests to enforce Kill Switch
-    ses.webRequest.onBeforeRequest((details, callback) => {
-      const status = manager.getStatus();
-      if (status.killSwitchEngaged) {
-        try {
-          const parsed = new URL(details.url);
-          const hostname = parsed.hostname.toLowerCase();
-          // Allow local developer servers and loopback
-          if (
-            hostname === "localhost" ||
-            hostname === "127.0.0.1" ||
-            hostname === "::1" ||
-            parsed.protocol === "file:" ||
-            parsed.protocol === "devtools:" ||
-            parsed.protocol === "chrome-extension:"
-          ) {
-            callback({});
-            return;
-          }
-        } catch {
-          // If URL parsing fails, permit only if non-remote
-        }
-
-        // Kill Switch engaged: block internet requests to prevent leaks!
-        callback({ cancel: true });
-        return;
-      }
-
-      callback({});
-    });
-  }
 
   // IPC Handlers
   ipcMain.handle("vpn:get-status", () => {

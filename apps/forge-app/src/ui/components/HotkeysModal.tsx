@@ -29,6 +29,8 @@ export function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
         { keys: ["Ctrl", "Shift", "T"], desc: "Reopen the last closed tab." },
         { keys: ["Ctrl", "Tab"], desc: "Switch to the next tab on the right." },
         { keys: ["Ctrl", "Shift", "Tab"], desc: "Switch to the previous tab on the left." },
+        { keys: ["Ctrl", "Shift", "PgUp"], desc: "Move active tab to the left." },
+        { keys: ["Ctrl", "Shift", "PgDn"], desc: "Move active tab to the right." },
       ],
     },
     {
@@ -50,6 +52,7 @@ export function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
         { keys: ["Ctrl", "F"], desc: "Open the find bar to search for text on the page." },
         { keys: ["Ctrl", "+"], altKeys: ["Ctrl", "-"], desc: "Zoom in or zoom out on the webpage." },
         { keys: ["Ctrl", "0"], desc: "Reset zoom back to the default size." },
+        { keys: ["Alt", "P"], desc: "Toggle Picture-in-Picture (PiP) for active video." },
         { keys: ["Ctrl", "D"], desc: "Bookmark the current page." },
         { keys: ["Ctrl", "H"], desc: "Open your browsing history." },
         { keys: ["Ctrl", "J"], desc: "View your downloads." },
@@ -143,7 +146,7 @@ export function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
         {/* Footer */}
         <div className="px-6 py-3 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]/30 flex items-center justify-between text-xs text-[var(--forge-text-muted)]">
           <span>Press <kbd className="font-mono bg-[var(--forge-input)] px-1.5 py-0.5 rounded border border-[var(--forge-border)] text-[var(--forge-text)]">F1</kbd> or <kbd className="font-mono bg-[var(--forge-input)] px-1.5 py-0.5 rounded border border-[var(--forge-border)] text-[var(--forge-text)]">Esc</kbd> anytime</span>
-          <span className="text-emerald-400 font-medium">● 17 Hotkeys Active & Ready</span>
+          <span className="text-emerald-400 font-medium">● 19 Hotkeys Active & Ready</span>
         </div>
       </div>
     </div>

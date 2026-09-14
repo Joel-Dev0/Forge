@@ -2,9 +2,11 @@ import { app, BrowserWindow, ipcMain, session, type WebContents } from "electron
 import type { NetworkEntry, NetworkResourceType } from "./types.js";
 import { evaluateAdBlockRequest, getEngineInstance } from "../adblock/adblockAdapter.js";
 import { stripTrackingParameters } from "@forge/adblock-engine";
+import { checkVpnKillSwitch } from "./vpnAdapter.js";
 
 const entries = new Map<string, NetworkEntry>();
 const contentsDebuggerMap = new Map<number, WebContents>();
+const requestContentsMap = new Map<string, number>();
 
 function getBaseName(urlStr: string): string {
   try {
@@ -36,10 +38,24 @@ function normalizeType(type?: string): NetworkResourceType {
 }
 
 export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
-  function broadcastEntry(entry: NetworkEntry) {
+  let pendingBatch: NetworkEntry[] = [];
+  let throttleTimer: NodeJS.Timeout | null = null;
+
+  function flushBatch() {
+    throttleTimer = null;
+    if (pendingBatch.length === 0) return;
+    const batch = pendingBatch;
+    pendingBatch = [];
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("network:entry-update", entry);
+      win.webContents.send("network:entries-batch", batch);
+    }
+  }
+
+  function broadcastEntry(entry: NetworkEntry) {
+    pendingBatch.push(entry);
+    if (!throttleTimer) {
+      throttleTimer = setTimeout(flushBatch, 50);
     }
   }
 
@@ -67,6 +83,8 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
             const req = params.request;
             const entryId = String(params.requestId);
             const startTime = Math.round(params.timestamp * 1000);
+
+            requestContentsMap.set(entryId, contentsId);
 
             const existing = entries.get(entryId);
             const entry: NetworkEntry = {
@@ -114,21 +132,8 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
               entry.size = params.encodedDataLength || entry.size;
               entry.state = "completed";
 
-              // Fetch response body via CDP
-              try {
-                const bodyResult: any = await contents.debugger.sendCommand("Network.getResponseBody", {
-                  requestId: params.requestId,
-                });
-                if (bodyResult && bodyResult.body) {
-                  entry.responseBody = bodyResult.base64Encoded
-                    ? Buffer.from(bodyResult.body, "base64").toString("utf-8")
-                    : bodyResult.body;
-                  entry.hasResponseBody = true;
-                }
-              } catch {
-                // Some requests (e.g. data URLs, redirects) may not cache body
-              }
-
+              // Do not eagerly download response bodies for every subrequest to prevent queue blocking.
+              // Response bodies are fetched on-demand in network:get-body when inspected in DevTools.
               broadcastEntry(entry);
             }
           } else if (method === "Network.loadingFailed") {
@@ -154,14 +159,16 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
   });
 
   function getSourceUrl(details: { referrer?: string; webContentsId?: number; frame?: any }): string | undefined {
-    if (details.referrer) return details.referrer;
-    if (details.frame && details.frame.url) return details.frame.url;
-    if (details.webContentsId) {
-      const contents = contentsDebuggerMap.get(details.webContentsId);
-      if (contents && !contents.isDestroyed()) {
-        return contents.getURL();
+    try {
+      if (details.referrer) return details.referrer;
+      if (details.frame && details.frame.url) return details.frame.url;
+      if (details.webContentsId) {
+        const contents = contentsDebuggerMap.get(details.webContentsId);
+        if (contents && !contents.isDestroyed()) {
+          return contents.getURL();
+        }
       }
-    }
+    } catch {}
     return undefined;
   }
 
@@ -169,170 +176,153 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
   const ses = session.fromPartition("persist:forge");
 
   ses.webRequest.onBeforeRequest((details, callback) => {
-    const entryId = String(details.id);
-    const sourceUrl = getSourceUrl(details);
+    try {
+      const entryId = String(details.id);
+      const sourceUrl = getSourceUrl(details);
 
-    // 1. Evaluate with AdBlock Engine
-    const adblock = evaluateAdBlockRequest({
-      url: details.url,
-      method: details.method,
-      resourceType: details.resourceType,
-      referrer: sourceUrl,
-    });
-
-    if (adblock.cancel) {
-      const entry: NetworkEntry = {
-        id: entryId,
-        url: details.url,
-        name: getBaseName(details.url),
-        method: details.method || "GET",
-        resourceType: normalizeType(details.resourceType),
-        status: 0,
-        statusText: "Blocked by AdBlock",
-        requestHeaders: {},
-        responseHeaders: {},
-        size: 0,
-        startTime: Date.now(),
-        duration: 0,
-        state: "failed",
-        error: `net::ERR_BLOCKED_BY_CLIENT (${adblock.decision.rule?.raw || "AdBlock"})`,
-      };
-      entries.set(entryId, entry);
-      broadcastEntry(entry);
-
-      callback({ cancel: true });
-      return;
-    }
-
-    // 2. Strip tracking query parameters if Tracker Protection is enabled
-    const engine = getEngineInstance();
-    if (engine.isEnabled() && engine.isFeatureEnabled("trackerProtection")) {
-      const stripped = stripTrackingParameters(details.url);
-      if (stripped.strippedParams.length > 0 && stripped.cleanUrl !== details.url) {
-        callback({ redirectURL: stripped.cleanUrl });
+      // 0. Enforce VPN Kill Switch if active
+      if (checkVpnKillSwitch(details.url)) {
+        callback({ cancel: true });
         return;
       }
-    }
 
-    let postData: string | undefined;
-
-    if (details.uploadData && details.uploadData.length > 0) {
-      try {
-        const parts = details.uploadData
-          .map((u) => (u.bytes ? u.bytes.toString("utf-8") : ""))
-          .filter(Boolean);
-        if (parts.length > 0) postData = parts.join("");
-      } catch {}
-    }
-
-    if (!entries.has(entryId)) {
-      const entry: NetworkEntry = {
-        id: entryId,
-        url: details.url,
-        name: getBaseName(details.url),
-        method: details.method || "GET",
-        resourceType: normalizeType(details.resourceType),
-        status: 0,
-        statusText: "Pending",
-        requestHeaders: {},
-        responseHeaders: {},
-        postData,
-        size: 0,
-        startTime: Date.now(),
-        duration: 0,
-        state: "pending",
-      };
-      entries.set(entryId, entry);
-      broadcastEntry(entry);
-    } else if (postData) {
-      const entry = entries.get(entryId)!;
-      entry.postData = postData;
-      broadcastEntry(entry);
-    }
-
-    callback({});
-  });
-
-  // 2. Brave Shields-style Third-Party Cookie & Tracking Header Stripper
-  ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    const requestHeaders = { ...details.requestHeaders };
-    const engine = getEngineInstance();
-
-    if (engine && engine.isEnabled()) {
-      const decision = engine.match({
+      // 1. Evaluate with AdBlock Engine
+      const adblock = evaluateAdBlockRequest({
         url: details.url,
         method: details.method,
         resourceType: details.resourceType,
-        sourceUrl: getSourceUrl(details),
+        referrer: sourceUrl,
       });
 
-      // If matches an ad/tracking list or is a blocked tracker, strip Cookie & fingerprinting headers
-      if (decision.blocked) {
-        delete requestHeaders["Cookie"];
-        delete requestHeaders["cookie"];
-        delete requestHeaders["Sec-CH-UA"];
-        delete requestHeaders["sec-ch-ua"];
-      }
-    }
+      if (adblock.cancel) {
+        const entry: NetworkEntry = {
+          id: entryId,
+          url: details.url,
+          name: getBaseName(details.url),
+          method: details.method || "GET",
+          resourceType: normalizeType(details.resourceType),
+          status: 0,
+          statusText: "Blocked by AdBlock",
+          requestHeaders: {},
+          responseHeaders: {},
+          size: 0,
+          startTime: Date.now(),
+          duration: 0,
+          state: "failed",
+          error: `net::ERR_BLOCKED_BY_CLIENT (${adblock.decision.rule?.raw || "AdBlock"})`,
+        };
+        entries.set(entryId, entry);
+        broadcastEntry(entry);
 
-    callback({ requestHeaders });
+        callback({ cancel: true });
+        return;
+      }
+
+      // 2. Strip tracking query parameters if Tracker Protection is enabled
+      const engine = getEngineInstance();
+      if (engine.isEnabled() && engine.isFeatureEnabled("trackerProtection")) {
+        const stripped = stripTrackingParameters(details.url);
+        if (stripped.strippedParams.length > 0 && stripped.cleanUrl !== details.url) {
+          callback({ redirectURL: stripped.cleanUrl });
+          return;
+        }
+      }
+
+      let postData: string | undefined;
+
+      if (details.uploadData && details.uploadData.length > 0) {
+        try {
+          const parts = details.uploadData
+            .map((u) => (u.bytes ? u.bytes.toString("utf-8") : ""))
+            .filter(Boolean);
+          if (parts.length > 0) postData = parts.join("");
+        } catch {}
+      }
+
+      if (!entries.has(entryId)) {
+        const entry: NetworkEntry = {
+          id: entryId,
+          url: details.url,
+          name: getBaseName(details.url),
+          method: details.method || "GET",
+          resourceType: normalizeType(details.resourceType),
+          status: 0,
+          statusText: "Pending",
+          requestHeaders: {},
+          responseHeaders: {},
+          postData,
+          size: 0,
+          startTime: Date.now(),
+          duration: 0,
+          state: "pending",
+        };
+        entries.set(entryId, entry);
+        broadcastEntry(entry);
+      } else if (postData) {
+        const entry = entries.get(entryId)!;
+        entry.postData = postData;
+        broadcastEntry(entry);
+      }
+
+      callback({});
+    } catch (err) {
+      console.warn("[NetworkMonitor] onBeforeRequest error:", err);
+      callback({});
+    }
+  });
+
+  // Allowed requests pass directly without repeating expensive regex matching passes
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    try {
+      callback({ requestHeaders: details.requestHeaders });
+    } catch {
+      callback({});
+    }
   });
 
   ses.webRequest.onHeadersReceived((details, callback) => {
-    const entryId = String(details.id);
-    const entry = entries.get(entryId);
-    const responseHeaders = { ...details.responseHeaders };
-    const engine = getEngineInstance();
+    try {
+      const entryId = String(details.id);
+      const entry = entries.get(entryId);
+      const responseHeaders = { ...(details.responseHeaders || {}) };
 
-    // Strip Set-Cookie headers from third-party tracking/ad domains (Brave Shields)
-    if (engine && engine.isEnabled()) {
-      const decision = engine.match({
-        url: details.url,
-        method: details.method,
-        resourceType: details.resourceType,
-        sourceUrl: getSourceUrl(details),
-      });
-
-      if (decision.blocked) {
-        delete responseHeaders["Set-Cookie"];
-        delete responseHeaders["set-cookie"];
-      }
-    }
-
-    // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen on any page
-    for (const key of Object.keys(responseHeaders)) {
-      const lower = key.toLowerCase();
-      if (lower === "permissions-policy" || lower === "feature-policy") {
-        const val = responseHeaders[key];
-        if (Array.isArray(val)) {
-          responseHeaders[key] = val.map((v) =>
-            v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-             .replace(/fullscreen=\(\)/gi, "fullscreen=*")
-          );
-        } else if (typeof val === "string") {
-          responseHeaders[key] = val
-            .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-            .replace(/fullscreen=\(\)/gi, "fullscreen=*");
+      // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen on any page
+      for (const key of Object.keys(responseHeaders)) {
+        const lower = key.toLowerCase();
+        if (lower === "permissions-policy" || lower === "feature-policy") {
+          const val = responseHeaders[key];
+          if (Array.isArray(val)) {
+            responseHeaders[key] = val.map((v) =>
+              v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
+               .replace(/fullscreen=\(\)/gi, "fullscreen=*")
+            );
+          } else if (typeof val === "string") {
+            responseHeaders[key] = val
+              .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
+              .replace(/fullscreen=\(\)/gi, "fullscreen=*");
+          }
         }
       }
-    }
 
-    if (entry) {
-      entry.status = details.statusCode;
-      entry.statusText = details.statusLine ? details.statusLine.replace(/^HTTP\/\d\.\d\s+\d+\s*/, "") : "OK";
-      if (responseHeaders) {
-        const headers: Record<string, string> = {};
-        for (const [k, v] of Object.entries(responseHeaders)) {
-          headers[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : v;
+      if (entry) {
+        entry.status = details.statusCode;
+        entry.statusText = details.statusLine ? details.statusLine.replace(/^HTTP\/\d\.\d\s+\d+\s*/, "") : "OK";
+        if (responseHeaders) {
+          const headers: Record<string, string> = {};
+          for (const [k, v] of Object.entries(responseHeaders)) {
+            headers[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : v;
+          }
+          entry.responseHeaders = headers;
+          if (headers["content-type"]) {
+            entry.mimeType = headers["content-type"].split(";")[0].trim();
+          }
         }
-        entry.responseHeaders = headers;
-        if (headers["content-type"]) {
-          entry.mimeType = headers["content-type"].split(";")[0].trim();
-        }
+        broadcastEntry(entry);
       }
-      broadcastEntry(entry);
+      callback({ responseHeaders });
+    } catch {
+      callback({ responseHeaders: details.responseHeaders });
     }
-    callback({ responseHeaders });
   });
 
   ses.webRequest.onCompleted((details) => {
@@ -357,13 +347,42 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
   });
 
   // 3. Register IPC methods
-  ipcMain.handle("network:get-body", (_event, requestId: string) => {
+  ipcMain.handle("network:get-body", async (_event, requestId: string) => {
     const entry = entries.get(requestId);
+    if (entry?.responseBody) return entry.responseBody;
+
+    // Fetch on-demand via CDP if available
+    const cId = requestContentsMap.get(requestId);
+    if (cId) {
+      const contents = contentsDebuggerMap.get(cId);
+      if (contents && !contents.isDestroyed()) {
+        try {
+          if (contents.debugger.isAttached()) {
+            const bodyResult: any = await contents.debugger.sendCommand("Network.getResponseBody", {
+              requestId,
+            });
+            if (bodyResult && bodyResult.body) {
+              const body = bodyResult.base64Encoded
+                ? Buffer.from(bodyResult.body, "base64").toString("utf-8")
+                : bodyResult.body;
+              if (entry) {
+                entry.responseBody = body;
+                entry.hasResponseBody = true;
+              }
+              return body;
+            }
+          }
+        } catch {
+          // Response body might not be cached in CDP for certain data/redirects
+        }
+      }
+    }
     return entry?.responseBody || null;
   });
 
   ipcMain.on("network:clear", () => {
     entries.clear();
+    requestContentsMap.clear();
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send("network:cleared");

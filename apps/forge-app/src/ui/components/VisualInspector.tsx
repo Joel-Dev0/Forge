@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import {
   Crosshair,
   RefreshCw,
+  RotateCw,
   Smartphone,
   Tablet,
   Monitor,
+  Watch,
   ChevronRight,
   ChevronDown,
   Layers,
@@ -15,6 +17,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useInspectorStore, type DomNode, type InspectedElement } from "../../core/inspector/useInspectorStore";
+import { DEVICE_PRESETS } from "../../core/inspector/devicePresets.ts";
 import {
   getDomTreeScript,
   enablePickerScript,
@@ -33,12 +36,19 @@ export function VisualInspector({ getActiveWebview }: Props) {
     selectedElement,
     domTree,
     viewportMode,
+    viewportOrientation,
+    selectedDeviceId,
+    viewportWidth,
+    viewportHeight,
     activeInspectorTab,
     styleFilter,
     setPickerActive,
     setSelectedElement,
     setDomTree,
     setViewportMode,
+    selectDevicePreset,
+    setViewportDimensions,
+    toggleViewportOrientation,
     setActiveInspectorTab,
     setStyleFilter,
   } = useInspectorStore();
@@ -259,35 +269,143 @@ export function VisualInspector({ getActiveWebview }: Props) {
           )}
         </div>
 
-        {/* Viewport simulation mode */}
-        <div className="flex items-center gap-1 bg-[var(--forge-input)] p-0.5 rounded text-[9px]">
-          <button
-            onClick={() => setViewportMode("desktop")}
-            title="Desktop Mode"
-            className={`p-1 rounded cursor-pointer transition-colors ${
-              viewportMode === "desktop" ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold" : "text-[var(--forge-text-muted)]"
-            }`}
+        {/* Viewport simulation mode & custom pixel controls */}
+        <div className="flex items-center gap-1.5 bg-[var(--forge-input)] p-1 rounded text-[9px]">
+          {/* Mode Category Icons */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setViewportMode("desktop")}
+              title="Desktop Mode (Full Responsive 100%)"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                viewportMode === "desktop"
+                  ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold shadow-xs"
+                  : "text-[var(--forge-text-muted)] hover:text-white"
+              }`}
+            >
+              <Monitor size={11} />
+            </button>
+            <button
+              onClick={() => setViewportMode("tablet")}
+              title="Tablet Mode (iPad Air / Pro)"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                viewportMode === "tablet"
+                  ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold shadow-xs"
+                  : "text-[var(--forge-text-muted)] hover:text-white"
+              }`}
+            >
+              <Tablet size={11} />
+            </button>
+            <button
+              onClick={() => setViewportMode("mobile")}
+              title="Mobile Mode (iPhone / Galaxy)"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                viewportMode === "mobile"
+                  ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold shadow-xs"
+                  : "text-[var(--forge-text-muted)] hover:text-white"
+              }`}
+            >
+              <Smartphone size={11} />
+            </button>
+            <button
+              onClick={() => setViewportMode("watch")}
+              title="Smart Watch Mode (Apple Watch / Galaxy Watch)"
+              className={`p-1 rounded cursor-pointer transition-colors ${
+                viewportMode === "watch"
+                  ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold shadow-xs"
+                  : "text-[var(--forge-text-muted)] hover:text-white"
+              }`}
+            >
+              <Watch size={11} />
+            </button>
+          </div>
+
+          {/* Popular Device Models Dropdown */}
+          <div className="w-px h-3.5 bg-[var(--forge-border)]" />
+          <select
+            value={viewportMode === "desktop" ? "responsive" : selectedDeviceId}
+            onChange={(e) => selectDevicePreset(e.target.value)}
+            className="bg-[var(--forge-surface)] text-[var(--forge-text)] border border-[var(--forge-border)] rounded px-1.5 py-0.5 text-[9px] cursor-pointer outline-none max-w-[130px] font-sans hover:border-[#FF6B00]/60 transition-colors"
+            title="Choose a popular device model"
           >
-            <Monitor size={11} />
-          </button>
-          <button
-            onClick={() => setViewportMode("tablet")}
-            title="Tablet Mode (768px)"
-            className={`p-1 rounded cursor-pointer transition-colors ${
-              viewportMode === "tablet" ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold" : "text-[var(--forge-text-muted)]"
-            }`}
-          >
-            <Tablet size={11} />
-          </button>
-          <button
-            onClick={() => setViewportMode("mobile")}
-            title="Mobile Mode (375px)"
-            className={`p-1 rounded cursor-pointer transition-colors ${
-              viewportMode === "mobile" ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold" : "text-[var(--forge-text-muted)]"
-            }`}
-          >
-            <Smartphone size={11} />
-          </button>
+            <option value="responsive">🖥️ Responsive (Desktop)</option>
+            <optgroup label="⌚ Smart Watches">
+              {DEVICE_PRESETS.filter((p) => p.category === "watch").map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.width}×{p.height})
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="📱 Mobile Phones">
+              {DEVICE_PRESETS.filter((p) => p.category === "mobile").map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.width}×{p.height})
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="💻 Tablets">
+              {DEVICE_PRESETS.filter((p) => p.category === "tablet").map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.width}×{p.height})
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="🖥️ Laptops / Desktops">
+              {DEVICE_PRESETS.filter((p) => p.category === "desktop").map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.width}×{p.height})
+                </option>
+              ))}
+            </optgroup>
+            {selectedDeviceId === "custom" && (
+              <option value="custom">✏️ Custom ({viewportWidth}×{viewportHeight})</option>
+            )}
+          </select>
+
+          {/* Manual Pixel Controls (W × H) */}
+          {viewportMode !== "desktop" && (
+            <>
+              <div className="w-px h-3.5 bg-[var(--forge-border)]" />
+              <div className="flex items-center gap-1 font-mono text-[9px]">
+                <span className="text-[var(--forge-text-muted)]">W:</span>
+                <input
+                  type="number"
+                  min={180}
+                  max={3840}
+                  value={viewportWidth}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) setViewportDimensions(val, viewportHeight);
+                  }}
+                  className="w-11 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded px-1 py-0.5 text-center text-[9px] text-[#FF6B00] font-bold focus:border-[#FF6B00] outline-none"
+                  title="Width in pixels (manual edit)"
+                />
+                <span className="text-[var(--forge-text-muted)]">×</span>
+                <span className="text-[var(--forge-text-muted)]">H:</span>
+                <input
+                  type="number"
+                  min={180}
+                  max={2160}
+                  value={viewportHeight}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) setViewportDimensions(viewportWidth, val);
+                  }}
+                  className="w-11 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded px-1 py-0.5 text-center text-[9px] text-[#FF6B00] font-bold focus:border-[#FF6B00] outline-none"
+                  title="Height in pixels (manual edit)"
+                />
+                <span className="text-[var(--forge-text-muted)]">px</span>
+              </div>
+
+              {/* Orientation Rotate */}
+              <button
+                onClick={toggleViewportOrientation}
+                title={`Rotate orientation (currently ${viewportOrientation})`}
+                className="p-1 rounded cursor-pointer text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-surface)] transition-colors flex items-center"
+              >
+                <RotateCw size={10} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 

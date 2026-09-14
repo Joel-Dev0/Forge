@@ -27,6 +27,9 @@ interface TabsState {
   prevTab: () => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<Tab>) => void;
+  moveTab: (fromIndex: number, toIndex: number) => void;
+  moveTabLeft: () => void;
+  moveTabRight: () => void;
 }
 
 const SESSION_STORAGE_KEY = "forge_session_tabs_v1";
@@ -190,5 +193,39 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       saveSession(nextTabs, s.activeTabId);
       return { tabs: nextTabs };
     });
+  },
+
+  moveTab(fromIndex, toIndex) {
+    const { tabs, activeTabId } = get();
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= tabs.length ||
+      toIndex >= tabs.length
+    ) {
+      return;
+    }
+    const nextTabs = [...tabs];
+    const [moved] = nextTabs.splice(fromIndex, 1);
+    nextTabs.splice(toIndex, 0, moved);
+    saveSession(nextTabs, activeTabId);
+    set({ tabs: nextTabs });
+  },
+
+  moveTabLeft() {
+    const { tabs, activeTabId } = get();
+    const idx = tabs.findIndex((t) => t.id === activeTabId);
+    if (idx > 0) {
+      get().moveTab(idx, idx - 1);
+    }
+  },
+
+  moveTabRight() {
+    const { tabs, activeTabId } = get();
+    const idx = tabs.findIndex((t) => t.id === activeTabId);
+    if (idx >= 0 && idx < tabs.length - 1) {
+      get().moveTab(idx, idx + 1);
+    }
   },
 }));

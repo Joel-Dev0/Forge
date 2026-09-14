@@ -126,8 +126,22 @@ contextBridge.exposeInMainWorld("forge", {
   network: {
     onEntry: (callback: (entry: any) => void) => {
       const listener = (_event: any, entry: any) => callback(entry);
+      const listenerBatch = (_event: any, batch: any[]) => {
+        if (Array.isArray(batch)) {
+          for (const item of batch) callback(item);
+        }
+      };
       ipcRenderer.on("network:entry-update", listener);
-      return () => ipcRenderer.removeListener("network:entry-update", listener);
+      ipcRenderer.on("network:entries-batch", listenerBatch);
+      return () => {
+        ipcRenderer.removeListener("network:entry-update", listener);
+        ipcRenderer.removeListener("network:entries-batch", listenerBatch);
+      };
+    },
+    onBatch: (callback: (batch: any[]) => void) => {
+      const listener = (_event: any, batch: any[]) => callback(batch);
+      ipcRenderer.on("network:entries-batch", listener);
+      return () => ipcRenderer.removeListener("network:entries-batch", listener);
     },
     onClear: (callback: () => void) => {
       const listener = () => callback();

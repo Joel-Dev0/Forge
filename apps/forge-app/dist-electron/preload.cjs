@@ -127,8 +127,22 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
   network: {
     onEntry: (callback) => {
       const listener = (_event, entry) => callback(entry);
+      const listenerBatch = (_event, batch) => {
+        if (Array.isArray(batch)) {
+          for (const item of batch) callback(item);
+        }
+      };
       import_electron.ipcRenderer.on("network:entry-update", listener);
-      return () => import_electron.ipcRenderer.removeListener("network:entry-update", listener);
+      import_electron.ipcRenderer.on("network:entries-batch", listenerBatch);
+      return () => {
+        import_electron.ipcRenderer.removeListener("network:entry-update", listener);
+        import_electron.ipcRenderer.removeListener("network:entries-batch", listenerBatch);
+      };
+    },
+    onBatch: (callback) => {
+      const listener = (_event, batch) => callback(batch);
+      import_electron.ipcRenderer.on("network:entries-batch", listener);
+      return () => import_electron.ipcRenderer.removeListener("network:entries-batch", listener);
     },
     onClear: (callback) => {
       const listener = () => callback();

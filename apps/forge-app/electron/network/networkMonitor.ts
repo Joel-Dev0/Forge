@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, type WebContents } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, session, type WebContents } from "electron";
 import type { NetworkEntry, NetworkResourceType } from "./types.js";
 import { evaluateAdBlockRequest, getEngineInstance } from "../adblock/adblockAdapter.js";
 import { stripTrackingParameters } from "@forge/adblock-engine";
@@ -7,6 +7,16 @@ import { checkVpnKillSwitch } from "./vpnAdapter.js";
 const entries = new Map<string, NetworkEntry>();
 const contentsDebuggerMap = new Map<number, WebContents>();
 const requestContentsMap = new Map<string, number>();
+
+let currentNetworkTheme: "light" | "dark" = nativeTheme.shouldUseDarkColors ? "dark" : "light";
+
+export function setNetworkMonitorTheme(theme: "light" | "dark") {
+  currentNetworkTheme = theme;
+}
+
+export function getNetworkMonitorTheme(): "light" | "dark" {
+  return currentNetworkTheme;
+}
 
 function getBaseName(urlStr: string): string {
   try {
@@ -274,7 +284,10 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
   // Allowed requests pass directly without repeating expensive regex matching passes
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     try {
-      callback({ requestHeaders: details.requestHeaders });
+      const requestHeaders = { ...(details.requestHeaders || {}) };
+      // Synchronize client hints for color scheme so search engines and websites serve matching HTML
+      requestHeaders["Sec-CH-Prefers-Color-Scheme"] = currentNetworkTheme;
+      callback({ requestHeaders });
     } catch {
       callback({});
     }

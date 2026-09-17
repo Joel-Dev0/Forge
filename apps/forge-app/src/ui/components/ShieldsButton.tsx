@@ -11,8 +11,10 @@ import {
   FileCode2,
   HardDrive,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import { useAdBlockStore, type ShieldFeatures } from "../../core/adblock/useAdBlockStore";
+import { usePrivacyStore } from "../../core/privacy/usePrivacyStore";
 
 interface Props {
   currentUrl: string;
@@ -54,6 +56,15 @@ export function ShieldsButton({ currentUrl, onReload }: Props) {
     fetchDetailedStats,
   } = useAdBlockStore();
 
+  const {
+    stats: privacyStats,
+    policy: privacyPolicy,
+    openModal: openPrivacyModal,
+    cleanNow: cleanPrivacyNow,
+    isCleaning: isPrivacyCleaning,
+    fetchStats: fetchPrivacyStats,
+  } = usePrivacyStore();
+
   const domain = extractHostname(currentUrl);
   const isProtectedOnSite = isSiteProtected(domain);
   const siteBlockedCount = getBlockedCountForDomain(domain);
@@ -63,8 +74,9 @@ export function ShieldsButton({ currentUrl, onReload }: Props) {
   useEffect(() => {
     if (isOpen) {
       fetchDetailedStats().catch(() => {});
+      fetchPrivacyStats().catch(() => {});
     }
-  }, [isOpen, fetchDetailedStats]);
+  }, [isOpen, fetchDetailedStats, fetchPrivacyStats]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -375,6 +387,78 @@ export function ShieldsButton({ currentUrl, onReload }: Props) {
                     {((detailedStats?.estimatedTimeSavedMs ?? 0) / 1000).toFixed(1)}s
                   </span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Privacy Cleaner Subsystem Module Card */}
+          <div className="p-3 bg-[var(--forge-surface)]/60 border-b border-[var(--forge-border)] flex flex-col gap-2">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider font-extrabold text-[var(--forge-text-muted)]">
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={11} className="text-emerald-400" />
+                <span>Privacy Cleaner</span>
+              </div>
+              <span className="text-[9px] font-mono text-emerald-400 font-semibold">
+                {privacyPolicy.enabled ? `Auto (${privacyPolicy.interval})` : "Manual"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--forge-input)] border border-[var(--forge-border)]">
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-[11px] text-[var(--forge-text)]">
+                    {formatBytes(privacyStats?.cacheSizeBytes ?? 0)}
+                  </span>
+                  <span className="text-[10px] text-[var(--forge-text-muted)]">•</span>
+                  <span className="text-[10px] text-[var(--forge-text)] font-semibold">
+                    {privacyStats?.cookiesTotal ?? 0} Cookies
+                  </span>
+                  {(privacyStats?.cookiesTrackers ?? 0) > 0 && (
+                    <span className="text-[9px] font-bold text-red-400 bg-red-500/15 px-1 py-0.2 rounded font-mono">
+                      {privacyStats?.cookiesTrackers} trk
+                    </span>
+                  )}
+                </div>
+                <span className="text-[9px] text-[var(--forge-text-muted)]">
+                  {privacyPolicy.cookieRule.mode === "except_protected"
+                    ? `${privacyPolicy.cookieRule.protectedDomains.length} protected sites`
+                    : "Standard rules"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    cleanPrivacyNow({
+                      cache: true,
+                      history: true,
+                      downloads: true,
+                      cookies: false,
+                      localStorage: false,
+                      indexedDB: false,
+                      serviceWorkers: false,
+                      sessions: false,
+                      passwordsAutofill: false,
+                      permissions: false,
+                    });
+                  }}
+                  disabled={isPrivacyCleaning}
+                  title="Quick clean safe cache & temporary data"
+                  className="px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold transition-colors cursor-pointer"
+                >
+                  Quick Clean
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    openPrivacyModal();
+                  }}
+                  title="Open full Privacy Cleaner settings"
+                  className="px-2 py-1 rounded-md bg-[var(--forge-surface)] hover:bg-[var(--forge-hover)] border border-[var(--forge-border)] text-[var(--forge-text)] text-[10px] font-semibold transition-colors cursor-pointer"
+                >
+                  Configure
+                </button>
               </div>
             </div>
           </div>

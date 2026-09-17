@@ -31,7 +31,8 @@ function applyThemeToDocument(resolved: ResolvedTheme, mode: ThemeMode) {
   root.setAttribute("data-theme-mode", mode);
 
   // Notify Electron IPC if available
-  (window as any).electron?.setTheme?.(mode);
+  (window as any).electron?.setTheme?.(mode, resolved);
+  (window as any).forge?.setTheme?.(mode, resolved);
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => {

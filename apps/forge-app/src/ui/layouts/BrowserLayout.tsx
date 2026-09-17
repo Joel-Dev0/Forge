@@ -8,12 +8,14 @@ import { DevToolsBar } from "../components/DevToolsBar";
 import { FindInPageBar } from "../components/FindInPageBar";
 import { DownloadsModal } from "../components/DownloadsModal";
 import { HotkeysModal } from "../components/HotkeysModal";
+import { PrivacyCleanerModal } from "../components/PrivacyCleanerModal";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { useDownloadsStore } from "../../core/downloads/useDownloadsStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
 import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
+import { usePrivacyStore } from "../../core/privacy/usePrivacyStore";
 import { Minimize2 } from "lucide-react";
 
 export function BrowserLayout() {
@@ -292,6 +294,19 @@ export function BrowserLayout() {
     return cleanup;
   }, [initTheme]);
 
+  // Initialize Privacy Cleaner Subsystem & IPC listeners
+  useEffect(() => {
+    const cleanup = usePrivacyStore.getState().init();
+    return cleanup;
+  }, []);
+
+  // Listen for custom event to open Privacy Cleaner
+  useEffect(() => {
+    const handler = () => usePrivacyStore.getState().openModal();
+    window.addEventListener("forge:open-privacy-cleaner", handler);
+    return () => window.removeEventListener("forge:open-privacy-cleaner", handler);
+  }, []);
+
   // Listen for Electron IPC fullscreen sync
   useEffect(() => {
     const forge = (window as any).forge;
@@ -461,6 +476,9 @@ export function BrowserLayout() {
         case "help:hotkeys":
           setIsHotkeysOpen((prev) => !prev);
           break;
+        case "page:privacy-cleaner":
+          usePrivacyStore.getState().openModal();
+          break;
 
         default:
           if (action.startsWith("tab:select-")) {
@@ -569,6 +587,7 @@ export function BrowserLayout() {
       else if (ctrl && !shift && !alt && key === "d") action = "page:bookmark";
       else if (ctrl && !shift && !alt && key === "h") action = "page:history";
       else if (ctrl && !shift && !alt && key === "j") action = "page:downloads";
+      else if (ctrl && shift && !alt && (key === "delete" || code === "Delete")) action = "page:privacy-cleaner";
       else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) action = "help:hotkeys";
 
       if (action) {
@@ -1063,6 +1082,9 @@ export function BrowserLayout() {
 
       {/* Hotkeys Cheatsheet Modal (F1 / Keyboard) */}
       <HotkeysModal isOpen={isHotkeysOpen} onClose={() => setIsHotkeysOpen(false)} />
+
+      {/* Forge Privacy Cleaner Subsystem Modal (Ctrl + Shift + Delete) */}
+      <PrivacyCleanerModal />
     </div>
   );
 }

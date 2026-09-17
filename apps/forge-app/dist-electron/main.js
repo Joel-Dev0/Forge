@@ -1,7 +1,7 @@
 // electron/main.ts
-import { app as app5, BrowserWindow as BrowserWindow5, ipcMain as ipcMain5, nativeTheme, nativeImage, powerMonitor, session as session5, shell, Menu } from "electron";
-import path3 from "node:path";
-import fs3 from "node:fs";
+import { app as app6, BrowserWindow as BrowserWindow5, ipcMain as ipcMain6, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session6, shell, Menu } from "electron";
+import path4 from "node:path";
+import fs4 from "node:fs";
 import os from "node:os";
 import { exec } from "node:child_process";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -24,12 +24,12 @@ function parseHttpUrl(input) {
   }
   const isTls = protocol === "https:";
   const port = parsed.port ? parseInt(parsed.port, 10) : isTls ? 443 : 80;
-  const path4 = `${parsed.pathname || "/"}${parsed.search || ""}`;
+  const path5 = `${parsed.pathname || "/"}${parsed.search || ""}`;
   return {
     protocol,
     hostname: parsed.hostname,
     port,
-    path: path4,
+    path: path5,
     isTls,
     href: parsed.href
   };
@@ -389,7 +389,7 @@ async function request(options, redirectCount = 0) {
 }
 
 // electron/network/networkMonitor.ts
-import { app as app4, ipcMain as ipcMain4, session as session4 } from "electron";
+import { app as app4, ipcMain as ipcMain4, nativeTheme, session as session4 } from "electron";
 
 // electron/adblock/adblockAdapter.ts
 import path2 from "node:path";
@@ -3630,6 +3630,7 @@ function initVpnAdapter(getMainWindow) {
 var entries = /* @__PURE__ */ new Map();
 var contentsDebuggerMap = /* @__PURE__ */ new Map();
 var requestContentsMap = /* @__PURE__ */ new Map();
+var currentNetworkTheme = nativeTheme.shouldUseDarkColors ? "dark" : "light";
 function getBaseName(urlStr) {
   try {
     const parsed = new URL(urlStr);
@@ -3859,7 +3860,9 @@ function initNetworkMonitor(getMainWindow) {
   });
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     try {
-      callback({ requestHeaders: details.requestHeaders });
+      const requestHeaders = { ...details.requestHeaders || {} };
+      requestHeaders["Sec-CH-Prefers-Color-Scheme"] = currentNetworkTheme;
+      callback({ requestHeaders });
     } catch {
       callback({});
     }
@@ -3958,17 +3961,654 @@ function initNetworkMonitor(getMainWindow) {
   });
 }
 
+// electron/privacy/privacyCleanerAdapter.ts
+import { ipcMain as ipcMain5, session as session5 } from "electron";
+
+// electron/privacy/privacyManager.ts
+var KNOWN_TRACKER_DOMAINS = [
+  "doubleclick.net",
+  "google-analytics.com",
+  "googletagmanager.com",
+  "googlesyndication.com",
+  "adservice.google.com",
+  "adnxs.com",
+  "criteo.com",
+  "criteo.net",
+  "facebook.com",
+  "connect.facebook.net",
+  "amazon-adsystem.com",
+  "scorecardresearch.com",
+  "quantserve.com",
+  "hotjar.com",
+  "taboola.com",
+  "outbrain.com",
+  "pubmatic.com",
+  "rubiconproject.com",
+  "openx.net",
+  "casalemedia.com",
+  "moatads.com",
+  "clarity.ms",
+  "mixpanel.com",
+  "segment.io",
+  "segment.com",
+  "amplitude.com",
+  "branch.io",
+  "appsflyer.com",
+  "ads-twitter.com",
+  "chartbeat.com",
+  "newrelic.com",
+  "nr-data.net",
+  "mouseflow.com",
+  "crazyegg.com",
+  "smartlook.com",
+  "yandex.ru/metrika",
+  "mc.yandex.ru",
+  "adroll.com",
+  "bing.com/bat.js",
+  "bat.bing.com"
+];
+var TRACKER_KEYWORDS = [
+  "telemetry",
+  "analytics",
+  "tracking",
+  "tracker",
+  "adserver",
+  "adservice",
+  "beacon",
+  "pixel",
+  "metrics",
+  "syndication"
+];
+function isTrackerDomain(domainStr) {
+  if (!domainStr) return false;
+  const clean = domainStr.toLowerCase().replace(/^\./, "");
+  for (const known of KNOWN_TRACKER_DOMAINS) {
+    if (clean === known || clean.endsWith(`.${known}`)) {
+      return true;
+    }
+  }
+  for (const keyword of TRACKER_KEYWORDS) {
+    if (clean.includes(keyword)) {
+      return true;
+    }
+  }
+  return false;
+}
+function isDomainMatchingList(domainStr, domainList) {
+  if (!domainStr || !domainList || domainList.length === 0) return false;
+  const clean = domainStr.toLowerCase().replace(/^\./, "");
+  for (const target of domainList) {
+    const targetClean = target.toLowerCase().trim().replace(/^\./, "");
+    if (!targetClean) continue;
+    if (clean === targetClean || clean.endsWith(`.${targetClean}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+var PrivacyManager = class {
+  lastCleanedTimestamp;
+  lastCleanedSummary;
+  constructor() {
+  }
+  async getStorageStats(forgeSession, historyCount = 0, downloadsCount = 0) {
+    let cacheSizeBytes = 0;
+    try {
+      cacheSizeBytes = await forgeSession.getCacheSize();
+    } catch {
+      cacheSizeBytes = 0;
+    }
+    let allCookies = [];
+    try {
+      allCookies = await forgeSession.cookies.get({});
+    } catch {
+      allCookies = [];
+    }
+    const nowSec = Date.now() / 1e3;
+    let cookiesTrackers = 0;
+    let cookiesStale = 0;
+    for (const cookie of allCookies) {
+      if (isTrackerDomain(cookie.domain)) {
+        cookiesTrackers++;
+      }
+      if (cookie.expirationDate && cookie.expirationDate < nowSec) {
+        cookiesStale++;
+      }
+    }
+    return {
+      cacheSizeBytes,
+      cookiesTotal: allCookies.length,
+      cookiesTrackers,
+      cookiesStale,
+      historyCount,
+      downloadsCount,
+      lastCleanedTimestamp: this.lastCleanedTimestamp,
+      lastCleanedSummary: this.lastCleanedSummary
+    };
+  }
+  async executeCleanup(forgeSession, defaultSession, targets, cookieRule, hooks) {
+    const cleanedTargets = [];
+    let initialCache = 0;
+    try {
+      initialCache = await forgeSession.getCacheSize();
+    } catch {
+    }
+    let cookiesRemoved = 0;
+    let historyCleared = false;
+    let downloadsCleared = false;
+    if (targets.cache) {
+      try {
+        await forgeSession.clearCache();
+        await forgeSession.clearHostResolverCache();
+        if (defaultSession && defaultSession !== forgeSession) {
+          await defaultSession.clearCache();
+          await defaultSession.clearHostResolverCache();
+        }
+        cleanedTargets.push("cache");
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing cache:", err);
+      }
+    }
+    if (targets.cookies) {
+      try {
+        if (cookieRule.mode === "all") {
+          const all = await forgeSession.cookies.get({});
+          await forgeSession.clearStorageData({ storages: ["cookies"] });
+          cookiesRemoved = all.length;
+          cleanedTargets.push("cookies");
+        } else {
+          const all = await forgeSession.cookies.get({});
+          for (const cookie of all) {
+            let shouldRemove = false;
+            if (cookieRule.mode === "except_protected") {
+              const isProtected = isDomainMatchingList(cookie.domain, cookieRule.protectedDomains);
+              if (!isProtected) {
+                shouldRemove = true;
+              }
+            } else if (cookieRule.mode === "only_trackers") {
+              if (isTrackerDomain(cookie.domain)) {
+                shouldRemove = true;
+              }
+            } else if (cookieRule.mode === "only_selected") {
+              if (isDomainMatchingList(cookie.domain, cookieRule.selectedDomains)) {
+                shouldRemove = true;
+              }
+            }
+            if (shouldRemove) {
+              const scheme = cookie.secure ? "https://" : "http://";
+              const domain = cookie.domain.startsWith(".") ? cookie.domain.substring(1) : cookie.domain;
+              const url = `${scheme}${domain}${cookie.path || "/"}`;
+              try {
+                await forgeSession.cookies.remove(url, cookie.name);
+                cookiesRemoved++;
+              } catch {
+              }
+            }
+          }
+          cleanedTargets.push("cookies");
+        }
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing cookies:", err);
+      }
+    }
+    const storagesToClear = [];
+    if (targets.localStorage) {
+      storagesToClear.push("localstorage");
+      cleanedTargets.push("localStorage");
+    }
+    if (targets.indexedDB) {
+      storagesToClear.push("indexdb");
+      cleanedTargets.push("indexedDB");
+    }
+    if (targets.serviceWorkers) {
+      storagesToClear.push("serviceworkers", "cachestorage");
+      cleanedTargets.push("serviceWorkers");
+    }
+    if (storagesToClear.length > 0) {
+      try {
+        await forgeSession.clearStorageData({ storages: storagesToClear });
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing storage data:", err);
+      }
+    }
+    if (targets.sessions) {
+      try {
+        await forgeSession.clearAuthCache();
+        if (defaultSession && defaultSession !== forgeSession) {
+          await defaultSession.clearAuthCache();
+        }
+        cleanedTargets.push("sessions");
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing auth cache:", err);
+      }
+    }
+    if (targets.passwordsAutofill) {
+      try {
+        await forgeSession.clearStorageData({
+          storages: ["cookies"],
+          quotas: ["temporary", "persistent", "syncable"]
+        });
+        cleanedTargets.push("passwordsAutofill");
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing passwords/autofill:", err);
+      }
+    }
+    if (targets.permissions) {
+      try {
+        cleanedTargets.push("permissions");
+      } catch (err) {
+        console.error("[PrivacyManager] Error resetting permissions:", err);
+      }
+    }
+    if (targets.history) {
+      try {
+        if (hooks?.onClearHistory) {
+          hooks.onClearHistory();
+        }
+        historyCleared = true;
+        cleanedTargets.push("history");
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing browsing history:", err);
+      }
+    }
+    if (targets.downloads) {
+      try {
+        if (hooks?.onClearDownloads) {
+          hooks.onClearDownloads();
+        }
+        downloadsCleared = true;
+        cleanedTargets.push("downloads");
+      } catch (err) {
+        console.error("[PrivacyManager] Error clearing download history:", err);
+      }
+    }
+    let finalCache = 0;
+    try {
+      finalCache = await forgeSession.getCacheSize();
+    } catch {
+    }
+    const bytesFreed = Math.max(0, initialCache - finalCache);
+    const now = Date.now();
+    this.lastCleanedTimestamp = now;
+    this.lastCleanedSummary = {
+      targets: cleanedTargets,
+      bytesFreed,
+      cookiesRemoved,
+      timestamp: now
+    };
+    return {
+      success: true,
+      bytesFreed,
+      cookiesRemoved,
+      historyCleared,
+      downloadsCleared,
+      cleanedTargets,
+      timestamp: now
+    };
+  }
+  async cleanTrackersOnly(forgeSession) {
+    let count = 0;
+    try {
+      const all = await forgeSession.cookies.get({});
+      for (const cookie of all) {
+        if (isTrackerDomain(cookie.domain)) {
+          const scheme = cookie.secure ? "https://" : "http://";
+          const domain = cookie.domain.startsWith(".") ? cookie.domain.substring(1) : cookie.domain;
+          const url = `${scheme}${domain}${cookie.path || "/"}`;
+          try {
+            await forgeSession.cookies.remove(url, cookie.name);
+            count++;
+          } catch {
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[PrivacyManager] Error cleaning trackers:", err);
+    }
+    return { removed: count };
+  }
+};
+
+// electron/privacy/privacyScheduler.ts
+import fs3 from "node:fs";
+import path3 from "node:path";
+import { app as app5 } from "electron";
+
+// electron/privacy/types.ts
+var DEFAULT_PROTECTED_DOMAINS = [
+  "github.com",
+  "stackoverflow.com",
+  "google.com",
+  "gitlab.com",
+  "reddit.com",
+  "x.com",
+  "twitter.com",
+  "notion.so",
+  "figma.com"
+];
+var DEFAULT_CLEANUP_POLICY = {
+  enabled: false,
+  interval: "disabled",
+  customIntervalMinutes: 360,
+  targets: {
+    cache: true,
+    history: true,
+    downloads: false,
+    cookies: true,
+    localStorage: true,
+    indexedDB: true,
+    serviceWorkers: true,
+    sessions: false,
+    passwordsAutofill: false,
+    permissions: false
+  },
+  cookieRule: {
+    mode: "except_protected",
+    protectedDomains: [...DEFAULT_PROTECTED_DOMAINS],
+    selectedDomains: []
+  }
+};
+
+// electron/privacy/privacyScheduler.ts
+var PrivacyScheduler = class {
+  policy;
+  timer = null;
+  policyFilePath;
+  privacyManager;
+  getSessions;
+  onCleanupCompleted;
+  onPolicyChanged;
+  hooks;
+  constructor(privacyManager2, getSessions, callbacks) {
+    this.privacyManager = privacyManager2;
+    this.getSessions = getSessions;
+    this.onCleanupCompleted = callbacks?.onCleanupCompleted;
+    this.onPolicyChanged = callbacks?.onPolicyChanged;
+    this.hooks = callbacks?.hooks;
+    try {
+      this.policyFilePath = path3.join(app5.getPath("userData"), "privacy-policy.json");
+    } catch {
+      this.policyFilePath = path3.join(process.cwd(), "privacy-policy.json");
+    }
+    this.policy = this.loadPolicy();
+    this.startTicker();
+  }
+  loadPolicy() {
+    try {
+      if (fs3.existsSync(this.policyFilePath)) {
+        const raw = fs3.readFileSync(this.policyFilePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        return {
+          ...DEFAULT_CLEANUP_POLICY,
+          ...parsed,
+          targets: {
+            ...DEFAULT_CLEANUP_POLICY.targets,
+            ...parsed.targets || {}
+          },
+          cookieRule: {
+            ...DEFAULT_CLEANUP_POLICY.cookieRule,
+            ...parsed.cookieRule || {}
+          }
+        };
+      }
+    } catch (err) {
+      console.warn("[PrivacyScheduler] Error loading policy from disk, using default:", err);
+    }
+    return { ...DEFAULT_CLEANUP_POLICY };
+  }
+  savePolicy() {
+    try {
+      const dir = path3.dirname(this.policyFilePath);
+      if (!fs3.existsSync(dir)) {
+        fs3.mkdirSync(dir, { recursive: true });
+      }
+      fs3.writeFileSync(this.policyFilePath, JSON.stringify(this.policy, null, 2), "utf-8");
+    } catch (err) {
+      console.error("[PrivacyScheduler] Error saving policy to disk:", err);
+    }
+  }
+  getPolicy() {
+    return { ...this.policy };
+  }
+  updatePolicy(partial) {
+    this.policy = {
+      ...this.policy,
+      ...partial,
+      targets: {
+        ...this.policy.targets,
+        ...partial.targets || {}
+      },
+      cookieRule: {
+        ...this.policy.cookieRule,
+        ...partial.cookieRule || {}
+      }
+    };
+    if (this.policy.enabled && this.policy.interval !== "disabled") {
+      this.policy.nextRunTimestamp = this.calculateNextRunTimestamp(
+        this.policy.interval,
+        this.policy.customIntervalMinutes
+      );
+    } else {
+      this.policy.nextRunTimestamp = void 0;
+    }
+    this.savePolicy();
+    if (this.onPolicyChanged) {
+      this.onPolicyChanged(this.getPolicy());
+    }
+    return this.getPolicy();
+  }
+  calculateNextRunTimestamp(interval, customMinutes = 360, fromTimestamp = Date.now()) {
+    let addMs = 0;
+    switch (interval) {
+      case "1h":
+        addMs = 60 * 60 * 1e3;
+        break;
+      case "6h":
+        addMs = 6 * 60 * 60 * 1e3;
+        break;
+      case "24h":
+        addMs = 24 * 60 * 60 * 1e3;
+        break;
+      case "7d":
+        addMs = 7 * 24 * 60 * 60 * 1e3;
+        break;
+      case "custom":
+        addMs = Math.max(1, customMinutes) * 60 * 1e3;
+        break;
+      case "disabled":
+      default:
+        return void 0;
+    }
+    return fromTimestamp + addMs;
+  }
+  startTicker() {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+    this.timer = setInterval(() => {
+      this.checkScheduledExecution();
+    }, 60 * 1e3);
+  }
+  async checkScheduledExecution() {
+    if (!this.policy.enabled || this.policy.interval === "disabled" || !this.policy.nextRunTimestamp) {
+      return;
+    }
+    const now = Date.now();
+    if (now >= this.policy.nextRunTimestamp) {
+      console.log("[PrivacyScheduler] Automatic cleanup triggered at:", new Date(now).toISOString());
+      const safeTargets = {
+        ...this.policy.targets,
+        sessions: false,
+        passwordsAutofill: false,
+        permissions: false
+      };
+      const { forgeSession, defaultSession } = this.getSessions();
+      try {
+        const result = await this.privacyManager.executeCleanup(
+          forgeSession,
+          defaultSession,
+          safeTargets,
+          this.policy.cookieRule,
+          this.hooks
+        );
+        this.policy.lastRunTimestamp = now;
+        this.policy.nextRunTimestamp = this.calculateNextRunTimestamp(
+          this.policy.interval,
+          this.policy.customIntervalMinutes,
+          now
+        );
+        this.savePolicy();
+        if (this.onCleanupCompleted) {
+          this.onCleanupCompleted(result);
+        }
+        if (this.onPolicyChanged) {
+          this.onPolicyChanged(this.getPolicy());
+        }
+      } catch (err) {
+        console.error("[PrivacyScheduler] Error executing automated cleanup:", err);
+      }
+    }
+  }
+  destroy() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+};
+
+// electron/privacy/privacyCleanerAdapter.ts
+var getWin2 = null;
+var privacyManager = null;
+var privacyScheduler = null;
+function broadcastEvent2(channel, data) {
+  if (!getWin2) return;
+  const win = getWin2();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data);
+  }
+}
+function initPrivacyCleanerAdapter(mainWindowGetter, options) {
+  getWin2 = mainWindowGetter;
+  privacyManager = new PrivacyManager();
+  const getSessions = () => ({
+    forgeSession: session5.fromPartition("persist:forge"),
+    defaultSession: session5.defaultSession
+  });
+  privacyScheduler = new PrivacyScheduler(privacyManager, getSessions, {
+    onCleanupCompleted: (result) => {
+      broadcastEvent2("privacy:cleanup-completed", result);
+    },
+    onPolicyChanged: (policy) => {
+      broadcastEvent2("privacy:policy-changed", policy);
+    },
+    hooks: {
+      onClearHistory: () => {
+        broadcastEvent2("privacy:clear-history-requested");
+      },
+      onClearDownloads: () => {
+        if (options?.clearRecentDownloads) {
+          options.clearRecentDownloads();
+        }
+        broadcastEvent2("privacy:clear-downloads-requested");
+      }
+    }
+  });
+  ipcMain5.handle("privacy:get-stats", async (_event, historyCount = 0) => {
+    if (!privacyManager) return null;
+    const { forgeSession } = getSessions();
+    const downloadsCount = options?.getRecentDownloadsCount ? options.getRecentDownloadsCount() : 0;
+    const stats = await privacyManager.getStorageStats(forgeSession, historyCount, downloadsCount);
+    return stats;
+  });
+  ipcMain5.handle("privacy:get-policy", () => {
+    if (!privacyScheduler) return null;
+    return privacyScheduler.getPolicy();
+  });
+  ipcMain5.handle("privacy:update-policy", (_event, partial) => {
+    if (!privacyScheduler) return null;
+    const updated = privacyScheduler.updatePolicy(partial);
+    return updated;
+  });
+  ipcMain5.handle(
+    "privacy:clean-now",
+    async (_event, overrideTargets, overrideCookieRule) => {
+      if (!privacyManager || !privacyScheduler) {
+        throw new Error("Privacy cleaner subsystem is not initialized");
+      }
+      const policy = privacyScheduler.getPolicy();
+      const targets = overrideTargets || policy.targets;
+      const cookieRule = overrideCookieRule || policy.cookieRule;
+      const { forgeSession, defaultSession } = getSessions();
+      const result = await privacyManager.executeCleanup(
+        forgeSession,
+        defaultSession,
+        targets,
+        cookieRule,
+        {
+          onClearHistory: () => {
+            broadcastEvent2("privacy:clear-history-requested");
+          },
+          onClearDownloads: () => {
+            if (options?.clearRecentDownloads) {
+              options.clearRecentDownloads();
+            }
+            broadcastEvent2("privacy:clear-downloads-requested");
+          }
+        }
+      );
+      broadcastEvent2("privacy:cleanup-completed", result);
+      return result;
+    }
+  );
+  ipcMain5.handle("privacy:clean-trackers-only", async () => {
+    if (!privacyManager) return { removed: 0 };
+    const { forgeSession } = getSessions();
+    const res = await privacyManager.cleanTrackersOnly(forgeSession);
+    broadcastEvent2("privacy:stats-updated");
+    return res;
+  });
+  ipcMain5.handle("privacy:add-protected-domain", (_event, domain) => {
+    if (!privacyScheduler || !domain) return null;
+    const policy = privacyScheduler.getPolicy();
+    const cleanDomain = domain.toLowerCase().trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!cleanDomain) return policy;
+    const set = new Set(policy.cookieRule.protectedDomains);
+    set.add(cleanDomain);
+    const updated = privacyScheduler.updatePolicy({
+      cookieRule: {
+        ...policy.cookieRule,
+        protectedDomains: Array.from(set)
+      }
+    });
+    return updated;
+  });
+  ipcMain5.handle("privacy:remove-protected-domain", (_event, domain) => {
+    if (!privacyScheduler || !domain) return null;
+    const policy = privacyScheduler.getPolicy();
+    const cleanDomain = domain.toLowerCase().trim();
+    const updatedList = policy.cookieRule.protectedDomains.filter((d) => d.toLowerCase() !== cleanDomain);
+    const updated = privacyScheduler.updatePolicy({
+      cookieRule: {
+        ...policy.cookieRule,
+        protectedDomains: updatedList
+      }
+    });
+    return updated;
+  });
+}
+
 // electron/main.ts
 var __filename2 = fileURLToPath2(import.meta.url);
-var __dirname2 = path3.dirname(__filename2);
+var __dirname2 = path4.dirname(__filename2);
 if (process.platform === "win32") {
-  app5.setAppUserModelId("com.forge.browser");
+  app6.setAppUserModelId("com.forge.browser");
 }
-var gotTheLock = app5.requestSingleInstanceLock();
+var gotTheLock = app6.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app5.quit();
+  app6.quit();
 } else {
-  app5.on("second-instance", () => {
+  app6.on("second-instance", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -3976,15 +4616,15 @@ if (!gotTheLock) {
     }
   });
 }
-app5.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
-app5.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
-app5.commandLine.appendSwitch("disable-background-timer-throttling");
-app5.commandLine.appendSwitch("disable-renderer-backgrounding");
-app5.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
-app5.commandLine.appendSwitch("disable-gpu-process-crash-limit");
-app5.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
-app5.commandLine.appendSwitch("log-level", "3");
-app5.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
+app6.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app6.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
+app6.commandLine.appendSwitch("disable-background-timer-throttling");
+app6.commandLine.appendSwitch("disable-renderer-backgrounding");
+app6.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app6.commandLine.appendSwitch("disable-gpu-process-crash-limit");
+app6.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
+app6.commandLine.appendSwitch("log-level", "3");
+app6.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
   event.preventDefault();
   callback(false);
 });
@@ -3997,10 +4637,10 @@ process.on("unhandledRejection", (reason) => {
   }
   console.error("[Electron Main] Unhandled Rejection (crash prevented):", reason);
 });
-app5.on("child-process-gone", (_event, details) => {
+app6.on("child-process-gone", (_event, details) => {
   console.warn("[Electron Main] Child process gone:", details.type, details.reason, details.exitCode);
 });
-app5.on("render-process-gone", (_event, webContents, details) => {
+app6.on("render-process-gone", (_event, webContents, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
     if (!webContents.isDestroyed()) {
@@ -4019,7 +4659,7 @@ var recentDownloads = [];
 function setupDownloadListeners(sess) {
   sess.on("will-download", (_event, item, webContents) => {
     const filename = item.getFilename();
-    const savePath = path3.join(app5.getPath("downloads"), filename);
+    const savePath = path4.join(app6.getPath("downloads"), filename);
     item.setSavePath(savePath);
     const record = {
       id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -4101,6 +4741,8 @@ function registerShortcutInterception(contents) {
       action = "page:history";
     } else if (ctrl && !shift && !alt && key === "j") {
       action = "page:downloads";
+    } else if (ctrl && shift && !alt && (key === "delete" || code === "Delete")) {
+      action = "page:privacy-cleaner";
     } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
       action = "help:hotkeys";
     } else if (alt && !ctrl && !shift && (key === "p" || code === "KeyP")) {
@@ -4135,15 +4777,15 @@ powerMonitor.on("resume", () => {
 });
 function getAssetPath(filename) {
   const candidates = [
-    path3.join(__dirname2, "assets", filename),
-    path3.join(__dirname2, "../electron/assets", filename),
-    path3.join(process.cwd(), "apps/forge-app/electron/assets", filename),
-    path3.join(process.cwd(), "electron/assets", filename)
+    path4.join(__dirname2, "assets", filename),
+    path4.join(__dirname2, "../electron/assets", filename),
+    path4.join(process.cwd(), "apps/forge-app/electron/assets", filename),
+    path4.join(process.cwd(), "electron/assets", filename)
   ];
   for (const candidate of candidates) {
-    if (fs3.existsSync(candidate)) return candidate;
+    if (fs4.existsSync(candidate)) return candidate;
   }
-  return path3.join(__dirname2, "assets", filename);
+  return path4.join(__dirname2, "assets", filename);
 }
 function updateTaskbarMediaButtons(win, isPlaying) {
   if (process.platform !== "win32" || !win || win.isDestroyed()) return;
@@ -4188,9 +4830,9 @@ function updateTaskbarMediaButtons(win, isPlaying) {
   }
 }
 function createWindow(isIncognito = false) {
-  const icoPath = path3.join(__dirname2, "../public/icon.ico");
-  const pngPath = path3.join(__dirname2, "../public/logo.png");
-  const appIcon = fs3.existsSync(icoPath) ? icoPath : pngPath;
+  const icoPath = path4.join(__dirname2, "../public/icon.ico");
+  const pngPath = path4.join(__dirname2, "../public/logo.png");
+  const appIcon = fs4.existsSync(icoPath) ? icoPath : pngPath;
   const win = new BrowserWindow5({
     width: 1400,
     height: 900,
@@ -4205,7 +4847,7 @@ function createWindow(isIncognito = false) {
     show: false,
     icon: appIcon,
     webPreferences: {
-      preload: path3.join(__dirname2, "preload.cjs"),
+      preload: path4.join(__dirname2, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -4240,7 +4882,7 @@ function createWindow(isIncognito = false) {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    win.loadFile(path3.join(__dirname2, "../dist/index.html"), {
+    win.loadFile(path4.join(__dirname2, "../dist/index.html"), {
       query: isIncognito ? { incognito: "1" } : void 0
     });
   }
@@ -4261,7 +4903,7 @@ function getTargetBrowserWindow(event) {
   if (anyWin && !anyWin.isDestroyed()) return anyWin;
   return null;
 }
-ipcMain5.on("window:minimize", (event) => {
+ipcMain6.on("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -4270,7 +4912,7 @@ ipcMain5.on("window:minimize", (event) => {
     win.minimize();
   }
 });
-ipcMain5.handle("window:minimize", (event) => {
+ipcMain6.handle("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -4281,7 +4923,7 @@ ipcMain5.handle("window:minimize", (event) => {
   }
   return false;
 });
-ipcMain5.on("window:maximize", (event) => {
+ipcMain6.on("window:maximize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isMaximized()) {
@@ -4291,30 +4933,30 @@ ipcMain5.on("window:maximize", (event) => {
     }
   }
 });
-ipcMain5.on("window:close", (event) => {
+ipcMain6.on("window:close", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     win.close();
   }
 });
-ipcMain5.handle("window:is-maximized", (event) => {
+ipcMain6.handle("window:is-maximized", (event) => {
   const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
-ipcMain5.on("window:set-fullscreen", (event, flag) => {
+ipcMain6.on("window:set-fullscreen", (event, flag) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   win?.setFullScreen(flag);
 });
-ipcMain5.handle("window:is-fullscreen", (event) => {
+ipcMain6.handle("window:is-fullscreen", (event) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   return win?.isFullScreen() ?? false;
 });
-ipcMain5.on("theme:set", (_event, mode) => {
+ipcMain6.on("theme:set", (_event, mode) => {
   if (["system", "light", "dark"].includes(mode)) {
-    nativeTheme.themeSource = mode;
+    nativeTheme2.themeSource = mode;
   }
 });
-ipcMain5.on("window:set-title", (_event, title) => {
+ipcMain6.on("window:set-title", (_event, title) => {
   const win = BrowserWindow5.getFocusedWindow() || mainWindow;
   if (win && !win.isDestroyed()) {
     const cleanTitle = title?.trim();
@@ -4342,11 +4984,11 @@ function restoreAndFocusWindow(win) {
 }
 function applyPipWindowIcon() {
   if (process.platform !== "win32") return;
-  const scriptPath = path3.join(__dirname2, "setPipIcon.ps1");
-  const fallbackScript = path3.join(__dirname2, "../electron/setPipIcon.ps1");
-  const psPath = fs3.existsSync(scriptPath) ? scriptPath : fallbackScript;
-  const icoPath = path3.join(__dirname2, "../public/icon.ico");
-  if (!fs3.existsSync(psPath) || !fs3.existsSync(icoPath)) return;
+  const scriptPath = path4.join(__dirname2, "setPipIcon.ps1");
+  const fallbackScript = path4.join(__dirname2, "../electron/setPipIcon.ps1");
+  const psPath = fs4.existsSync(scriptPath) ? scriptPath : fallbackScript;
+  const icoPath = path4.join(__dirname2, "../public/icon.ico");
+  if (!fs4.existsSync(psPath) || !fs4.existsSync(icoPath)) return;
   let attempts = 0;
   const interval = setInterval(() => {
     attempts++;
@@ -4358,22 +5000,22 @@ function applyPipWindowIcon() {
     if (attempts >= 10) clearInterval(interval);
   }, 200);
 }
-app5.on("browser-window-created", (_event, win) => {
+app6.on("browser-window-created", (_event, win) => {
   try {
-    const icoPath = path3.join(__dirname2, "../public/icon.ico");
-    const pngPath = path3.join(__dirname2, "../public/logo.png");
-    const appIcon = fs3.existsSync(icoPath) ? icoPath : pngPath;
+    const icoPath = path4.join(__dirname2, "../public/icon.ico");
+    const pngPath = path4.join(__dirname2, "../public/logo.png");
+    const appIcon = fs4.existsSync(icoPath) ? icoPath : pngPath;
     win.setIcon(appIcon);
   } catch {
   }
 });
-ipcMain5.on("window:restore-and-focus", (event) => {
+ipcMain6.on("window:restore-and-focus", (event) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
 var recentlyExitedPipWebContents = /* @__PURE__ */ new Map();
-app5.on("web-contents-created", (_event, contents) => {
+app6.on("web-contents-created", (_event, contents) => {
   try {
     contents.setMaxListeners(50);
   } catch {
@@ -4441,12 +5083,12 @@ app5.on("web-contents-created", (_event, contents) => {
     recentlyExitedPipWebContents.delete(contents.id);
   });
 });
-ipcMain5.on("media:status-update", (_event, data) => {
+ipcMain6.on("media:status-update", (_event, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     updateTaskbarMediaButtons(mainWindow, Boolean(data?.isPlaying));
   }
 });
-ipcMain5.handle("forge:http:request", async (_event, options) => {
+ipcMain6.handle("forge:http:request", async (_event, options) => {
   try {
     const response = await request(options);
     return { ok: true, data: response };
@@ -4454,13 +5096,13 @@ ipcMain5.handle("forge:http:request", async (_event, options) => {
     return { ok: false, error: err.message || String(err) };
   }
 });
-ipcMain5.handle("terminal:get-cwd", () => {
+ipcMain6.handle("terminal:get-cwd", () => {
   return terminalCwd;
 });
-ipcMain5.handle("terminal:set-cwd", (_event, newCwd) => {
+ipcMain6.handle("terminal:set-cwd", (_event, newCwd) => {
   try {
-    const resolved = path3.resolve(terminalCwd, newCwd);
-    if (fs3.existsSync(resolved) && fs3.statSync(resolved).isDirectory()) {
+    const resolved = path4.resolve(terminalCwd, newCwd);
+    if (fs4.existsSync(resolved) && fs4.statSync(resolved).isDirectory()) {
       terminalCwd = resolved;
       return { ok: true, cwd: terminalCwd };
     }
@@ -4469,7 +5111,7 @@ ipcMain5.handle("terminal:set-cwd", (_event, newCwd) => {
     return { ok: false, error: err.message, cwd: terminalCwd };
   }
 });
-ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
+ipcMain6.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
   const trimmed = command.trim();
   if (!trimmed) {
     return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
@@ -4484,8 +5126,8 @@ ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell
     target = target.replace(/^\/d\s+/i, "");
     target = target.replace(/^["']|["']$/g, "");
     try {
-      const resolved = path3.resolve(terminalCwd, target);
-      if (fs3.existsSync(resolved) && fs3.statSync(resolved).isDirectory()) {
+      const resolved = path4.resolve(terminalCwd, target);
+      if (fs4.existsSync(resolved) && fs4.statSync(resolved).isDirectory()) {
         terminalCwd = resolved;
         return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
       } else {
@@ -4497,7 +5139,7 @@ ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell
   }
   if (/^[a-zA-Z]:$/.test(trimmed)) {
     const drive = trimmed.toUpperCase() + "\\";
-    if (fs3.existsSync(drive)) {
+    if (fs4.existsSync(drive)) {
       terminalCwd = drive;
       return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
     } else {
@@ -4521,39 +5163,43 @@ ipcMain5.handle("terminal:exec", async (_event, command, shellType = "powershell
     });
   });
 });
-ipcMain5.on("window:open-private", () => {
+ipcMain6.on("window:open-private", () => {
   createWindow(true);
 });
-ipcMain5.handle("downloads:get-recent", () => recentDownloads);
-ipcMain5.handle("downloads:open-folder", () => {
-  shell.openPath(app5.getPath("downloads"));
+ipcMain6.handle("downloads:get-recent", () => recentDownloads);
+ipcMain6.handle("downloads:clear-history", () => {
+  recentDownloads.length = 0;
   return true;
 });
-ipcMain5.handle("downloads:open-file", (_event, filePath) => {
-  if (filePath && fs3.existsSync(filePath)) {
+ipcMain6.handle("downloads:open-folder", () => {
+  shell.openPath(app6.getPath("downloads"));
+  return true;
+});
+ipcMain6.handle("downloads:open-file", (_event, filePath) => {
+  if (filePath && fs4.existsSync(filePath)) {
     shell.openPath(filePath);
     return true;
   }
   return false;
 });
-ipcMain5.handle("downloads:show-in-folder", (_event, filePath) => {
-  if (filePath && fs3.existsSync(filePath)) {
+ipcMain6.handle("downloads:show-in-folder", (_event, filePath) => {
+  if (filePath && fs4.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
   }
-  shell.openPath(app5.getPath("downloads"));
+  shell.openPath(app6.getPath("downloads"));
   return true;
 });
-app5.whenReady().then(() => {
+app6.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   try {
-    setupDownloadListeners(session5.defaultSession);
-    const forgeSession = session5.fromPartition("persist:forge");
+    setupDownloadListeners(session6.defaultSession);
+    const forgeSession = session6.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
     const defaultUA = forgeSession.getUserAgent();
     const cleanUA = defaultUA.replace(/Electron\/[0-9.]+\s?/gi, "").replace(/forge(-app)?\/[0-9.]+\s?/gi, "").trim();
     forgeSession.setUserAgent(cleanUA);
-    session5.defaultSession.setUserAgent(cleanUA);
+    session6.defaultSession.setUserAgent(cleanUA);
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;
@@ -4570,11 +5216,17 @@ app5.whenReady().then(() => {
   initNetworkMonitor(() => mainWindow);
   initSecureNetworkAdapter(() => mainWindow);
   initVpnAdapter(() => mainWindow);
+  initPrivacyCleanerAdapter(() => mainWindow, {
+    clearRecentDownloads: () => {
+      recentDownloads.length = 0;
+    },
+    getRecentDownloadsCount: () => recentDownloads.length
+  });
   createWindow();
-  app5.on("activate", () => {
+  app6.on("activate", () => {
     if (BrowserWindow5.getAllWindows().length === 0) createWindow();
   });
 });
-app5.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app5.quit();
+app6.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app6.quit();
 });

@@ -10,6 +10,7 @@ import { initNetworkMonitor } from "./network/networkMonitor.js";
 import { initAdBlockAdapter } from "./adblock/adblockAdapter.js";
 import { initSecureNetworkAdapter } from "./network/secureNetworkAdapter.js";
 import { initVpnAdapter } from "./network/vpnAdapter.js";
+import { initPrivacyCleanerAdapter } from "./privacy/privacyCleanerAdapter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,6 +202,8 @@ function registerShortcutInterception(contents: Electron.WebContents) {
       action = "page:history";
     } else if (ctrl && !shift && !alt && key === "j") {
       action = "page:downloads";
+    } else if (ctrl && shift && !alt && (key === "delete" || code === "Delete")) {
+      action = "page:privacy-cleaner";
     } else if (!ctrl && !shift && !alt && (key === "f1" || code === "F1")) {
       action = "help:hotkeys";
     } else if (alt && !ctrl && !shift && (key === "p" || code === "KeyP")) {
@@ -702,6 +705,10 @@ ipcMain.on("window:open-private", () => {
 });
 
 ipcMain.handle("downloads:get-recent", () => recentDownloads);
+ipcMain.handle("downloads:clear-history", () => {
+  recentDownloads.length = 0;
+  return true;
+});
 ipcMain.handle("downloads:open-folder", () => {
   shell.openPath(app.getPath("downloads"));
   return true;
@@ -758,6 +765,12 @@ app.whenReady().then(() => {
   initNetworkMonitor(() => mainWindow);
   initSecureNetworkAdapter(() => mainWindow);
   initVpnAdapter(() => mainWindow);
+  initPrivacyCleanerAdapter(() => mainWindow, {
+    clearRecentDownloads: () => {
+      recentDownloads.length = 0;
+    },
+    getRecentDownloadsCount: () => recentDownloads.length,
+  });
   createWindow();
 
   app.on("activate", () => {

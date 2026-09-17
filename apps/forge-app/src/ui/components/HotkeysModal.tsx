@@ -56,6 +56,7 @@ export function HotkeysModal({ isOpen, onClose }: HotkeysModalProps) {
         { keys: ["Ctrl", "D"], desc: "Bookmark the current page." },
         { keys: ["Ctrl", "H"], desc: "Open your browsing history." },
         { keys: ["Ctrl", "J"], desc: "View your downloads." },
+        { keys: ["Ctrl", "Shift", "Del"], desc: "Open Forge Privacy Cleaner." },
       ],
     },
   ];

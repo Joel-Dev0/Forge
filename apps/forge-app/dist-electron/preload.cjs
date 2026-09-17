@@ -24,7 +24,7 @@ var windowControls = {
   isMaximized: () => import_electron.ipcRenderer.invoke("window:is-maximized"),
   setFullScreen: (flag) => import_electron.ipcRenderer.send("window:set-fullscreen", flag),
   isFullScreen: () => import_electron.ipcRenderer.invoke("window:is-fullscreen"),
-  setTheme: (mode) => import_electron.ipcRenderer.send("theme:set", mode),
+  setTheme: (mode, resolved) => import_electron.ipcRenderer.send("theme:set", mode, resolved),
   setTitle: (title) => import_electron.ipcRenderer.send("window:set-title", title)
 };
 import_electron.contextBridge.exposeInMainWorld("electron", windowControls);
@@ -56,6 +56,7 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
   },
   downloads: {
     getRecent: () => import_electron.ipcRenderer.invoke("downloads:get-recent"),
+    clearHistory: () => import_electron.ipcRenderer.invoke("downloads:clear-history"),
     openFolder: () => import_electron.ipcRenderer.invoke("downloads:open-folder"),
     openFile: (filePath) => import_electron.ipcRenderer.invoke("downloads:open-file", filePath),
     showInFolder: (filePath) => import_electron.ipcRenderer.invoke("downloads:show-in-folder", filePath),
@@ -226,6 +227,40 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       const listener = (_event, status) => callback(status);
       import_electron.ipcRenderer.on("vpn:status-changed", listener);
       return () => import_electron.ipcRenderer.removeListener("vpn:status-changed", listener);
+    }
+  },
+  privacy: {
+    getStats: (historyCount) => import_electron.ipcRenderer.invoke("privacy:get-stats", historyCount),
+    getPolicy: () => import_electron.ipcRenderer.invoke("privacy:get-policy"),
+    updatePolicy: (partial) => import_electron.ipcRenderer.invoke("privacy:update-policy", partial),
+    cleanNow: (overrideTargets, overrideCookieRule) => import_electron.ipcRenderer.invoke("privacy:clean-now", overrideTargets, overrideCookieRule),
+    cleanTrackersOnly: () => import_electron.ipcRenderer.invoke("privacy:clean-trackers-only"),
+    addProtectedDomain: (domain) => import_electron.ipcRenderer.invoke("privacy:add-protected-domain", domain),
+    removeProtectedDomain: (domain) => import_electron.ipcRenderer.invoke("privacy:remove-protected-domain", domain),
+    onStatsUpdated: (callback) => {
+      const listener = () => callback();
+      import_electron.ipcRenderer.on("privacy:stats-updated", listener);
+      return () => import_electron.ipcRenderer.removeListener("privacy:stats-updated", listener);
+    },
+    onCleanupCompleted: (callback) => {
+      const listener = (_event, result) => callback(result);
+      import_electron.ipcRenderer.on("privacy:cleanup-completed", listener);
+      return () => import_electron.ipcRenderer.removeListener("privacy:cleanup-completed", listener);
+    },
+    onPolicyChanged: (callback) => {
+      const listener = (_event, policy) => callback(policy);
+      import_electron.ipcRenderer.on("privacy:policy-changed", listener);
+      return () => import_electron.ipcRenderer.removeListener("privacy:policy-changed", listener);
+    },
+    onClearHistoryRequested: (callback) => {
+      const listener = () => callback();
+      import_electron.ipcRenderer.on("privacy:clear-history-requested", listener);
+      return () => import_electron.ipcRenderer.removeListener("privacy:clear-history-requested", listener);
+    },
+    onClearDownloadsRequested: (callback) => {
+      const listener = () => callback();
+      import_electron.ipcRenderer.on("privacy:clear-downloads-requested", listener);
+      return () => import_electron.ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
     }
   }
 });

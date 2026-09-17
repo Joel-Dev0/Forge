@@ -21,7 +21,7 @@ const windowControls = {
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
   setFullScreen: (flag: boolean) => ipcRenderer.send("window:set-fullscreen", flag),
   isFullScreen: () => ipcRenderer.invoke("window:is-fullscreen"),
-  setTheme: (mode: "system" | "light" | "dark") => ipcRenderer.send("theme:set", mode),
+  setTheme: (mode: "system" | "light" | "dark", resolved?: "light" | "dark") => ipcRenderer.send("theme:set", mode, resolved),
   setTitle: (title: string) => ipcRenderer.send("window:set-title", title),
 };
 
@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld("forge", {
   },
   downloads: {
     getRecent: () => ipcRenderer.invoke("downloads:get-recent"),
+    clearHistory: () => ipcRenderer.invoke("downloads:clear-history"),
     openFolder: () => ipcRenderer.invoke("downloads:open-folder"),
     openFile: (filePath: string) => ipcRenderer.invoke("downloads:open-file", filePath),
     showInFolder: (filePath: string) => ipcRenderer.invoke("downloads:show-in-folder", filePath),
@@ -226,6 +227,41 @@ contextBridge.exposeInMainWorld("forge", {
       const listener = (_event: any, status: any) => callback(status);
       ipcRenderer.on("vpn:status-changed", listener);
       return () => ipcRenderer.removeListener("vpn:status-changed", listener);
+    },
+  },
+  privacy: {
+    getStats: (historyCount?: number) => ipcRenderer.invoke("privacy:get-stats", historyCount),
+    getPolicy: () => ipcRenderer.invoke("privacy:get-policy"),
+    updatePolicy: (partial: any) => ipcRenderer.invoke("privacy:update-policy", partial),
+    cleanNow: (overrideTargets?: any, overrideCookieRule?: any) =>
+      ipcRenderer.invoke("privacy:clean-now", overrideTargets, overrideCookieRule),
+    cleanTrackersOnly: () => ipcRenderer.invoke("privacy:clean-trackers-only"),
+    addProtectedDomain: (domain: string) => ipcRenderer.invoke("privacy:add-protected-domain", domain),
+    removeProtectedDomain: (domain: string) => ipcRenderer.invoke("privacy:remove-protected-domain", domain),
+    onStatsUpdated: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("privacy:stats-updated", listener);
+      return () => ipcRenderer.removeListener("privacy:stats-updated", listener);
+    },
+    onCleanupCompleted: (callback: (result: any) => void) => {
+      const listener = (_event: any, result: any) => callback(result);
+      ipcRenderer.on("privacy:cleanup-completed", listener);
+      return () => ipcRenderer.removeListener("privacy:cleanup-completed", listener);
+    },
+    onPolicyChanged: (callback: (policy: any) => void) => {
+      const listener = (_event: any, policy: any) => callback(policy);
+      ipcRenderer.on("privacy:policy-changed", listener);
+      return () => ipcRenderer.removeListener("privacy:policy-changed", listener);
+    },
+    onClearHistoryRequested: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("privacy:clear-history-requested", listener);
+      return () => ipcRenderer.removeListener("privacy:clear-history-requested", listener);
+    },
+    onClearDownloadsRequested: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("privacy:clear-downloads-requested", listener);
+      return () => ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
     },
   },
 });

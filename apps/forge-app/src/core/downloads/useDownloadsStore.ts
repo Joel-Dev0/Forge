@@ -18,6 +18,7 @@ interface DownloadsState {
   toggleOpen: () => void;
   addItem: (item: DownloadItem) => void;
   updateItem: (item: DownloadItem) => void;
+  clearAll: () => void;
   openFolder: () => void;
   openFile: (path: string) => void;
   showInFolder: (path: string) => void;
@@ -40,6 +41,10 @@ export const useDownloadsStore = create<DownloadsState>((set) => ({
     set((s) => ({
       items: s.items.map((i) => (i.id === item.id ? item : i)),
     })),
+  clearAll: () => {
+    (window as any).forge?.downloads?.clearHistory?.();
+    set({ items: [] });
+  },
   openFolder: () => {
     (window as any).forge?.downloads?.openFolder?.();
   },

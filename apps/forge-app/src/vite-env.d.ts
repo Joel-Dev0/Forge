@@ -148,6 +148,7 @@ declare global {
       };
       downloads?: {
         getRecent: () => Promise<any[]>;
+        clearHistory: () => Promise<boolean>;
         openFolder: () => Promise<boolean>;
         openFile: (filePath: string) => Promise<boolean>;
         showInFolder: (filePath: string) => Promise<boolean>;
@@ -294,6 +295,20 @@ declare global {
         exportConfig: (profileId?: string) => Promise<{ ok: boolean; conf?: string; error?: string }>;
         testLatency: (locationId: string) => Promise<{ ok: boolean; pingMs: number; error?: string }>;
         onStatusChanged: (callback: (status: any) => void) => () => void;
+      };
+      privacy?: {
+        getStats: (historyCount?: number) => Promise<any>;
+        getPolicy: () => Promise<any>;
+        updatePolicy: (partial: any) => Promise<any>;
+        cleanNow: (overrideTargets?: any, overrideCookieRule?: any) => Promise<any>;
+        cleanTrackersOnly: () => Promise<{ removed: number }>;
+        addProtectedDomain: (domain: string) => Promise<any>;
+        removeProtectedDomain: (domain: string) => Promise<any>;
+        onStatsUpdated: (callback: () => void) => () => void;
+        onCleanupCompleted: (callback: (result: any) => void) => () => void;
+        onPolicyChanged: (callback: (policy: any) => void) => () => void;
+        onClearHistoryRequested: (callback: () => void) => () => void;
+        onClearDownloadsRequested: (callback: () => void) => () => void;
       };
     };
   }

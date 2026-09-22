@@ -1389,7 +1389,160 @@
       } catch {
       }
     };
+    let mediaDetectorInitialized = false;
+    const setupMediaDetector = () => {
+      if (mediaDetectorInitialized) return;
+      mediaDetectorInitialized = true;
+      const activeAudibleMedia = /* @__PURE__ */ new Set();
+      function reportStatus() {
+        try {
+          for (const el of activeAudibleMedia) {
+            if (el.paused || el.ended) {
+              activeAudibleMedia.delete(el);
+            }
+          }
+          const isPlaying = activeAudibleMedia.size > 0;
+          const isMuted = isPlaying && Array.from(activeAudibleMedia).every((m) => m.muted || m.volume === 0);
+          console.log(
+            `__FORGE_MEDIA_STATUS__:${JSON.stringify({ isPlaying, isAudible: isPlaying && !isMuted, isMuted })}`
+          );
+        } catch {
+        }
+      }
+      function isMediaTarget(target) {
+        if (!target) return false;
+        const tag = (target.tagName || "").toUpperCase();
+        return tag === "VIDEO" || tag === "AUDIO";
+      }
+      function onMediaStart(target) {
+        if (isMediaTarget(target)) {
+          activeAudibleMedia.add(target);
+          reportStatus();
+        }
+      }
+      function onMediaStop(target) {
+        if (isMediaTarget(target)) {
+          activeAudibleMedia.delete(target);
+          reportStatus();
+        }
+      }
+      window.addEventListener("play", (e) => onMediaStart(e.target), true);
+      window.addEventListener("playing", (e) => onMediaStart(e.target), true);
+      window.addEventListener("pause", (e) => onMediaStop(e.target), true);
+      window.addEventListener("ended", (e) => onMediaStop(e.target), true);
+      window.addEventListener("volumechange", () => reportStatus(), true);
+      setInterval(() => {
+        try {
+          const all = Array.from(document.querySelectorAll("video, audio"));
+          let changed = false;
+          for (const m of all) {
+            if (!m.paused && !m.ended) {
+              if (!activeAudibleMedia.has(m)) {
+                activeAudibleMedia.add(m);
+                changed = true;
+              }
+            } else if (m.paused || m.ended) {
+              if (activeAudibleMedia.has(m)) {
+                activeAudibleMedia.delete(m);
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            reportStatus();
+          }
+        } catch {
+        }
+      }, 1e3);
+    };
+    const setupFocusDistractionCleaner = () => {
+      try {
+        const host = (window.location.hostname || "").toLowerCase();
+        let selectors = [];
+        if (host.includes("youtube.com") || host.includes("youtu.be")) {
+          selectors = [
+            "#related",
+            "#comments",
+            "ytd-comments",
+            "ytd-reel-shelf-renderer",
+            "ytd-rich-shelf-renderer",
+            "#shorts-container",
+            "ytd-guide-entry-renderer:has(a[title='Shorts'])",
+            "ytd-mini-guide-entry-renderer[aria-label='Shorts']",
+            "ytd-browse[page-subtype='home'] #contents"
+          ];
+        } else if (host.includes("twitter.com") || host.includes("x.com")) {
+          selectors = [
+            "[aria-label='Timeline: Your Home Timeline']",
+            "[aria-label='Timeline: Trending now']",
+            "[data-testid='sidebarColumn']",
+            "[data-testid='trend']",
+            "aside[role='complementary']"
+          ];
+        } else if (host.includes("instagram.com")) {
+          selectors = [
+            "a[href='/reels/']",
+            "a[href='/explore/']",
+            "article[role='presentation']",
+            "main[role='main'] > div > div:first-child",
+            "div:has(> a[href*='/reels/'])"
+          ];
+        } else if (host.includes("tiktok.com")) {
+          selectors = [
+            "[data-e2e='recommend-list-item-container']",
+            "[data-e2e='feed-live']"
+          ];
+        } else if (host.includes("reddit.com")) {
+          selectors = [
+            "shreddit-feed[tab-name='popular']",
+            "shreddit-feed[tab-name='all']",
+            "#right-sidebar-container",
+            "[data-testid='recent-posts']"
+          ];
+        } else if (host.includes("linkedin.com")) {
+          selectors = [
+            "main.scaffold-layout__main",
+            ".feed-shared-update-v2",
+            "aside.scaffold-layout__aside",
+            "#news-module"
+          ];
+        } else if (host.includes("facebook.com")) {
+          selectors = [
+            "[role='feed']",
+            "[data-pagelet='Stories']",
+            "[aria-label='Stories']",
+            "[data-pagelet='RightRail']"
+          ];
+        }
+        if (selectors.length > 0) {
+          const injectCss = () => {
+            if (document.getElementById("__forge_focus_cosmetics")) return;
+            const style = document.createElement("style");
+            style.id = "__forge_focus_cosmetics";
+            style.textContent = `
+            ${selectors.join(",\n")} {
+              display: none !important;
+              visibility: hidden !important;
+              pointer-events: none !important;
+              opacity: 0 !important;
+              height: 0 !important;
+              max-height: 0 !important;
+              overflow: hidden !important;
+            }
+          `;
+            (document.head || document.documentElement).appendChild(style);
+          };
+          injectCss();
+          if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", injectCss);
+          }
+        }
+      } catch {
+      }
+    };
     initUniversalMediaControls();
+    setupMediaDetector();
+    setupFocusDistractionCleaner();
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
         injectStyle();

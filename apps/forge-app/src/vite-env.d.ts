@@ -108,6 +108,9 @@ declare global {
     closeDevTools: () => void;
     isDevToolsOpened: () => boolean;
     getWebContentsId?: () => number;
+    isAudioMuted?: () => boolean;
+    setAudioMuted?: (muted: boolean) => void;
+    isCurrentlyAudible?: () => boolean;
     findInPage?: (text: string, options?: { forward?: boolean; findNext?: boolean; matchCase?: boolean }) => number;
     stopFindInPage?: (action: "clearSelection" | "keepSelection" | "activateSelection") => void;
     getZoomFactor?: (callback: (factor: number) => void) => void;
@@ -145,6 +148,13 @@ declare global {
       };
       tabs?: {
         onOpenTab: (callback: (data: { url: string }) => void) => () => void;
+        onAudioChanged?: (
+          callback: (data: { contentsId: number; isPlayingAudio: boolean; isMuted: boolean }) => void
+        ) => () => void;
+        getTabsMemory?: (
+          items: { tabId: string; contentsId?: number; webContentsId?: number }[]
+        ) => Promise<Record<string, { memoryMB: number; cpuPercent: number }>>;
+        setMuted?: (contentsId: number, isMuted: boolean) => Promise<boolean>;
       };
       downloads?: {
         getRecent: () => Promise<any[]>;
@@ -309,6 +319,26 @@ declare global {
         onPolicyChanged: (callback: (policy: any) => void) => () => void;
         onClearHistoryRequested: (callback: () => void) => () => void;
         onClearDownloadsRequested: (callback: () => void) => () => void;
+      };
+      session?: {
+        saveBackup: (data: any) => Promise<boolean>;
+        getBackup: () => Promise<any>;
+      };
+      sessions?: {
+        clearData: (partition: string, types?: string[]) => Promise<{ success: boolean; error?: string }>;
+      };
+      focus?: {
+        syncState: (payload: any) => Promise<boolean>;
+      };
+      compat?: {
+        setCORSBypass: (active: boolean) => Promise<{ success: boolean; isCorsBypassActive: boolean }>;
+        getCORSBypass: () => Promise<boolean>;
+        getVersions: () => Promise<{ chromium: string; v8: string; node: string; electron: string }>;
+        getLocalIp: () => Promise<string>;
+        setEmulation: (targetContentsId: number | undefined, options: any) => Promise<{ success: boolean }>;
+        collectGarbage: (targetContentsId?: number) => Promise<{ success: boolean; count: number }>;
+        onTabCrashed: (callback: (data: { contentsId: number; reason: string; exitCode: number }) => void) => () => void;
+        onDeprecationLogged: (callback: (data: { contentsId: number; level: number; message: string; line: number; source: string }) => void) => () => void;
       };
     };
   }

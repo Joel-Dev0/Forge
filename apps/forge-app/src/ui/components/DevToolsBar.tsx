@@ -10,6 +10,7 @@ import {
   Crosshair,
   ShieldCheck,
   ShieldAlert,
+  Cpu,
 } from "lucide-react";
 import { HttpEngineInspector } from "./HttpEngineInspector";
 import { NetworkInspector } from "./NetworkInspector";
@@ -18,11 +19,13 @@ import { VisualInspector } from "./VisualInspector";
 import { ApiMonitor } from "./ApiMonitor";
 import { PerformanceAnalyzer } from "./PerformanceAnalyzer";
 import { BlockedRequestsInspector } from "./BlockedRequestsInspector";
+import { WebEngineCompatibilityInspector } from "./WebEngineCompatibilityInspector";
 import { useNetworkStore } from "../../core/network/useNetworkStore";
 import { useConsoleStore } from "../../core/console/useConsoleStore";
 import { useAdBlockStore } from "../../core/adblock/useAdBlockStore";
+import { useCompatStore } from "../../core/compat/useCompatStore";
 
-type DevTab = "inspector" | "console" | "network" | "adblock" | "api_monitor" | "performance" | "status";
+type DevTab = "inspector" | "console" | "network" | "adblock" | "api_monitor" | "performance" | "engine" | "status";
 
 interface DevToolsBarProps {
   getActiveWebview?: () => WebviewElement | null;
@@ -38,6 +41,9 @@ export function DevToolsBar({ getActiveWebview }: DevToolsBarProps) {
   const errorCount = consoleLogs.filter((l) => l.level === "error").length;
 
   const blockedCount = useAdBlockStore((s) => s.stats?.blockedCount ?? s.requests.filter((r) => r.status === "blocked").length);
+
+  const isCorsBypassActive = useCompatStore((s) => s.isCorsBypassActive);
+  const cpuThrottlingRate = useCompatStore((s) => s.cpuThrottlingRate);
 
   const tabs: { id: DevTab; label: string; icon: React.ReactNode; badge?: string; badgeColor?: string }[] = [
     {
@@ -75,6 +81,13 @@ export function DevToolsBar({ getActiveWebview }: DevToolsBarProps) {
       id: "performance",
       label: "Performance",
       icon: <Gauge size={12} />,
+    },
+    {
+      id: "engine",
+      label: "Engine & Compat",
+      icon: <Cpu size={12} />,
+      badge: isCorsBypassActive ? "CORS" : cpuThrottlingRate > 1 ? `${cpuThrottlingRate}x` : undefined,
+      badgeColor: isCorsBypassActive ? "bg-amber-500/20 text-amber-400" : "bg-purple-500/20 text-purple-400",
     },
     {
       id: "status",
@@ -173,6 +186,9 @@ export function DevToolsBar({ getActiveWebview }: DevToolsBarProps) {
           )}
           {activeTab === "performance" && (
             <PerformanceAnalyzer getActiveWebview={getActiveWebview} />
+          )}
+          {activeTab === "engine" && (
+            <WebEngineCompatibilityInspector getActiveWebview={getActiveWebview} />
           )}
           {activeTab === "status" && (
             <div className="p-4 text-[var(--forge-text-muted)] text-xs font-mono space-y-2 select-text w-full">

@@ -24,6 +24,8 @@ import {
   Eye,
   Wifi,
   Building2,
+  Zap,
+  Plus,
 } from "lucide-react";
 import {
   useSecureNetworkStore,
@@ -62,6 +64,9 @@ export function SecureNetworkButton() {
   const [showVpnLocations, setShowVpnLocations] = useState(false);
   const [showVpnConfigImport, setShowVpnConfigImport] = useState(false);
   const [showPrivacyInspector, setShowPrivacyInspector] = useState(true);
+  const [showVpnAdvancedRules, setShowVpnAdvancedRules] = useState(false);
+  const [newSplitRule, setNewSplitRule] = useState("");
+  const [customDnsInput, setCustomDnsInput] = useState("");
   const [importConfText, setImportConfText] = useState("");
   const [importProfileName, setImportProfileName] = useState("");
   const [copiedConf, setCopiedConf] = useState(false);
@@ -752,6 +757,200 @@ export function SecureNetworkButton() {
                               )}
                             </div>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ============================================================== */}
+                {/* ADVANCED PROTECTION & SPLIT TUNNELING (Section 7.2) */}
+                {/* ============================================================== */}
+                <div className="p-2.5 rounded-lg bg-[var(--forge-input)] border border-[var(--forge-border)] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase font-semibold text-[var(--forge-text-muted)]">
+                      <Zap size={12} className="text-purple-400" />
+                      <span>Advanced Protection & Rules</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowVpnAdvancedRules(!showVpnAdvancedRules)}
+                      className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-0.5 cursor-pointer"
+                    >
+                      {showVpnAdvancedRules ? "Hide" : "Rules & DNS"}
+                      {showVpnAdvancedRules ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                    </button>
+                  </div>
+
+                  {showVpnAdvancedRules && (
+                    <div className="space-y-3 pt-2 border-t border-[var(--forge-border)] text-xs">
+                      {/* 1. Auto-Connect & Auto-Reconnect Toggles */}
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-semibold text-[var(--forge-text-muted)] uppercase tracking-wider">
+                          Automation Rules
+                        </div>
+
+                        {/* Startup */}
+                        <label className="flex items-center justify-between p-1.5 rounded bg-[var(--forge-surface)] text-[11px] cursor-pointer">
+                          <div>
+                            <div className="font-medium text-white">Auto-Connect on Startup</div>
+                            <div className="text-[9px] text-[var(--forge-text-muted)]">Establish VPN tunnel when Forge launches</div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={vpnStore.autoConnectOnStartup}
+                            onChange={(e) => vpnStore.setAutoConnectOnStartup(e.target.checked)}
+                            className="accent-purple-500 cursor-pointer"
+                          />
+                        </label>
+
+                        {/* Public Wi-Fi */}
+                        <label className="flex items-center justify-between p-1.5 rounded bg-[var(--forge-surface)] text-[11px] cursor-pointer">
+                          <div>
+                            <div className="font-medium text-white">Auto-Connect on Untrusted Wi-Fi</div>
+                            <div className="text-[9px] text-[var(--forge-text-muted)]">Arm encryption on public and hotel hotspots</div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={vpnStore.autoConnectOnPublicWifi}
+                            onChange={(e) => vpnStore.setAutoConnectOnPublicWifi(e.target.checked)}
+                            className="accent-purple-500 cursor-pointer"
+                          />
+                        </label>
+
+                        {/* Auto-Reconnect */}
+                        <label className="flex items-center justify-between p-1.5 rounded bg-[var(--forge-surface)] text-[11px] cursor-pointer">
+                          <div>
+                            <div className="font-medium text-white">Auto-Reconnect with Backoff</div>
+                            <div className="text-[9px] text-[var(--forge-text-muted)]">Automatically restore dropped VPN tunnels</div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={vpnStore.autoReconnect}
+                            onChange={(e) => vpnStore.setAutoReconnect(e.target.checked)}
+                            className="accent-purple-500 cursor-pointer"
+                          />
+                        </label>
+                      </div>
+
+                      {/* 2. DNS Leak Protection & Routing */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-[var(--forge-text-muted)] uppercase tracking-wider">
+                            DNS Leak Protection
+                          </span>
+                          <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/15 text-emerald-300">
+                            Leak Guard Active
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1 p-1 rounded bg-[var(--forge-surface)]">
+                          <button
+                            type="button"
+                            onClick={() => vpnStore.setDnsRoutingMode("vpn_dns")}
+                            className={`py-1 text-[10px] rounded font-medium transition-colors cursor-pointer ${
+                              vpnStore.dnsRoutingMode === "vpn_dns"
+                                ? "bg-purple-600 text-white font-bold"
+                                : "text-[var(--forge-text-muted)] hover:text-white"
+                            }`}
+                          >
+                            VPN DNS (Default)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => vpnStore.setDnsRoutingMode("custom_dns")}
+                            className={`py-1 text-[10px] rounded font-medium transition-colors cursor-pointer ${
+                              vpnStore.dnsRoutingMode === "custom_dns"
+                                ? "bg-purple-600 text-white font-bold"
+                                : "text-[var(--forge-text-muted)] hover:text-white"
+                            }`}
+                          >
+                            Custom Encrypted DNS
+                          </button>
+                        </div>
+
+                        {vpnStore.dnsRoutingMode === "custom_dns" && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <input
+                              type="text"
+                              value={customDnsInput || vpnStore.customDnsServer}
+                              onChange={(e) => setCustomDnsInput(e.target.value)}
+                              onBlur={() => vpnStore.setDnsRoutingMode("custom_dns", customDnsInput || vpnStore.customDnsServer)}
+                              placeholder="e.g. 1.1.1.1 or 8.8.8.8"
+                              className="flex-1 h-6 px-2 rounded bg-[var(--forge-surface)] border border-[var(--forge-border)] text-[10px] font-mono outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => vpnStore.setDnsRoutingMode("custom_dns", customDnsInput || vpnStore.customDnsServer)}
+                              className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-bold cursor-pointer"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Split Tunneling (Local IP & Domain Bypasses) */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-[var(--forge-text-muted)] uppercase tracking-wider">
+                            Split Tunneling (Bypass List)
+                          </span>
+                          <span className="text-[9px] text-[var(--forge-text-muted)]">
+                            {vpnStore.splitTunnelRules.length} rules
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-[var(--forge-text-muted)] leading-tight">
+                          Traffic to these destinations routes directly via host adapter, bypassing the VPN tunnel.
+                        </p>
+
+                        {/* Add new rule */}
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={newSplitRule}
+                            onChange={(e) => setNewSplitRule(e.target.value)}
+                            placeholder="e.g. localhost, 192.168.1.*, *.internal"
+                            className="flex-1 h-6 px-2 rounded bg-[var(--forge-surface)] border border-[var(--forge-border)] text-[10px] font-mono outline-none"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newSplitRule.trim()) {
+                                vpnStore.addSplitTunnelRule(newSplitRule.trim());
+                                setNewSplitRule("");
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (newSplitRule.trim()) {
+                                vpnStore.addSplitTunnelRule(newSplitRule.trim());
+                                setNewSplitRule("");
+                              }
+                            }}
+                            className="px-2 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus size={10} />
+                            Add
+                          </button>
+                        </div>
+
+                        {/* Rules chips list */}
+                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1 bg-[var(--forge-surface)] rounded border border-[var(--forge-border)]">
+                          {vpnStore.splitTunnelRules.map((rule) => (
+                            <div
+                              key={rule}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--forge-input)] text-[9px] font-mono text-zinc-300 border border-[var(--forge-border)]"
+                            >
+                              <span>{rule}</span>
+                              <button
+                                type="button"
+                                onClick={() => vpnStore.removeSplitTunnelRule(rule)}
+                                className="text-[var(--forge-text-muted)] hover:text-red-400 cursor-pointer"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>

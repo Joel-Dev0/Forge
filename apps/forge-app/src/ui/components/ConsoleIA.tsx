@@ -18,6 +18,7 @@ import {
   Globe,
   CornerDownLeft,
   Folder,
+  Columns,
 } from "lucide-react";
 import { useConsoleStore } from "../../core/console/useConsoleStore";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
@@ -39,6 +40,8 @@ export function ConsoleIA({ getActiveWebview }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [runSuccessId, setRunSuccessId] = useState<string | null>(null);
+  const [splitConsoles, setSplitConsoles] = useState(false);
+  const [termInput, setTermInput] = useState("");
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const aiChatEndRef = useRef<HTMLDivElement>(null);
@@ -166,43 +169,11 @@ export function ConsoleIA({ getActiveWebview }: Props) {
     })()
   `;
 
-  // Main Command Execution router (handles PowerShell, CMD, or Browser JS)
-  const handleExecute = async (cmdToRun: string, sourcePrefix?: string) => {
+  // Execute in Guest Page (Browser JS)
+  const handleExecuteInPage = async (cmdToRun: string, sourcePrefix?: string) => {
     if (!cmdToRun.trim()) return;
     const cmd = cmdToRun.trim();
 
-    // 1. System Shell Execution (PowerShell or CMD)
-    if (shellMode === "powershell" || shellMode === "cmd") {
-      const promptLabel = shellMode === "powershell" ? `PS ${cwd}> ${cmd}` : `${cwd}> ${cmd}`;
-
-      addLog({
-        level: "info",
-        message: promptLabel,
-        source: shellMode === "powershell" ? "PowerShell" : "CMD",
-      });
-
-      const res = await execSystemCommand(cmd);
-
-      if (res.stdout) {
-        addLog({
-          level: "log",
-          message: res.stdout.replace(/\r\n$/, ""),
-          source: shellMode === "powershell" ? "PowerShell" : "CMD",
-        });
-      }
-
-      if (res.stderr) {
-        addLog({
-          level: "error",
-          message: res.stderr.replace(/\r\n$/, ""),
-          source: shellMode === "powershell" ? "PowerShell" : "CMD",
-        });
-      }
-
-      return;
-    }
-
-    // 2. In-Browser JavaScript Execution
     addLog({
       level: "info",
       message: `> ${cmd}`,
@@ -249,6 +220,45 @@ export function ConsoleIA({ getActiveWebview }: Props) {
         source: "Evaluation Error",
       });
     }
+  };
+
+  // Execute in Local Host Terminal (PowerShell or CMD)
+  const handleExecuteSystem = async (cmdToRun: string) => {
+    if (!cmdToRun.trim()) return;
+    const cmd = cmdToRun.trim();
+    const promptLabel = shellMode === "powershell" ? `PS ${cwd}> ${cmd}` : `${cwd}> ${cmd}`;
+
+    addLog({
+      level: "info",
+      message: promptLabel,
+      source: shellMode === "powershell" ? "PowerShell" : "CMD",
+    });
+
+    const res = await execSystemCommand(cmd);
+
+    if (res.stdout) {
+      addLog({
+        level: "log",
+        message: res.stdout.replace(/\r\n$/, ""),
+        source: shellMode === "powershell" ? "PowerShell" : "CMD",
+      });
+    }
+
+    if (res.stderr) {
+      addLog({
+        level: "error",
+        message: res.stderr.replace(/\r\n$/, ""),
+        source: shellMode === "powershell" ? "PowerShell" : "CMD",
+      });
+    }
+  };
+
+  // Main Command Execution router (handles PowerShell, CMD, or Browser JS)
+  const handleExecute = async (cmdToRun: string, sourcePrefix?: string) => {
+    if (shellMode === "powershell" || shellMode === "cmd") {
+      return handleExecuteSystem(cmdToRun);
+    }
+    return handleExecuteInPage(cmdToRun, sourcePrefix);
   };
 
   const handleRunSingleLine = (e?: React.FormEvent) => {
@@ -497,6 +507,20 @@ export function ConsoleIA({ getActiveWebview }: Props) {
               </div>
 
               <button
+                type="button"
+                onClick={() => setSplitConsoles((s) => !s)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
+                  splitConsoles
+                    ? "bg-[#FF6B00]/20 text-[#FF6B00] border-[#FF6B00]/40"
+                    : "bg-[var(--forge-input)] text-[var(--forge-text-muted)] hover:text-white border-[var(--forge-border)]"
+                }`}
+                title="Separate Consoles: Side-by-side Browser Console & Development Terminal"
+              >
+                <Columns size={10} />
+                <span>Side-by-Side</span>
+              </button>
+
+              <button
                 onClick={clearLogs}
                 title="Clear terminal"
                 className="p-1 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] rounded transition-colors cursor-pointer"
@@ -627,152 +651,263 @@ export function ConsoleIA({ getActiveWebview }: Props) {
             </div>
           )}
 
-          {/* Terminal / Logs Output Stream */}
-          <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin bg-black/10">
-            {filteredLogs.length === 0 ? (
-              <div className="p-6 text-center text-[var(--forge-text-muted)] italic text-[11px] space-y-1">
-                <p>Terminal is ready in <strong>{shellMode.toUpperCase()}</strong> mode.</p>
-                <p className="text-[9px] opacity-80">
-                  {shellMode === "powershell" && "Navigate with 'cd <dir>', list with 'dir' / 'ls', run 'python', 'pnpm', 'git', or custom scripts."}
-                  {shellMode === "cmd" && "Run classic Windows command prompt commands in current working directory."}
-                  {shellMode === "browser-js" && "Execute live JavaScript expressions in the active browser tab."}
-                </p>
+          {/* Split Mode: Side-by-Side Consoles (Section 8) */}
+          {splitConsoles ? (
+            <div className="flex-1 flex w-full overflow-hidden divide-x divide-[var(--forge-border)]">
+              {/* Left Pane: Browser JavaScript Console */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#0c0e17]">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--forge-surface-elevated)] border-b border-[var(--forge-border)] text-[10px]">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <Globe size={11} className="text-[#FF6B00]" />
+                    <span>Browser Console (JavaScript / DOM)</span>
+                  </span>
+                  <span className="text-[9px] font-mono text-zinc-400">In-Page Context</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin">
+                  {filteredLogs
+                    .filter((l) => !l.message.startsWith("PS ") && !l.message.startsWith("CMD ") && !l.source?.includes("terminal"))
+                    .map((log) => {
+                      const isOutput = log.message.startsWith("< ");
+                      return (
+                        <div key={log.id} className="flex items-start gap-1.5 px-2 py-0.5 rounded hover:bg-white/5 group">
+                          {log.level === "error" ? (
+                            <AlertCircle size={11} className="text-red-400 shrink-0 mt-0.5" />
+                          ) : log.level === "warn" ? (
+                            <AlertTriangle size={11} className="text-amber-400 shrink-0 mt-0.5" />
+                          ) : isOutput ? (
+                            <CornerDownLeft size={11} className="text-emerald-400 shrink-0 mt-0.5" />
+                          ) : (
+                            <Info size={11} className="text-sky-400 shrink-0 mt-0.5" />
+                          )}
+                          <span className={`flex-1 break-all ${log.level === "error" ? "text-red-400" : isOutput ? "text-emerald-400" : "text-zinc-300"}`}>
+                            {log.message}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  <div ref={logsEndRef} />
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!commandInput.trim()) return;
+                    const c = commandInput.trim();
+                    setCommandInput("");
+                    handleExecuteInPage(c);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)] shrink-0"
+                >
+                  <span className="font-mono text-[10px] text-[#FF6B00] font-bold">&gt;</span>
+                  <input
+                    type="text"
+                    placeholder="Evaluate JS (e.g. document.title, location.href)..."
+                    value={commandInput}
+                    onChange={(e) => setCommandInput(e.target.value)}
+                    className="flex-1 bg-transparent font-mono text-[10px] text-[var(--forge-text)] outline-none"
+                  />
+                  <button type="submit" className="px-2 py-0.5 rounded bg-[#FF6B00] text-white text-[9px] font-bold">
+                    Eval
+                  </button>
+                </form>
               </div>
-            ) : (
-              filteredLogs.map((log) => {
-                const isCommandInput = log.message.startsWith("PS ") || log.message.startsWith("> ") || log.message.includes("> ");
-                const isCommandOutput = log.message.startsWith("< ");
 
-                let badgeColor = "text-sky-400";
-                let bgRow = "hover:bg-[var(--forge-hover)]";
-                let Icon = Info;
+              {/* Right Pane: Local Development Terminal */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#090b11]">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--forge-surface-elevated)] border-b border-[var(--forge-border)] text-[10px]">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <Terminal size={11} className="text-sky-400" />
+                    <span>Dev Terminal ({shellMode === "cmd" ? "CMD" : "PowerShell"})</span>
+                  </span>
+                  <span className="text-[9px] font-mono text-zinc-400 truncate max-w-[150px]">{cwd}</span>
+                </div>
 
-                if (log.level === "error") {
-                  badgeColor = "text-red-400";
-                  bgRow = "bg-red-500/5 hover:bg-red-500/10 border-l-2 border-red-500";
-                  Icon = AlertCircle;
-                } else if (log.level === "warn") {
-                  badgeColor = "text-amber-400";
-                  bgRow = "bg-amber-500/5 hover:bg-amber-500/10 border-l-2 border-amber-500";
-                  Icon = AlertTriangle;
-                } else if (isCommandInput) {
-                  badgeColor = "text-[#FF6B00]";
-                  bgRow = "bg-[#FF6B00]/5 hover:bg-[#FF6B00]/10 border-l-2 border-[#FF6B00]";
-                  Icon = ChevronRight;
-                } else if (isCommandOutput) {
-                  badgeColor = "text-emerald-400";
-                  bgRow = "hover:bg-[var(--forge-hover)] pl-4";
-                  Icon = CornerDownLeft;
-                }
+                <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin">
+                  {filteredLogs
+                    .filter((l) => l.message.startsWith("PS ") || l.message.startsWith("CMD ") || l.source?.includes("terminal") || l.source?.includes("PowerShell"))
+                    .map((log) => (
+                      <div key={log.id} className="flex items-start gap-1.5 px-2 py-0.5 rounded hover:bg-white/5 font-mono text-[10px]">
+                        <span className="text-[#FF6B00] font-bold shrink-0">&gt;</span>
+                        <span className="flex-1 break-all text-zinc-300">{log.message}</span>
+                      </div>
+                    ))}
+                </div>
 
-                return (
-                  <div
-                    key={log.id}
-                    className={`flex items-start gap-2 px-2 py-1 rounded transition-colors group ${bgRow}`}
-                  >
-                    <Icon size={12} className={`mt-0.5 shrink-0 ${badgeColor}`} />
-
-                    <div className="flex-1 min-w-0 break-words whitespace-pre-wrap font-mono leading-relaxed">
-                      <span
-                        className={
-                          log.level === "error"
-                            ? "text-red-400"
-                            : isCommandInput
-                            ? "text-[#FF6B00] font-bold"
-                            : isCommandOutput
-                            ? "text-emerald-400"
-                            : "text-[var(--forge-text)]"
-                        }
-                      >
-                        {log.message}
-                      </span>
-                    </div>
-
-                    {log.source && (
-                      <span className="text-[9px] text-[var(--forge-text-muted)] shrink-0 opacity-70">
-                        {log.source}
-                      </span>
-                    )}
-
-                    <button
-                      onClick={() => handleCopy(log.message, log.id)}
-                      className="p-0.5 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                      title="Copy output"
-                    >
-                      {copiedId === log.id ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
-                    </button>
-
-                    {log.level === "error" && (
-                      <button
-                        onClick={() => handleAskAiAboutError(log.message)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#FF6B00]/15 hover:bg-[#FF6B00]/30 text-[#FF6B00] font-sans text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                        title="Analyze and suggest fix with Console IA"
-                      >
-                        <Sparkles size={10} />
-                        Ask IA
-                      </button>
-                    )}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!termInput.trim()) return;
+                    const c = termInput.trim();
+                    setTermInput("");
+                    handleExecuteSystem(c);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)] shrink-0"
+                >
+                  <span className="font-mono text-[10px] text-sky-400 font-bold">{shellMode === "cmd" ? "CMD>" : "PS>"}</span>
+                  <input
+                    type="text"
+                    placeholder="Run shell command in cwd (e.g. dir, git status, pnpm test)..."
+                    value={termInput}
+                    onChange={(e) => setTermInput(e.target.value)}
+                    className="flex-1 bg-transparent font-mono text-[10px] text-[var(--forge-text)] outline-none"
+                  />
+                  <button type="submit" className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[9px] font-bold">
+                    Exec
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Terminal / Logs Output Stream */}
+              <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] space-y-1 scrollbar-thin bg-black/10">
+                {filteredLogs.length === 0 ? (
+                  <div className="p-6 text-center text-[var(--forge-text-muted)] italic text-[11px] space-y-1">
+                    <p>Terminal is ready in <strong>{shellMode.toUpperCase()}</strong> mode.</p>
+                    <p className="text-[9px] opacity-80">
+                      {shellMode === "powershell" && "Navigate with 'cd <dir>', list with 'dir' / 'ls', run 'python', 'pnpm', 'git', or custom scripts."}
+                      {shellMode === "cmd" && "Run classic Windows command prompt commands in current working directory."}
+                      {shellMode === "browser-js" && "Execute live JavaScript expressions in the active browser tab."}
+                    </p>
                   </div>
-                );
-              })
-            )}
-            <div ref={logsEndRef} />
-          </div>
+                ) : (
+                  filteredLogs.map((log) => {
+                    const isCommandInput = log.message.startsWith("PS ") || log.message.startsWith("> ") || log.message.includes("> ");
+                    const isCommandOutput = log.message.startsWith("< ");
 
-          {/* Interactive Command Line Prompt */}
-          <form
-            onSubmit={handleRunSingleLine}
-            className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)] shrink-0 w-full"
-          >
-            <span className="font-mono text-[10px] text-[#FF6B00] font-bold shrink-0">
-              {getPromptPrefix()}
-            </span>
-            <input
-              ref={singleInputRef}
-              type="text"
-              placeholder={
-                shellMode === "powershell"
-                  ? "Run PowerShell (e.g. dir, cd <dir>, git status, python test.py)... Press Enter"
-                  : shellMode === "cmd"
-                  ? "Run CMD (e.g. dir, cd .., type file.txt)... Press Enter"
-                  : "Run JavaScript in active page (e.g. document.title, location.href)... Press Enter"
-              }
-              value={commandInput}
-              onChange={(e) => setCommandInput(e.target.value)}
-              disabled={isExecuting}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  if (replHistory.length === 0) return;
-                  const nextIdx = historyIndex < 0 ? replHistory.length - 1 : Math.max(0, historyIndex - 1);
-                  setHistoryIndex(nextIdx);
-                  setCommandInput(replHistory[nextIdx]);
-                } else if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  if (historyIndex >= 0) {
-                    const nextIdx = historyIndex + 1;
-                    if (nextIdx < replHistory.length) {
+                    let badgeColor = "text-sky-400";
+                    let bgRow = "hover:bg-[var(--forge-hover)]";
+                    let Icon = Info;
+
+                    if (log.level === "error") {
+                      badgeColor = "text-red-400";
+                      bgRow = "bg-red-500/5 hover:bg-red-500/10 border-l-2 border-red-500";
+                      Icon = AlertCircle;
+                    } else if (log.level === "warn") {
+                      badgeColor = "text-amber-400";
+                      bgRow = "bg-amber-500/5 hover:bg-amber-500/10 border-l-2 border-amber-500";
+                      Icon = AlertTriangle;
+                    } else if (isCommandInput) {
+                      badgeColor = "text-[#FF6B00]";
+                      bgRow = "bg-[#FF6B00]/5 hover:bg-[#FF6B00]/10 border-l-2 border-[#FF6B00]";
+                      Icon = ChevronRight;
+                    } else if (isCommandOutput) {
+                      badgeColor = "text-emerald-400";
+                      bgRow = "hover:bg-[var(--forge-hover)] pl-4";
+                      Icon = CornerDownLeft;
+                    }
+
+                    return (
+                      <div
+                        key={log.id}
+                        className={`flex items-start gap-2 px-2 py-1 rounded transition-colors group ${bgRow}`}
+                      >
+                        <Icon size={12} className={`mt-0.5 shrink-0 ${badgeColor}`} />
+
+                        <div className="flex-1 min-w-0 break-words whitespace-pre-wrap font-mono leading-relaxed">
+                          <span
+                            className={
+                              log.level === "error"
+                                ? "text-red-400"
+                                : isCommandInput
+                                ? "text-[#FF6B00] font-bold"
+                                : isCommandOutput
+                                ? "text-emerald-400"
+                                : "text-[var(--forge-text)]"
+                            }
+                          >
+                            {log.message}
+                          </span>
+                        </div>
+
+                        {log.source && (
+                          <span className="text-[9px] text-[var(--forge-text-muted)] shrink-0 opacity-70">
+                            {log.source}
+                          </span>
+                        )}
+
+                        <button
+                          onClick={() => handleCopy(log.message, log.id)}
+                          className="p-0.5 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                          title="Copy output"
+                        >
+                          {copiedId === log.id ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                        </button>
+
+                        {log.level === "error" && (
+                          <button
+                            onClick={() => handleAskAiAboutError(log.message)}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#FF6B00]/15 hover:bg-[#FF6B00]/30 text-[#FF6B00] font-sans text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                            title="Analyze and suggest fix with Console IA"
+                          >
+                            <Sparkles size={10} />
+                            Ask IA
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={logsEndRef} />
+              </div>
+
+              {/* Interactive Command Line Prompt */}
+              <form
+                onSubmit={handleRunSingleLine}
+                className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)] shrink-0 w-full"
+              >
+                <span className="font-mono text-[10px] text-[#FF6B00] font-bold shrink-0">
+                  {getPromptPrefix()}
+                </span>
+                <input
+                  ref={singleInputRef}
+                  type="text"
+                  placeholder={
+                    shellMode === "powershell"
+                      ? "Run PowerShell (e.g. dir, cd <dir>, git status, python test.py)... Press Enter"
+                      : shellMode === "cmd"
+                      ? "Run CMD (e.g. dir, cd .., type file.txt)... Press Enter"
+                      : "Run JavaScript in active page (e.g. document.title, location.href)... Press Enter"
+                  }
+                  value={commandInput}
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  disabled={isExecuting}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      if (replHistory.length === 0) return;
+                      const nextIdx = historyIndex < 0 ? replHistory.length - 1 : Math.max(0, historyIndex - 1);
                       setHistoryIndex(nextIdx);
                       setCommandInput(replHistory[nextIdx]);
-                    } else {
-                      setHistoryIndex(-1);
-                      setCommandInput("");
+                    } else if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      if (historyIndex >= 0) {
+                        const nextIdx = historyIndex + 1;
+                        if (nextIdx < replHistory.length) {
+                          setHistoryIndex(nextIdx);
+                          setCommandInput(replHistory[nextIdx]);
+                        } else {
+                          setHistoryIndex(-1);
+                          setCommandInput("");
+                        }
+                      }
                     }
-                  }
-                }
-              }}
-              className="flex-1 bg-transparent font-mono text-[10px] text-[var(--forge-text)] placeholder:text-[var(--forge-text-muted)] outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isExecuting}
-              className="px-2.5 py-1 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white rounded text-[9px] font-bold font-sans flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-              title="Execute command (Enter)"
-            >
-              <Play size={9} fill="currentColor" />
-              {isExecuting ? "Running..." : "Run"}
-            </button>
-          </form>
+                  }}
+                  className="flex-1 bg-transparent font-mono text-[10px] text-[var(--forge-text)] placeholder:text-[var(--forge-text-muted)] outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={isExecuting}
+                  className="px-2.5 py-1 bg-[#FF6B00] hover:bg-[#e05e00] disabled:opacity-50 text-white rounded text-[9px] font-bold font-sans flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  title="Execute command (Enter)"
+                >
+                  <Play size={9} fill="currentColor" />
+                  {isExecuting ? "Running..." : "Run"}
+                </button>
+              </form>
+            </>
+          )}
         </div>
       )}
 

@@ -9,23 +9,222 @@ import { FindInPageBar } from "../components/FindInPageBar";
 import { DownloadsModal } from "../components/DownloadsModal";
 import { HotkeysModal } from "../components/HotkeysModal";
 import { PrivacyCleanerModal } from "../components/PrivacyCleanerModal";
-import { useTabsStore } from "../../core/tabs/useTabsStore";
+import { useTabsStore, saveSession, getCleanFallbackTitle } from "../../core/tabs/useTabsStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { useDownloadsStore } from "../../core/downloads/useDownloadsStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
 import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
 import { usePrivacyStore } from "../../core/privacy/usePrivacyStore";
-import { Minimize2 } from "lucide-react";
+import { useFocusStore } from "../../core/focus/useFocusStore";
+import { useSessionsStore } from "../../core/sessions/useSessionsStore";
+import { SessionModal } from "../components/SessionModal";
+import { FocusModeModal } from "../components/FocusModeModal";
+import { CrashGuardBanner } from "../components/CrashGuardBanner";
+import { ProjectDashboardModal } from "../components/ProjectDashboardModal";
+import { ExtensionsManagerModal } from "../components/ExtensionsManagerModal";
+import { FocusPlayerModal } from "../components/FocusPlayerModal";
+import { ForgeAnvilLoader } from "../components/ForgeAnvilLoader";
+import { useCompatStore } from "../../core/compat/useCompatStore";
+import { Minimize2, ArrowLeftRight, X as CloseIcon } from "lucide-react";
 
 export function BrowserLayout() {
-  const { tabs, activeTabId, updateTab } = useTabsStore();
+  const {
+    tabs,
+    activeTabId,
+    updateTab,
+    splitTabId,
+    splitOrientation,
+    splitRatio,
+    focusedSplitPane,
+    setSplitRatio,
+    setFocusedSplitPane,
+    setSplitTab,
+    setActiveTab,
+  } = useTabsStore();
+  const getSession = useSessionsStore((s) => s.getSession);
   const initTheme = useThemeStore((s) => s.initTheme);
   const isFullscreen = useFullscreenStore((s) => s.isFullscreen);
   const setFullscreen = useFullscreenStore((s) => s.setFullscreen);
   const webviewRefs = useRef<Map<string, WebviewElement>>(new Map());
   const [showExitHint, setShowExitHint] = useState(false);
   const exitHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [showStartupSplash, setShowStartupSplash] = useState(() => {
+    try {
+      return !sessionStorage.getItem("forge:splash-shown");
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (showStartupSplash) {
+      try {
+        sessionStorage.setItem("forge:splash-shown", "true");
+      } catch {}
+    }
+  }, [showStartupSplash]);
+
+  useEffect(() => {
+    const handleShowSplash = () => setShowStartupSplash(true);
+    window.addEventListener("forge:show-anvil-loader", handleShowSplash);
+    return () => window.removeEventListener("forge:show-anvil-loader", handleShowSplash);
+  }, []);
+
+  // Synchronize session on window unload to prevent tab loss on quit/restart
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const state = useTabsStore.getState();
+      saveSession(state.tabs, state.activeTabId);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  // Web Engine Compatibility & Crash Guard IPC Listeners
+  useEffect(() => {
+    const compatBridge = (window as any).forge?.compat;
+    if (!compatBridge) return;
+
+    const unsubCrash = compatBridge.onTabCrashed?.((data: { tabId: string; url: string; reason: string; exitCode?: number }) => {
+      useCompatStore.getState().recordCrash(data.tabId, data.url, data.reason, data.exitCode ?? 0);
+    });
+
+    const unsubDeprecation = compatBridge.onDeprecationLogged?.((data: { message: string; source?: string; line?: number }) => {
+      useCompatStore.getState().addDeprecationLog(data.message, data.source, data.line);
+    });
+
+    compatBridge.getLocalIp?.().then((ip: string) => {
+      if (ip) useCompatStore.getState().setLocalIp(ip);
+    }).catch(() => {});
+
+    compatBridge.getCorsBypass?.().then((enabled: boolean) => {
+      useCompatStore.getState().setCorsBypass(enabled);
+    }).catch(() => {});
+
+    return () => {
+      unsubCrash?.();
+      unsubDeprecation?.();
+    };
+  }, []);
+
+  // Periodic Real-Time Memory Polling & Auto-Sleep Manager
+  useEffect(() => {
+    const pollMemory = async () => {
+      try {
+        const allTabs = useTabsStore.getState().tabs;
+        const items: Array<{ tabId: string; contentsId?: number; webContentsId?: number; url?: string }> = [];
+
+        for (const tab of allTabs) {
+          if (tab.isSleeping || tab.isLazy) continue;
+          const el = webviewRefs.current.get(tab.id);
+          let wcid: number | undefined;
+          if (el) {
+            try {
+              if (typeof (el as any).getWebContentsId === "function") {
+                const id = (el as any).getWebContentsId();
+                if (typeof id === "number" && id > 0) wcid = id;
+              }
+            } catch {}
+          }
+          items.push({ tabId: tab.id, contentsId: wcid, webContentsId: wcid, url: tab.url });
+        }
+
+        const getTabsMemory = (window as any).forge?.tabs?.getTabsMemory;
+        if (typeof getTabsMemory === "function" && items.length > 0) {
+          const memoryMap = await getTabsMemory(items);
+          if (memoryMap && typeof memoryMap === "object" && Object.keys(memoryMap).length > 0) {
+            useTabsStore.getState().updateTabsMemory(memoryMap);
+          }
+        }
+      } catch {}
+    };
+
+    // Run rapid initial memory checks so hover card and tabs show RAM immediately
+    pollMemory();
+    const t1 = setTimeout(pollMemory, 300);
+    const t2 = setTimeout(pollMemory, 800);
+    // Poll every 1.0 second for true real-time memory fluctuations
+    const memoryInterval = setInterval(pollMemory, 1000);
+
+    // Listen for WebContents media playback events from Electron Main
+    const unsubAudio = (window as any).forge?.tabs?.onAudioChanged?.(
+      (data: { contentsId: number; isPlayingAudio: boolean; isMuted: boolean }) => {
+        for (const [tabId, el] of webviewRefs.current.entries()) {
+          try {
+            if (
+              el &&
+              typeof (el as any).getWebContentsId === "function" &&
+              (el as any).getWebContentsId() === data.contentsId
+            ) {
+              useTabsStore.getState().setTabAudio(tabId, data.isPlayingAudio, data.isMuted);
+              break;
+            }
+          } catch {}
+        }
+      }
+    );
+
+    // Periodic check to auto-sleep background tabs idle for > 15 minutes (saves system RAM)
+    const autoSleepInterval = setInterval(() => {
+      try {
+        useTabsStore.getState().checkAutoSleepTabs(15);
+      } catch {}
+    }, 45000);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearInterval(memoryInterval);
+      clearInterval(autoSleepInterval);
+      unsubAudio?.();
+    };
+  }, []);
+
+  // Periodic Focus Mode & Schedule Tick
+  useEffect(() => {
+    const focusInterval = setInterval(() => {
+      useFocusStore.getState().tickTimer();
+      useFocusStore.getState().checkAutomatedSchedules();
+    }, 1000);
+    return () => clearInterval(focusInterval);
+  }, []);
+
+  const isSplitActive = Boolean(
+    splitTabId &&
+    splitTabId !== activeTabId &&
+    tabs.some((t) => t.id === splitTabId)
+  );
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+
+  const handleSplitDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingSplit(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      let ratio = 0.5;
+      if (splitOrientation === "horizontal") {
+        ratio = (moveEvent.clientX - rect.left) / rect.width;
+      } else {
+        ratio = (moveEvent.clientY - rect.top) / rect.height;
+      }
+      setSplitRatio(ratio);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingSplit(false);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
 
   // Preserve stable DOM hierarchy for WebViews: reordering tabs in TabBar
   // must never detach, remount, or alter DOM hierarchy of <webview> elements.
@@ -990,7 +1189,8 @@ export function BrowserLayout() {
     const currentActiveId = useTabsStore.getState().activeTabId;
     const currentEngine = useNavigationStore.getState().searchEngine;
     const cleanUrl = normalizeUrl(url, currentEngine);
-    updateTab(currentActiveId, { url: cleanUrl });
+    const fallbackTitle = getCleanFallbackTitle(cleanUrl);
+    updateTab(currentActiveId, { url: cleanUrl, title: fallbackTitle });
     useNavigationStore.getState().setUrlBarValue(cleanUrl);
   };
 
@@ -1036,8 +1236,11 @@ export function BrowserLayout() {
           <Sidebar onNavigate={handleNavigate} />
         </div>
 
-        {/* WebViews (one per tab, only active is visible) */}
-        <div className={`flex-1 overflow-hidden relative ${isFullscreen ? "w-screen h-screen bg-black" : "w-full h-full bg-[var(--forge-surface-elevated)]"}`}>
+        {/* WebViews (one per tab, only active or split tabs visible) */}
+        <div
+          ref={containerRef}
+          className={`flex-1 overflow-hidden relative ${isFullscreen ? "w-screen h-screen bg-black" : "w-full h-full bg-[var(--forge-surface-elevated)]"}`}
+        >
           {/* Find In Page Floating Bar */}
           <FindInPageBar
             getActiveWebview={activeWebview}
@@ -1045,15 +1248,188 @@ export function BrowserLayout() {
             onClose={() => setIsFindOpen(false)}
           />
 
-          {stableTabs.map((tab) => (
-            <WebView
-              key={tab.id}
-              tabId={tab.id}
-              url={tab.url}
-              isActive={tab.id === activeTabId}
-              onRef={handleRef}
-            />
-          ))}
+          {stableTabs.map((tab) => {
+            let isTabActive = tab.id === activeTabId;
+            let tabStyle: React.CSSProperties | undefined = undefined;
+
+            if (isSplitActive) {
+              if (tab.id === activeTabId) {
+                isTabActive = true;
+                if (splitOrientation === "horizontal") {
+                  tabStyle = {
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: `calc(${splitRatio * 100}% - 2px)`,
+                    height: "100%",
+                    zIndex: focusedSplitPane === "primary" ? 10 : 5,
+                  };
+                } else {
+                  tabStyle = {
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: "100%",
+                    height: `calc(${splitRatio * 100}% - 2px)`,
+                    zIndex: focusedSplitPane === "primary" ? 10 : 5,
+                  };
+                }
+              } else if (tab.id === splitTabId) {
+                isTabActive = true;
+                if (splitOrientation === "horizontal") {
+                  tabStyle = {
+                    position: "absolute",
+                    left: `calc(${splitRatio * 100}% + 2px)`,
+                    top: 0,
+                    width: `calc(${(1 - splitRatio) * 100}% - 2px)`,
+                    height: "100%",
+                    zIndex: focusedSplitPane === "secondary" ? 10 : 5,
+                  };
+                } else {
+                  tabStyle = {
+                    position: "absolute",
+                    left: 0,
+                    top: `calc(${splitRatio * 100}% + 2px)`,
+                    width: "100%",
+                    height: `calc(${(1 - splitRatio) * 100}% - 2px)`,
+                    zIndex: focusedSplitPane === "secondary" ? 10 : 5,
+                  };
+                }
+              } else {
+                isTabActive = false;
+                tabStyle = { display: "none" };
+              }
+            }
+
+            return (
+              <WebView
+                key={tab.id}
+                tabId={tab.id}
+                url={tab.url}
+                isActive={isTabActive}
+                isLazy={tab.isLazy}
+                isSleeping={tab.isSleeping}
+                onRef={handleRef}
+                style={tabStyle}
+              />
+            );
+          })}
+
+          {/* Split View Resizable Divider */}
+          {isSplitActive && (
+            <div
+              onMouseDown={handleSplitDividerMouseDown}
+              style={
+                splitOrientation === "horizontal"
+                  ? { left: `calc(${splitRatio * 100}% - 4px)`, top: 0, bottom: 0, width: "8px" }
+                  : { top: `calc(${splitRatio * 100}% - 4px)`, left: 0, right: 0, height: "8px" }
+              }
+              className={`absolute z-30 flex items-center justify-center group ${
+                splitOrientation === "horizontal" ? "cursor-col-resize" : "cursor-row-resize"
+              }`}
+            >
+              <div
+                className={`transition-all rounded-full ${
+                  splitOrientation === "horizontal"
+                    ? "w-1 h-14 group-hover:w-1.5 group-hover:h-20"
+                    : "h-1 w-14 group-hover:h-1.5 group-hover:w-20"
+                } ${
+                  isDraggingSplit
+                    ? "bg-[#FF6B00] shadow-[0_0_12px_#FF6B00]"
+                    : "bg-[var(--forge-border)] group-hover:bg-[#FF6B00]"
+                }`}
+              />
+            </div>
+          )}
+
+          {/* Mouse interceptor overlay during divider drag */}
+          {isDraggingSplit && (
+            <div className={`absolute inset-0 z-50 select-none ${splitOrientation === "horizontal" ? "cursor-col-resize" : "cursor-row-resize"}`} />
+          )}
+
+          {/* Split View Header Badges */}
+          {isSplitActive && (
+            <>
+              {/* Primary Pane Header Badge */}
+              <div
+                style={{ left: "12px", top: "10px" }}
+                onClick={() => setFocusedSplitPane("primary")}
+                className={`absolute z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-lg backdrop-blur-md transition-all cursor-pointer select-none border ${
+                  focusedSplitPane === "primary"
+                    ? "bg-black/85 text-white border-[#FF6B00]"
+                    : "bg-black/60 text-zinc-400 border-white/10 hover:bg-black/80 hover:text-white"
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: getSession(tabs.find((t) => t.id === activeTabId)?.sessionId).color }}
+                />
+                <span className="truncate max-w-[120px]">
+                  {tabs.find((t) => t.id === activeTabId)?.title || "Primary"}
+                </span>
+                <span className="text-[9px] text-[var(--forge-text-muted)] font-mono">
+                  [{getSession(tabs.find((t) => t.id === activeTabId)?.sessionId).name}]
+                </span>
+              </div>
+
+              {/* Secondary Pane Header Badge with Controls */}
+              <div
+                style={
+                  splitOrientation === "horizontal"
+                    ? { left: `calc(${splitRatio * 100}% + 14px)`, top: "10px" }
+                    : { left: "12px", top: `calc(${splitRatio * 100}% + 14px)` }
+                }
+                onClick={() => setFocusedSplitPane("secondary")}
+                className={`absolute z-20 flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-lg backdrop-blur-md transition-all cursor-pointer select-none border ${
+                  focusedSplitPane === "secondary"
+                    ? "bg-black/85 text-white border-[#FF6B00]"
+                    : "bg-black/60 text-zinc-400 border-white/10 hover:bg-black/80 hover:text-white"
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: getSession(tabs.find((t) => t.id === splitTabId)?.sessionId).color }}
+                />
+                <span className="truncate max-w-[120px]">
+                  {tabs.find((t) => t.id === splitTabId)?.title || "Secondary"}
+                </span>
+                <span className="text-[9px] text-[var(--forge-text-muted)] font-mono">
+                  [{getSession(tabs.find((t) => t.id === splitTabId)?.sessionId).name}]
+                </span>
+
+                {/* Swap Panes */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const p = activeTabId;
+                    const s = splitTabId;
+                    if (s) {
+                      setActiveTab(s);
+                      setSplitTab(p);
+                    }
+                  }}
+                  title="Swap Panes"
+                  className="w-4 h-4 flex items-center justify-center rounded hover:bg-white/20 text-zinc-300 hover:text-[#FF6B00] transition-colors"
+                >
+                  <ArrowLeftRight size={10} />
+                </button>
+
+                {/* Close Split View */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSplitTab(null);
+                  }}
+                  title="Close Split View"
+                  className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/30 text-zinc-300 hover:text-red-400 transition-colors"
+                >
+                  <CloseIcon size={10} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1085,6 +1461,33 @@ export function BrowserLayout() {
 
       {/* Forge Privacy Cleaner Subsystem Modal (Ctrl + Shift + Delete) */}
       <PrivacyCleanerModal />
+
+      {/* Session Containers Modal */}
+      <SessionModal />
+
+      {/* Focus Mode & Social Distraction Shield Modal */}
+      <FocusModeModal />
+
+      {/* Web Engine Crash Guard Alert Banner */}
+      <CrashGuardBanner />
+
+      {/* Developer Integration & Project Launcher Modal (Section 6 & 12) */}
+      <ProjectDashboardModal />
+
+      {/* Forge Extension Platform & Security Verification Gate Modal (Section 10) */}
+      <ExtensionsManagerModal />
+
+      {/* Focus Sound Environment Player Modal (Section 9) */}
+      <FocusPlayerModal />
+
+      {/* Visuals & Branding Anvil Particle Loader (Section 13) */}
+      {showStartupSplash && (
+        <ForgeAnvilLoader
+          fullScreen={true}
+          autoDismissMs={2200}
+          onFinish={() => setShowStartupSplash(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,11 +1,17 @@
 import { useRef, useState, useEffect, type KeyboardEvent, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2, ArrowRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2, ArrowRight, X, Cpu } from "lucide-react";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useNavigationStore, normalizeUrl, SEARCH_ENGINES } from "../../core/navigation/useNavigationStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
+import { useCompatStore } from "../../core/compat/useCompatStore";
+import { useLocalhostAliasesStore } from "../../core/localhost/useLocalhostAliasesStore";
 import { ShieldsButton } from "./ShieldsButton";
 import { SecureNetworkButton } from "./SecureNetworkButton";
 import { SearchEngineDropdown } from "./SearchEngineDropdown";
+import { FocusModeButton } from "./FocusModeButton";
+import { FocusPlayerMiniWidget } from "./FocusPlayerMiniWidget";
+import { SplitViewButton } from "./SplitViewButton";
+import { SessionBadgeButton } from "./SessionBadgeButton";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -21,11 +27,15 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
   const { tabs, activeTabId } = useTabsStore();
   const { urlBarValue, setUrlBarValue, searchEngine } = useNavigationStore();
   const { addBookmark, removeBookmark, isBookmarked } = useBookmarksStore();
+  const isCorsBypassActive = useCompatStore((s) => s.isCorsBypassActive);
+  const cpuThrottlingRate = useCompatStore((s) => s.cpuThrottlingRate);
+  const getAliasForUrl = useLocalhostAliasesStore((s) => s.getAliasForUrl);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const bookmarked = isBookmarked(urlBarValue);
+  const activeAlias = getAliasForUrl(activeTab?.url || urlBarValue);
 
   const isSelectingOnFocus = useRef(false);
 
@@ -144,6 +154,37 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           </button>
         )}
 
+        {/* Engine Overrides Status Badges */}
+        {isCorsBypassActive && (
+          <span
+            title="CORS & Private Network Access Bypass Active for Local API Development"
+            className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0"
+          >
+            CORS OFF
+          </span>
+        )}
+
+        {cpuThrottlingRate > 1 && (
+          <span
+            title={`CPU Throttled: ${cpuThrottlingRate}x Slowdown Active`}
+            className="flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0"
+          >
+            <Cpu size={9} />
+            {cpuThrottlingRate}x
+          </span>
+        )}
+
+        {/* Localhost Environment Alias Badge */}
+        {activeAlias && (
+          <span
+            title={`Environment: ${activeAlias.alias} (Port ${activeAlias.port})`}
+            style={{ color: activeAlias.color, borderColor: `${activeAlias.color}50`, backgroundColor: `${activeAlias.color}15` }}
+            className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border shrink-0 uppercase tracking-tighter"
+          >
+            {activeAlias.alias}
+          </span>
+        )}
+
         {/* Search / Enter Submit Button */}
         <button
           type="submit"
@@ -186,6 +227,18 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
       >
         <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
       </button>
+
+      {/* Split View Toggle */}
+      <SplitViewButton />
+
+      {/* Focus Audio Mini Widget */}
+      <FocusPlayerMiniWidget />
+
+      {/* Focus Mode & Social Shield */}
+      <FocusModeButton />
+
+      {/* Active Session Container Badge & Switcher */}
+      <SessionBadgeButton />
 
       {/* Forge Secure Network Button */}
       <SecureNetworkButton />

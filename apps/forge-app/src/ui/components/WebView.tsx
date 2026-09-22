@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCw, Smartphone, Tablet, Monitor, Watch, ZoomIn } from "lucide-react";
-import { useTabsStore } from "../../core/tabs/useTabsStore";
+import { useTabsStore, getCleanFallbackTitle } from "../../core/tabs/useTabsStore";
 import { useNavigationStore, normalizeUrl } from "../../core/navigation/useNavigationStore";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useConsoleStore } from "../../core/console/useConsoleStore";
 import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { useInspectorStore } from "../../core/inspector/useInspectorStore";
 import { DEVICE_PRESETS, getPresetById } from "../../core/inspector/devicePresets.ts";
+import { useCompatStore } from "../../core/compat/useCompatStore";
 import { NewTabHome } from "./NewTabHome";
 
 const getInitialGuestPreload = (): string | undefined => {
@@ -20,11 +21,15 @@ interface Props {
   tabId: string;
   url: string;
   isActive: boolean;
+  isLazy?: boolean;
+  isSleeping?: boolean;
   onRef: (tabId: string, el: WebviewElement | null) => void;
+  style?: React.CSSProperties;
 }
 
-export function WebView({ tabId, url, isActive, onRef }: Props) {
+export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style }: Props) {
   const ref = useRef<WebviewElement | null>(null);
+  const [hasActivated, setHasActivated] = useState<boolean>(() => isActive || (!isLazy && !isSleeping));
   const [guestPreload, setGuestPreload] = useState<string | undefined>(
     () => globalGuestPreloadPath || getInitialGuestPreload()
   );
@@ -55,6 +60,28 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   isActiveRef.current = isActive;
 
   const updateTab = useTabsStore((s) => s.updateTab);
+  const tab = useTabsStore((s) => s.tabs.find((t) => t.id === tabId));
+  const sessionId = tab?.sessionId || "default";
+  const partition = sessionId !== "default" ? `persist:session_${sessionId}` : "persist:forge";
+
+  // Synchronize mount URL if tab goes to sleep so when waking up it loads the latest URL
+  useEffect(() => {
+    if (isSleeping) {
+      initialUrl.current = lastNavigatedUrl.current || url || "about:blank";
+    }
+  }, [isSleeping, url]);
+
+  // When a lazy/dormant/sleeping tab is activated by the user, mark it as activated and mount the webview
+  useEffect(() => {
+    if (isActive) {
+      if (!hasActivated) {
+        setHasActivated(true);
+      }
+      if (isLazy || isSleeping) {
+        useTabsStore.getState().wakeTab(tabId);
+      }
+    }
+  }, [isActive, hasActivated, isLazy, isSleeping, tabId]);
   const setUrlBarValue = useNavigationStore((s) => s.setUrlBarValue);
   const addEntry = useHistoryStore((s) => s.addEntry);
   const viewportMode = useInspectorStore((s) => s.viewportMode);
@@ -100,9 +127,13 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   }, [isActive, viewportMode, selectedDeviceId]);
 
   useEffect(() => {
-    onRef(tabId, ref.current);
+    if (hasActivated && !isSleeping) {
+      onRef(tabId, ref.current);
+    } else {
+      onRef(tabId, null);
+    }
     return () => onRef(tabId, null);
-  }, [tabId, onRef]);
+  }, [tabId, onRef, hasActivated, isSleeping]);
 
   // Handle external navigation requests (e.g. user typed a new URL in address bar or clicked bookmark)
   useEffect(() => {
@@ -148,6 +179,66 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
     const el = ref.current;
     if (!el) return;
 
+    const syncTitleAndFavicon = () => {
+      try {
+        const currentUrl = el.getURL?.() || url;
+        const rawTitle = el.getTitle?.()?.trim();
+
+        if (rawTitle && rawTitle !== "about:blank" && rawTitle !== "New Tab" && !rawTitle.startsWith("http://") && !rawTitle.startsWith("https://")) {
+          updateTab(tabId, { title: rawTitle });
+          if (isActiveRef.current) {
+            (window as any).forge?.setTitle?.(rawTitle);
+            document.title = `${rawTitle} — Forge Browser`;
+          }
+          if (currentUrl && currentUrl !== "about:blank") {
+            addEntry(rawTitle, currentUrl);
+          }
+        } else {
+          // Check DOM document.title directly via guest execution
+          el.executeJavaScript?.("document.title")
+            .then((docTitle: string) => {
+              const dt = typeof docTitle === "string" ? docTitle.trim() : "";
+              if (dt && dt !== "about:blank" && !dt.startsWith("http://") && !dt.startsWith("https://")) {
+                updateTab(tabId, { title: dt });
+                if (isActiveRef.current) {
+                  (window as any).forge?.setTitle?.(dt);
+                  document.title = `${dt} — Forge Browser`;
+                }
+                if (currentUrl && currentUrl !== "about:blank") {
+                  addEntry(dt, currentUrl);
+                }
+              } else if (currentUrl && currentUrl !== "about:blank") {
+                const fallback = getCleanFallbackTitle(currentUrl);
+                if (fallback && fallback !== "New Tab") {
+                  updateTab(tabId, { title: fallback });
+                }
+              }
+            })
+            .catch(() => {
+              if (currentUrl && currentUrl !== "about:blank") {
+                const fallback = getCleanFallbackTitle(currentUrl);
+                if (fallback && fallback !== "New Tab") {
+                  updateTab(tabId, { title: fallback });
+                }
+              }
+            });
+        }
+
+        // Auto-extract favicon if missing
+        if (currentUrl && currentUrl !== "about:blank") {
+          const currentTab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+          if (!currentTab?.favicon) {
+            try {
+              const host = new URL(currentUrl).hostname;
+              if (host) {
+                updateTab(tabId, { favicon: `https://www.google.com/s2/favicons?domain=${host}&sz=32` });
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    };
+
     const onStart = () => updateTab(tabId, { isLoading: true });
 
     const onStop = () => {
@@ -156,6 +247,21 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
         canGoBack: el.canGoBack(),
         canGoForward: el.canGoForward(),
       });
+      syncTitleAndFavicon();
+    };
+
+    const onDomReady = () => {
+      syncTitleAndFavicon();
+      try {
+        const currentTab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+        if (currentTab?.isMuted && typeof (el as any).setAudioMuted === "function") {
+          (el as any).setAudioMuted(true);
+        }
+      } catch {}
+    };
+
+    const onFinishLoad = () => {
+      syncTitleAndFavicon();
     };
 
     const onNavigate = (e: any) => {
@@ -165,44 +271,38 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       // Record this URL so the external sync effect doesn't re-trigger loadURL
       lastNavigatedUrl.current = targetUrl;
 
+      const fallbackTitle = getCleanFallbackTitle(targetUrl);
       updateTab(tabId, {
         url: targetUrl,
+        title: fallbackTitle,
         canGoBack: el.canGoBack(),
         canGoForward: el.canGoForward(),
       });
 
       if (isActiveRef.current) {
         setUrlBarValue(targetUrl);
-        try {
-          const t = el.getTitle();
-          if (t && t !== "about:blank") {
-            (window as any).forge?.setTitle?.(t);
-            document.title = `${t} — Forge Browser`;
-          }
-        } catch {}
       }
 
-      if (targetUrl && targetUrl !== "about:blank") {
-        try {
-          const t = el.getTitle();
-          addEntry(t || "New Tab", targetUrl);
-        } catch {}
-      }
+      syncTitleAndFavicon();
     };
 
     const onTitle = (e: any) => {
-      const title = e.title || "New Tab";
-      updateTab(tabId, { title });
-      if (isActiveRef.current) {
-        (window as any).forge?.setTitle?.(title);
-        document.title = title ? `${title} — Forge Browser` : "Forge Browser";
-      }
-      try {
-        const currentUrl = el.getURL();
-        if (currentUrl && currentUrl !== "about:blank") {
-          addEntry(title, currentUrl);
+      const rawTitle = e.title?.trim();
+      if (rawTitle && rawTitle !== "about:blank" && !rawTitle.startsWith("http://") && !rawTitle.startsWith("https://")) {
+        updateTab(tabId, { title: rawTitle });
+        if (isActiveRef.current) {
+          (window as any).forge?.setTitle?.(rawTitle);
+          document.title = `${rawTitle} — Forge Browser`;
         }
-      } catch {}
+        try {
+          const currentUrl = el.getURL();
+          if (currentUrl && currentUrl !== "about:blank") {
+            addEntry(rawTitle, currentUrl);
+          }
+        } catch {}
+      } else {
+        syncTitleAndFavicon();
+      }
     };
 
     const onFavicon = (e: any) => {
@@ -238,15 +338,18 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
     };
 
     const onRenderProcessGone = (e: any) => {
-      console.warn(`[WebView ${tabId}] Guest render process gone: ${e.details?.reason} (${e.details?.exitCode})`);
-      // When waking up from hibernation/sleep or GPU reset, auto-reload to bring the webview back to life!
-      if (e.details?.reason === "crashed" || e.details?.reason === "killed" || e.details?.reason === "oom") {
+      const reason = e.details?.reason || "crashed";
+      const exitCode = e.details?.exitCode;
+      console.warn(`[WebView ${tabId}] Guest render process gone: ${reason} (${exitCode})`);
+      useCompatStore.getState().recordCrash(tabId, url || "about:blank", reason, exitCode);
+      const isAutoRestore = useCompatStore.getState().crashGuardMode === "auto-restore";
+      if (isAutoRestore && (reason === "crashed" || reason === "killed" || reason === "oom")) {
         try {
           setTimeout(() => {
             if (ref.current) {
               ref.current.reload();
             }
-          }, 400);
+          }, 3500);
         } catch {}
       }
     };
@@ -364,6 +467,20 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       if (typeof msg === "string" && (msg.includes("__FORGE_PIP_ENTER__") || msg.includes("__FORGE_PIP_LEAVE__"))) {
         return;
       }
+      if (typeof msg === "string" && msg.includes("__FORGE_MEDIA_STATUS__:")) {
+        try {
+          const raw = msg.split("__FORGE_MEDIA_STATUS__:")[1]?.trim();
+          if (raw) {
+            const data = JSON.parse(raw);
+            useTabsStore.getState().setTabAudio(
+              tabId,
+              Boolean(data.isPlaying),
+              Boolean(data.isMuted)
+            );
+          }
+        } catch {}
+        return;
+      }
 
       let level: "log" | "info" | "warn" | "error" = "log";
       if (e.level === 1) level = "warn";
@@ -386,8 +503,31 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       useFullscreenStore.getState().setFullscreen(false);
     };
 
+    let mediaPauseTimer: any = null;
+
+    const onMediaStarted = () => {
+      try {
+        if (mediaPauseTimer) {
+          clearTimeout(mediaPauseTimer);
+          mediaPauseTimer = null;
+        }
+        const isMuted = typeof (el as any).isAudioMuted === "function" ? (el as any).isAudioMuted() : false;
+        useTabsStore.getState().setTabAudio(tabId, true, isMuted);
+      } catch {}
+    };
+
+    const onMediaPaused = () => {
+      try {
+        if (mediaPauseTimer) clearTimeout(mediaPauseTimer);
+        const isMuted = typeof (el as any).isAudioMuted === "function" ? (el as any).isAudioMuted() : false;
+        useTabsStore.getState().setTabAudio(tabId, false, isMuted);
+      } catch {}
+    };
+
     el.addEventListener("did-start-loading", onStart);
     el.addEventListener("did-stop-loading", onStop);
+    el.addEventListener("dom-ready", onDomReady);
+    el.addEventListener("did-finish-load", onFinishLoad);
     el.addEventListener("did-navigate", onNavigate);
     el.addEventListener("did-navigate-in-page", onNavigate);
     el.addEventListener("page-title-updated", onTitle);
@@ -398,10 +538,49 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
     el.addEventListener("console-message", onConsoleMessage);
     el.addEventListener("enter-html-full-screen", onEnterHtmlFullScreen);
     el.addEventListener("leave-html-full-screen", onLeaveHtmlFullScreen);
+    el.addEventListener("media-started-playing", onMediaStarted);
+    el.addEventListener("media-paused", onMediaPaused);
+
+    let inactiveSilenceCount = 0;
+    const audibleInterval = setInterval(() => {
+      try {
+        const isMuted = typeof (el as any).isAudioMuted === "function" ? (el as any).isAudioMuted() : false;
+        const currentTab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+        if (currentTab?.isPlayingAudio) {
+          const isAudible = typeof (el as any).isCurrentlyAudible === "function" ? (el as any).isCurrentlyAudible() : false;
+          if (isAudible) {
+            inactiveSilenceCount = 0;
+            return;
+          }
+          if (typeof el.executeJavaScript === "function") {
+            el.executeJavaScript(
+              "Boolean(Array.from(document.querySelectorAll('video, audio')).some(m => !m.paused && !m.ended))"
+            )
+              .then((stillPlaying: boolean) => {
+                if (stillPlaying) {
+                  inactiveSilenceCount = 0;
+                } else {
+                  inactiveSilenceCount++;
+                  if (inactiveSilenceCount >= 2) {
+                    useTabsStore.getState().setTabAudio(tabId, false, isMuted);
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        } else {
+          inactiveSilenceCount = 0;
+        }
+      } catch {}
+    }, 1500);
 
     return () => {
+      if (mediaPauseTimer) clearTimeout(mediaPauseTimer);
+      clearInterval(audibleInterval);
       el.removeEventListener("did-start-loading", onStart);
       el.removeEventListener("did-stop-loading", onStop);
+      el.removeEventListener("dom-ready", onDomReady);
+      el.removeEventListener("did-finish-load", onFinishLoad);
       el.removeEventListener("did-navigate", onNavigate);
       el.removeEventListener("did-navigate-in-page", onNavigate);
       el.removeEventListener("page-title-updated", onTitle);
@@ -412,35 +591,98 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
       el.removeEventListener("console-message", onConsoleMessage);
       el.removeEventListener("enter-html-full-screen", onEnterHtmlFullScreen);
       el.removeEventListener("leave-html-full-screen", onLeaveHtmlFullScreen);
+      el.removeEventListener("media-started-playing", onMediaStarted);
+      el.removeEventListener("media-paused", onMediaPaused);
     };
   }, [tabId, updateTab, setUrlBarValue, addEntry]);
+
+  // Listen for audio mute toggle requests from TabBar
+  useEffect(() => {
+    const handleToggleMute = (e: Event) => {
+      const customEv = e as CustomEvent<{ tabId: string; isMuted: boolean }>;
+      if (customEv.detail?.tabId === tabId && ref.current) {
+        const isMuted = customEv.detail.isMuted;
+        try {
+          if (typeof (ref.current as any).setAudioMuted === "function") {
+            (ref.current as any).setAudioMuted(isMuted);
+          }
+        } catch {}
+
+        try {
+          if (typeof (ref.current as any).getWebContentsId === "function") {
+            const wcid = (ref.current as any).getWebContentsId();
+            (window as any).forge?.tabs?.setMuted?.(wcid, isMuted);
+          }
+        } catch {}
+
+        try {
+          ref.current
+            .executeJavaScript(`
+              (function() {
+                try {
+                  Array.from(document.querySelectorAll('video, audio')).forEach(m => {
+                    m.muted = ${isMuted};
+                  });
+                } catch(e) {}
+              })()
+            `)
+            .catch(() => {});
+        } catch {}
+      }
+    };
+    window.addEventListener("forge:toggle-tab-mute", handleToggleMute);
+    return () => window.removeEventListener("forge:toggle-tab-mute", handleToggleMute);
+  }, [tabId]);
 
   // Sync address bar and window title when switching tabs
   useEffect(() => {
     if (isActive) {
       try {
-        const currentUrl = ref.current?.getURL();
+        const el = ref.current;
+        const currentUrl = el?.getURL?.() || url;
         if (currentUrl && currentUrl !== "about:blank") {
           setUrlBarValue(currentUrl);
-        } else if (url && url !== "about:blank") {
-          setUrlBarValue(url);
         } else {
           setUrlBarValue("");
         }
-        const currentTitle = ref.current?.getTitle();
-        if (currentTitle && currentTitle !== "about:blank") {
-          (window as any).forge?.setTitle?.(currentTitle);
-          document.title = `${currentTitle} — Forge Browser`;
-        } else {
-          (window as any).forge?.setTitle?.("Forge Browser");
-          document.title = "Forge Browser";
+
+        const rawTitle = el?.getTitle?.()?.trim();
+        if (rawTitle && rawTitle !== "about:blank" && rawTitle !== "New Tab" && !rawTitle.startsWith("http://") && !rawTitle.startsWith("https://")) {
+          updateTab(tabId, { title: rawTitle });
+          (window as any).forge?.setTitle?.(rawTitle);
+          document.title = `${rawTitle} — Forge Browser`;
+        } else if (el && typeof el.executeJavaScript === "function") {
+          el.executeJavaScript("document.title")
+            .then((docTitle: string) => {
+              const dt = typeof docTitle === "string" ? docTitle.trim() : "";
+              if (dt && dt !== "about:blank" && !dt.startsWith("http://") && !dt.startsWith("https://")) {
+                updateTab(tabId, { title: dt });
+                (window as any).forge?.setTitle?.(dt);
+                document.title = `${dt} — Forge Browser`;
+              } else if (currentUrl && currentUrl !== "about:blank") {
+                const fallback = getCleanFallbackTitle(currentUrl);
+                if (fallback && fallback !== "New Tab") {
+                  updateTab(tabId, { title: fallback });
+                  (window as any).forge?.setTitle?.(fallback);
+                  document.title = `${fallback} — Forge Browser`;
+                }
+              }
+            })
+            .catch(() => {});
+        } else if (currentUrl && currentUrl !== "about:blank") {
+          const fallback = getCleanFallbackTitle(currentUrl);
+          if (fallback && fallback !== "New Tab") {
+            updateTab(tabId, { title: fallback });
+            (window as any).forge?.setTitle?.(fallback);
+            document.title = `${fallback} — Forge Browser`;
+          }
         }
       } catch {
         if (url && url !== "about:blank") setUrlBarValue(url);
         else setUrlBarValue("");
       }
     }
-  }, [isActive, url, setUrlBarValue]);
+  }, [isActive, url, setUrlBarValue, tabId, updateTab]);
 
   const handleDragStart = (e: React.PointerEvent, type: "right" | "bottom" | "corner") => {
     e.preventDefault();
@@ -486,11 +728,36 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   const isTablet = viewportMode === "tablet";
   const scaleVal = typeof deviceScale === "number" ? deviceScale : 1;
 
+  // If this tab is sleeping / dormant and not active, do NOT mount the heavy <webview> tag into the DOM.
+  // This completely unloads the renderer process and frees up system RAM to 0 MB!
+  if ((isSleeping || isLazy || !hasActivated) && !isActive) {
+    return (
+      <div
+        className="w-full h-full relative"
+        style={{ display: "none" }}
+      />
+    );
+  }
+
+  // If active tab is waking up / activating for the first time
+  if (!hasActivated) {
+    return (
+      <div
+        className="w-full h-full relative flex items-center justify-center bg-[var(--forge-bg)] text-[var(--forge-text-muted)] select-none"
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-[#FF6B00] border-t-transparent animate-spin" />
+          <span className="text-xs font-medium">Restoring tab...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (isSimulatedDevice) {
     return (
       <div
         className="w-full h-full relative flex flex-col items-center bg-[#07080c] overflow-hidden select-none"
-        style={{ display: isActive ? "flex" : "none" }}
+        style={{ display: isActive ? "flex" : "none", ...(style || {}) }}
       >
         {/* Top Floating Simulator Control Bar */}
         <div className="w-full h-8 bg-[#0d0f17] border-b border-[var(--forge-border)] px-4 flex items-center justify-between text-[10px] text-[var(--forge-text-muted)] shrink-0 z-20">
@@ -733,7 +1000,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
                       onNavigate={(targetUrl) => {
                         const currentEngine = useNavigationStore.getState().searchEngine;
                         const cleanUrl = normalizeUrl(targetUrl, currentEngine);
-                        updateTab(tabId, { url: cleanUrl });
+                        const fallbackTitle = getCleanFallbackTitle(cleanUrl);
+                        updateTab(tabId, { url: cleanUrl, title: fallbackTitle });
                         setUrlBarValue(cleanUrl);
                       }}
                     />
@@ -750,7 +1018,9 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
                     position: isBlank ? "absolute" : "relative",
                     pointerEvents: isBlank ? "none" : "auto",
                   }}
-                  partition="persist:forge"
+                  partition={partition}
+                  key={`${tabId}_${sessionId}_sim`}
+                  data-tab-id={tabId}
                   allowpopups={"true" as any}
                   allowFullScreen={true}
                   nodeintegrationinsubframes={"true" as any}
@@ -804,7 +1074,10 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
   return (
     <div
       className="w-full h-full relative"
-      style={{ display: isActive ? "flex" : "none" }}
+      style={{
+        display: isActive ? "flex" : "none",
+        ...(style || {}),
+      }}
     >
       {isBlank && (
         <div className="absolute inset-0 z-10 bg-[var(--forge-bg)]">
@@ -812,7 +1085,8 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
             onNavigate={(targetUrl) => {
               const currentEngine = useNavigationStore.getState().searchEngine;
               const cleanUrl = normalizeUrl(targetUrl, currentEngine);
-              updateTab(tabId, { url: cleanUrl });
+              const fallbackTitle = getCleanFallbackTitle(cleanUrl);
+              updateTab(tabId, { url: cleanUrl, title: fallbackTitle });
               setUrlBarValue(cleanUrl);
             }}
           />
@@ -827,7 +1101,9 @@ export function WebView({ tabId, url, isActive, onRef }: Props) {
           position: isBlank ? "absolute" : "relative",
           pointerEvents: isBlank ? "none" : "auto",
         }}
-        partition="persist:forge"
+        partition={partition}
+        key={`${tabId}_${sessionId}`}
+        data-tab-id={tabId}
         allowpopups={"true" as any}
         allowFullScreen={true}
         nodeintegrationinsubframes={"true" as any}

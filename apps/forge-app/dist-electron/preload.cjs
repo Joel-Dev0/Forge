@@ -52,7 +52,14 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       const listener = (_event, data) => callback(data);
       import_electron.ipcRenderer.on("tabs:open-tab", listener);
       return () => import_electron.ipcRenderer.removeListener("tabs:open-tab", listener);
-    }
+    },
+    onAudioChanged: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("tabs:audio-changed", listener);
+      return () => import_electron.ipcRenderer.removeListener("tabs:audio-changed", listener);
+    },
+    getTabsMemory: (items) => import_electron.ipcRenderer.invoke("tabs:get-memory", items),
+    setMuted: (contentsId, isMuted) => import_electron.ipcRenderer.invoke("tabs:set-muted", { contentsId, isMuted })
   },
   downloads: {
     getRecent: () => import_electron.ipcRenderer.invoke("downloads:get-recent"),
@@ -261,6 +268,34 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       const listener = () => callback();
       import_electron.ipcRenderer.on("privacy:clear-downloads-requested", listener);
       return () => import_electron.ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
+    }
+  },
+  session: {
+    saveBackup: (data) => import_electron.ipcRenderer.invoke("session:save-backup", data),
+    getBackup: () => import_electron.ipcRenderer.invoke("session:get-backup")
+  },
+  sessions: {
+    clearData: (partition, types) => import_electron.ipcRenderer.invoke("sessions:clear-data", partition, types)
+  },
+  focus: {
+    syncState: (payload) => import_electron.ipcRenderer.invoke("focus:sync-state", payload)
+  },
+  compat: {
+    setCORSBypass: (active) => import_electron.ipcRenderer.invoke("compat:set-cors-bypass", active),
+    getCORSBypass: () => import_electron.ipcRenderer.invoke("compat:get-cors-bypass"),
+    getVersions: () => import_electron.ipcRenderer.invoke("compat:get-versions"),
+    getLocalIp: () => import_electron.ipcRenderer.invoke("compat:get-local-ip"),
+    setEmulation: (targetContentsId, options) => import_electron.ipcRenderer.invoke("compat:set-emulation", targetContentsId, options),
+    collectGarbage: (targetContentsId) => import_electron.ipcRenderer.invoke("compat:collect-garbage", targetContentsId),
+    onTabCrashed: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("compat:tab-crashed", listener);
+      return () => import_electron.ipcRenderer.removeListener("compat:tab-crashed", listener);
+    },
+    onDeprecationLogged: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("compat:deprecation-logged", listener);
+      return () => import_electron.ipcRenderer.removeListener("compat:deprecation-logged", listener);
     }
   }
 });

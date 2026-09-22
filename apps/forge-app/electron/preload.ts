@@ -52,6 +52,17 @@ contextBridge.exposeInMainWorld("forge", {
       ipcRenderer.on("tabs:open-tab", listener);
       return () => ipcRenderer.removeListener("tabs:open-tab", listener);
     },
+    onAudioChanged: (
+      callback: (data: { contentsId: number; isPlayingAudio: boolean; isMuted: boolean }) => void
+    ) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("tabs:audio-changed", listener);
+      return () => ipcRenderer.removeListener("tabs:audio-changed", listener);
+    },
+    getTabsMemory: (items: any[]) =>
+      ipcRenderer.invoke("tabs:get-memory", items),
+    setMuted: (contentsId: number, isMuted: boolean) =>
+      ipcRenderer.invoke("tabs:set-muted", { contentsId, isMuted }),
   },
   downloads: {
     getRecent: () => ipcRenderer.invoke("downloads:get-recent"),
@@ -262,6 +273,42 @@ contextBridge.exposeInMainWorld("forge", {
       const listener = () => callback();
       ipcRenderer.on("privacy:clear-downloads-requested", listener);
       return () => ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
+    },
+  },
+  session: {
+    saveBackup: (data: any) => ipcRenderer.invoke("session:save-backup", data),
+    getBackup: () => ipcRenderer.invoke("session:get-backup"),
+  },
+  sessions: {
+    clearData: (partition: string, types?: string[]) =>
+      ipcRenderer.invoke("sessions:clear-data", partition, types),
+  },
+  focus: {
+    syncState: (payload: any) =>
+      ipcRenderer.invoke("focus:sync-state", payload),
+  },
+  compat: {
+    setCORSBypass: (active: boolean) =>
+      ipcRenderer.invoke("compat:set-cors-bypass", active),
+    getCORSBypass: () =>
+      ipcRenderer.invoke("compat:get-cors-bypass"),
+    getVersions: () =>
+      ipcRenderer.invoke("compat:get-versions"),
+    getLocalIp: () =>
+      ipcRenderer.invoke("compat:get-local-ip"),
+    setEmulation: (targetContentsId: number | undefined, options: any) =>
+      ipcRenderer.invoke("compat:set-emulation", targetContentsId, options),
+    collectGarbage: (targetContentsId?: number) =>
+      ipcRenderer.invoke("compat:collect-garbage", targetContentsId),
+    onTabCrashed: (callback: (data: { contentsId: number; reason: string; exitCode: number }) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("compat:tab-crashed", listener);
+      return () => ipcRenderer.removeListener("compat:tab-crashed", listener);
+    },
+    onDeprecationLogged: (callback: (data: { contentsId: number; level: number; message: string; line: number; source: string }) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("compat:deprecation-logged", listener);
+      return () => ipcRenderer.removeListener("compat:deprecation-logged", listener);
     },
   },
 });

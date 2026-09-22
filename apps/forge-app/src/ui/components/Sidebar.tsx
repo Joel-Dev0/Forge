@@ -1,8 +1,25 @@
 import { useState, useEffect } from "react";
-import { Star, Clock, Trash2, Sun, Moon, Laptop, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import {
+  Star,
+  Clock,
+  Trash2,
+  Sun,
+  Moon,
+  Laptop,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  X,
+  FolderGit2,
+  Puzzle,
+  Disc3,
+} from "lucide-react";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFavoritesStore } from "../../core/favorites/useFavoritesStore";
+import { useProjectsStore } from "../../core/projects/useProjectsStore";
+import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
+import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { FavoritesView } from "./FavoritesView";
 
 interface SidebarProps {
@@ -12,6 +29,12 @@ interface SidebarProps {
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"favorites" | "history">("favorites");
+
+  const { setDashboardOpen, runningProcesses } = useProjectsStore();
+  const { setManagerOpen, extensions } = useExtensionsStore();
+  const { setPlayerModalOpen, isPlaying, currentTrack } = useFocusPlayerStore();
+  const activeProcessesCount = Object.keys(runningProcesses).length;
+  const enabledExtensionsCount = extensions.filter((e) => e.enabled).length;
 
   useEffect(() => {
     const handleOpenHistory = () => {
@@ -78,6 +101,47 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
         >
           <Clock size={14} />
+        </button>
+
+        <div className="w-5 border-t border-[var(--forge-border)] my-1" />
+
+        {/* Projects Launcher button */}
+        <button
+          onClick={() => setDashboardOpen(true)}
+          title={`Developer Projects Launcher (${activeProcessesCount} active)`}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer relative"
+        >
+          <FolderGit2 size={14} />
+          {activeProcessesCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+          )}
+        </button>
+
+        {/* Extensions Manager button */}
+        <button
+          onClick={() => setManagerOpen(true)}
+          title={`Extensions & Verification Gate (${enabledExtensionsCount} active)`}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-sky-400 hover:bg-[var(--forge-hover)] transition-colors cursor-pointer relative"
+        >
+          <Puzzle size={14} />
+          {enabledExtensionsCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-sky-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+              {enabledExtensionsCount}
+            </span>
+          )}
+        </button>
+
+        {/* Focus Player button */}
+        <button
+          onClick={() => setPlayerModalOpen(true)}
+          title={isPlaying && currentTrack ? `Focus Player: ${currentTrack.title}` : "Focus Sound Player"}
+          className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer relative ${
+            isPlaying
+              ? "text-[#FF6B00] bg-[#FF6B00]/10"
+              : "text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)]"
+          }`}
+        >
+          <Disc3 size={14} className={isPlaying ? "animate-spin" : ""} />
         </button>
 
         {/* Theme at bottom */}
@@ -242,6 +306,48 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             })()}
           </div>
         )}
+      </div>
+
+      {/* Workspace Quick Launchers Strip */}
+      <div className="p-2 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]/30 space-y-1">
+        <div className="text-[9px] uppercase font-semibold text-[var(--forge-text-muted)] tracking-wider">
+          Workspace Tools
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          <button
+            onClick={() => setDashboardOpen(true)}
+            title="Projects Launcher"
+            className="flex flex-col items-center gap-1 p-1.5 rounded bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] border border-[var(--forge-border)] transition-colors cursor-pointer relative"
+          >
+            <FolderGit2 size={12} />
+            <span className="text-[9px] font-medium">Projects</span>
+            {activeProcessesCount > 0 && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setManagerOpen(true)}
+            title="Extensions Manager"
+            className="flex flex-col items-center gap-1 p-1.5 rounded bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-sky-400 border border-[var(--forge-border)] transition-colors cursor-pointer"
+          >
+            <Puzzle size={12} />
+            <span className="text-[9px] font-medium">Extensions</span>
+          </button>
+
+          <button
+            onClick={() => setPlayerModalOpen(true)}
+            title="Focus Sound Player"
+            className={`flex flex-col items-center gap-1 p-1.5 rounded border transition-colors cursor-pointer ${
+              isPlaying
+                ? "bg-[#FF6B00]/15 text-[#FF6B00] border-[#FF6B00]/30"
+                : "bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] border-[var(--forge-border)]"
+            }`}
+          >
+            <Disc3 size={12} className={isPlaying ? "animate-spin" : ""} />
+            <span className="text-[9px] font-medium">Audio</span>
+          </button>
+        </div>
       </div>
 
       {/* Footer: Theme */}

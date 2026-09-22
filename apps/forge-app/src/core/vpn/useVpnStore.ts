@@ -6,6 +6,38 @@ import type {
   ConnectionState,
 } from "@forge/network-core";
 
+interface VpnAdvancedSettings {
+  autoConnectOnStartup: boolean;
+  autoConnectOnPublicWifi: boolean;
+  autoReconnect: boolean;
+  dnsRoutingMode: "vpn_dns" | "custom_dns";
+  customDnsServer: string;
+  splitTunnelRules: string[];
+}
+
+const STORAGE_KEY_ADVANCED = "forge:vpn:advanced-settings";
+
+function loadSavedAdvancedSettings(): VpnAdvancedSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ADVANCED);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    autoConnectOnStartup: false,
+    autoConnectOnPublicWifi: true,
+    autoReconnect: true,
+    dnsRoutingMode: "vpn_dns",
+    customDnsServer: "1.1.1.1",
+    splitTunnelRules: ["localhost", "127.0.0.1", "*.internal", "192.168.0.0/16"],
+  };
+}
+
+function saveAdvancedSettings(settings: VpnAdvancedSettings) {
+  try {
+    localStorage.setItem(STORAGE_KEY_ADVANCED, JSON.stringify(settings));
+  } catch {}
+}
+
 interface VpnStoreState {
   state: ConnectionState;
   status: VpnStatus;
@@ -13,6 +45,14 @@ interface VpnStoreState {
   selectedLocationId: string;
   profiles: VpnProfile[];
   activeProfileId?: string;
+
+  // Section 7.2 Advanced Infrastructure
+  autoConnectOnStartup: boolean;
+  autoConnectOnPublicWifi: boolean;
+  autoReconnect: boolean;
+  dnsRoutingMode: "vpn_dns" | "custom_dns";
+  customDnsServer: string;
+  splitTunnelRules: string[];
 
   isConnecting: boolean;
   isImporting: boolean;
@@ -24,6 +64,12 @@ interface VpnStoreState {
   disconnect: () => Promise<boolean>;
   selectLocation: (locationId: string) => Promise<boolean>;
   setKillSwitch: (enabled: boolean) => Promise<void>;
+  setAutoConnectOnStartup: (enabled: boolean) => void;
+  setAutoConnectOnPublicWifi: (enabled: boolean) => void;
+  setAutoReconnect: (enabled: boolean) => void;
+  setDnsRoutingMode: (mode: "vpn_dns" | "custom_dns", customServer?: string) => void;
+  addSplitTunnelRule: (rule: string) => void;
+  removeSplitTunnelRule: (rule: string) => void;
   importConfig: (rawText: string, name?: string) => Promise<boolean>;
   exportConfig: (profileId?: string) => Promise<string | null>;
   deleteProfile: (profileId: string) => Promise<boolean>;
@@ -40,6 +86,8 @@ const DEFAULT_STATUS: VpnStatus = {
 
 let isInitialized = false;
 
+const initialAdv = loadSavedAdvancedSettings();
+
 export const useVpnStore = create<VpnStoreState>((set, get) => ({
   state: "disconnected",
   status: DEFAULT_STATUS,
@@ -47,6 +95,13 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
   selectedLocationId: "loc-us-east",
   profiles: [],
   activeProfileId: undefined,
+
+  autoConnectOnStartup: initialAdv.autoConnectOnStartup,
+  autoConnectOnPublicWifi: initialAdv.autoConnectOnPublicWifi,
+  autoReconnect: initialAdv.autoReconnect,
+  dnsRoutingMode: initialAdv.dnsRoutingMode,
+  customDnsServer: initialAdv.customDnsServer,
+  splitTunnelRules: initialAdv.splitTunnelRules,
 
   isConnecting: false,
   isImporting: false,
@@ -84,12 +139,24 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
           activeProfileId: st.activeProfile?.id,
           lastError: st.lastError || null,
         });
+
+        if (get().autoConnectOnStartup && st.state === "disconnected") {
+          setTimeout(() => {
+            if (get().state === "disconnected") {
+              get().connect();
+            }
+          }, 1000);
+        }
       }
     }).catch(() => {});
 
-    // Listen to status updates
+    // Listen to status updates & handle auto-reconnect
+    let reconnectTimeout: any = null;
+    let reconnectAttempts = 0;
+
     bridge.onStatusChanged((st: VpnStatus) => {
       if (st) {
+        const prevState = get().state;
         set({
           status: st,
           state: st.state,
@@ -97,6 +164,27 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
           activeProfileId: st.activeProfile?.id || get().activeProfileId,
           lastError: st.lastError || null,
         });
+
+        // Auto-reconnect with backoff on unexpected drop
+        if (
+          get().autoReconnect &&
+          prevState === "connected" &&
+          (st.state === "disconnected" || st.state === "error")
+        ) {
+          if (reconnectAttempts < 5) {
+            const delay = Math.min(30000, 2000 * Math.pow(1.5, reconnectAttempts));
+            reconnectAttempts++;
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(() => {
+              if (get().state !== "connected" && !get().isConnecting) {
+                get().connect();
+              }
+            }, delay);
+          }
+        } else if (st.state === "connected") {
+          reconnectAttempts = 0;
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        }
       }
     });
   },
@@ -223,6 +311,93 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
     } catch (err: any) {
       console.error("Failed to update Kill Switch:", err);
     }
+  },
+
+  setAutoConnectOnStartup: (enabled: boolean) => {
+    set({ autoConnectOnStartup: enabled });
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: enabled,
+      autoConnectOnPublicWifi: s.autoConnectOnPublicWifi,
+      autoReconnect: s.autoReconnect,
+      dnsRoutingMode: s.dnsRoutingMode,
+      customDnsServer: s.customDnsServer,
+      splitTunnelRules: s.splitTunnelRules,
+    });
+  },
+
+  setAutoConnectOnPublicWifi: (enabled: boolean) => {
+    set({ autoConnectOnPublicWifi: enabled });
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: s.autoConnectOnStartup,
+      autoConnectOnPublicWifi: enabled,
+      autoReconnect: s.autoReconnect,
+      dnsRoutingMode: s.dnsRoutingMode,
+      customDnsServer: s.customDnsServer,
+      splitTunnelRules: s.splitTunnelRules,
+    });
+  },
+
+  setAutoReconnect: (enabled: boolean) => {
+    set({ autoReconnect: enabled });
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: s.autoConnectOnStartup,
+      autoConnectOnPublicWifi: s.autoConnectOnPublicWifi,
+      autoReconnect: enabled,
+      dnsRoutingMode: s.dnsRoutingMode,
+      customDnsServer: s.customDnsServer,
+      splitTunnelRules: s.splitTunnelRules,
+    });
+  },
+
+  setDnsRoutingMode: (mode: "vpn_dns" | "custom_dns", customServer?: string) => {
+    set((s) => ({
+      dnsRoutingMode: mode,
+      customDnsServer: customServer !== undefined ? customServer : s.customDnsServer,
+    }));
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: s.autoConnectOnStartup,
+      autoConnectOnPublicWifi: s.autoConnectOnPublicWifi,
+      autoReconnect: s.autoReconnect,
+      dnsRoutingMode: mode,
+      customDnsServer: customServer !== undefined ? customServer : s.customDnsServer,
+      splitTunnelRules: s.splitTunnelRules,
+    });
+  },
+
+  addSplitTunnelRule: (rule: string) => {
+    const trimmed = rule.trim();
+    if (!trimmed) return;
+    const current = get().splitTunnelRules;
+    if (current.includes(trimmed)) return;
+    const next = [...current, trimmed];
+    set({ splitTunnelRules: next });
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: s.autoConnectOnStartup,
+      autoConnectOnPublicWifi: s.autoConnectOnPublicWifi,
+      autoReconnect: s.autoReconnect,
+      dnsRoutingMode: s.dnsRoutingMode,
+      customDnsServer: s.customDnsServer,
+      splitTunnelRules: next,
+    });
+  },
+
+  removeSplitTunnelRule: (rule: string) => {
+    const next = get().splitTunnelRules.filter((r) => r !== rule);
+    set({ splitTunnelRules: next });
+    const s = get();
+    saveAdvancedSettings({
+      autoConnectOnStartup: s.autoConnectOnStartup,
+      autoConnectOnPublicWifi: s.autoConnectOnPublicWifi,
+      autoReconnect: s.autoReconnect,
+      dnsRoutingMode: s.dnsRoutingMode,
+      customDnsServer: s.customDnsServer,
+      splitTunnelRules: next,
+    });
   },
 
   importConfig: async (rawText: string, name?: string) => {

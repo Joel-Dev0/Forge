@@ -1,10 +1,10 @@
 // electron/main.ts
-import { app as app6, BrowserWindow as BrowserWindow5, ipcMain as ipcMain6, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session6, shell, Menu } from "electron";
-import path4 from "node:path";
-import fs4 from "node:fs";
-import os from "node:os";
+import { app as app8, BrowserWindow as BrowserWindow5, ipcMain as ipcMain8, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session8, shell, Menu } from "electron";
+import path5 from "node:path";
+import fs5 from "node:fs";
+import os2 from "node:os";
 import { exec } from "node:child_process";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // electron/engine/http/url.ts
 function parseHttpUrl(input) {
@@ -24,12 +24,12 @@ function parseHttpUrl(input) {
   }
   const isTls = protocol === "https:";
   const port = parsed.port ? parseInt(parsed.port, 10) : isTls ? 443 : 80;
-  const path5 = `${parsed.pathname || "/"}${parsed.search || ""}`;
+  const path6 = `${parsed.pathname || "/"}${parsed.search || ""}`;
   return {
     protocol,
     hostname: parsed.hostname,
     port,
-    path: path5,
+    path: path6,
     isTls,
     href: parsed.href
   };
@@ -4598,17 +4598,621 @@ function initPrivacyCleanerAdapter(mainWindowGetter, options) {
   });
 }
 
-// electron/main.ts
+// electron/sessions/sessionManager.ts
+import path4 from "node:path";
+import fs4 from "node:fs";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { app as app7, session as session7, ipcMain as ipcMain7 } from "electron";
+
+// src/core/focus/socialRulesets.ts
+var SOCIAL_PLATFORMS = {
+  youtube: {
+    id: "youtube",
+    name: "YouTube",
+    domains: ["youtube.com", "m.youtube.com", "youtu.be", "youtube-nocookie.com"],
+    icon: "Youtube",
+    color: "#EF4444",
+    description: "World's video platform. High risk of infinite recommendation rabbit-holes and Shorts.",
+    defaultTier: "LIMIT",
+    limitDescription: "Allow watching specific videos & searching, while blocking Shorts shelves, comments, and home feed.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/watch") || path6.startsWith("/embed") || path6.startsWith("/results") || path6.startsWith("/api") || path6.startsWith("/youtubei");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6.startsWith("/shorts") || path6.startsWith("/feed/explore") || path6.startsWith("/feed/trending");
+    },
+    cosmeticSelectors: [
+      "#related",
+      "#comments",
+      "ytd-comments",
+      "ytd-reel-shelf-renderer",
+      "ytd-rich-shelf-renderer",
+      "#shorts-container",
+      "ytd-guide-entry-renderer:has(a[title='Shorts'])",
+      "ytd-mini-guide-entry-renderer[aria-label='Shorts']",
+      "ytd-browse[page-subtype='home'] #contents"
+    ]
+  },
+  twitter: {
+    id: "twitter",
+    name: "X / Twitter",
+    domains: ["twitter.com", "x.com", "mobile.twitter.com", "mobile.x.com"],
+    icon: "Twitter",
+    color: "#1D9BF0",
+    description: "Microblogging & social feed. Algorithmic 'For You' timeline and trending sidebar.",
+    defaultTier: "BLOCK",
+    limitDescription: "Allow direct messages, status links, and search, but block the infinite 'For You' feed.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/messages") || path6.startsWith("/search") || path6.startsWith("/i/api") || path6.includes("/status/");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/" || path6 === "/home" || path6.startsWith("/explore");
+    },
+    cosmeticSelectors: [
+      "[aria-label='Timeline: Your Home Timeline']",
+      "[aria-label='Timeline: Trending now']",
+      "[data-testid='sidebarColumn']",
+      "[data-testid='trend']",
+      "aside[role='complementary']"
+    ]
+  },
+  instagram: {
+    id: "instagram",
+    name: "Instagram",
+    domains: ["instagram.com"],
+    icon: "Instagram",
+    color: "#E1306C",
+    description: "Visual social media. High dopamine loops via Reels and Explore grid.",
+    defaultTier: "BLOCK",
+    limitDescription: "Allow direct messages and profile links, while blocking Reels, Explore, and feed.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/direct") || path6.startsWith("/accounts") || path6.startsWith("/api");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/" || path6.startsWith("/reels") || path6.startsWith("/explore");
+    },
+    cosmeticSelectors: [
+      "a[href='/reels/']",
+      "a[href='/explore/']",
+      "article[role='presentation']",
+      "main[role='main'] > div > div:first-child",
+      "div:has(> a[href*='/reels/'])"
+    ]
+  },
+  tiktok: {
+    id: "tiktok",
+    name: "TikTok",
+    domains: ["tiktok.com"],
+    icon: "Film",
+    color: "#00F2FE",
+    description: "Ultra-fast short-form video feed with algorithmic addiction loops.",
+    defaultTier: "BLOCK",
+    limitDescription: "Block infinite FYP video stream and live feeds completely.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/messages") || path6.startsWith("/api");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/" || path6.startsWith("/foryou") || path6.startsWith("/live");
+    },
+    cosmeticSelectors: [
+      "[data-e2e='recommend-list-item-container']",
+      "[data-e2e='feed-live']",
+      "div[class*='DivItemContainer']"
+    ]
+  },
+  reddit: {
+    id: "reddit",
+    name: "Reddit",
+    domains: ["reddit.com", "old.reddit.com"],
+    icon: "MessageSquare",
+    color: "#FF4500",
+    description: "Discussion platform. High distraction from r/all, r/popular, and endless scroll.",
+    defaultTier: "LIMIT",
+    limitDescription: "Allow direct search results and specific informative subreddits, while blocking popular feeds.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/search") || path6.startsWith("/message") || path6.startsWith("/r/") && !path6.startsWith("/r/all") && !path6.startsWith("/r/popular");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/" || path6.startsWith("/r/all") || path6.startsWith("/r/popular");
+    },
+    cosmeticSelectors: [
+      "shreddit-feed[tab-name='popular']",
+      "shreddit-feed[tab-name='all']",
+      "#right-sidebar-container",
+      "aside:has([data-testid='popular-communities'])",
+      "[data-testid='recent-posts']"
+    ]
+  },
+  linkedin: {
+    id: "linkedin",
+    name: "LinkedIn",
+    domains: ["linkedin.com"],
+    icon: "Linkedin",
+    color: "#0A66C2",
+    description: "Professional network. Distracting newsfeed, engagement posts, and promotional noise.",
+    defaultTier: "HIDE_DISTRACTIONS",
+    limitDescription: "Allow messaging and job applications while hiding the social media newsfeed.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/messaging") || path6.startsWith("/jobs") || path6.startsWith("/mynetwork") || path6.startsWith("/in/");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/feed" || path6.startsWith("/feed/");
+    },
+    cosmeticSelectors: [
+      "main.scaffold-layout__main",
+      ".feed-shared-update-v2",
+      "aside.scaffold-layout__aside",
+      "#news-module"
+    ]
+  },
+  facebook: {
+    id: "facebook",
+    name: "Facebook",
+    domains: ["facebook.com", "m.facebook.com"],
+    icon: "Share2",
+    color: "#1877F2",
+    description: "Social network with algorithmic feed, stories, and watch reels.",
+    defaultTier: "BLOCK",
+    limitDescription: "Allow Messenger and direct groups, while blocking the newsfeed.",
+    isAllowedUnderLimit: (path6) => {
+      return path6.startsWith("/messages") || path6.startsWith("/groups") || path6.startsWith("/events");
+    },
+    isBlockedUnderLimit: (path6) => {
+      return path6 === "/" || path6.startsWith("/watch") || path6.startsWith("/reel");
+    },
+    cosmeticSelectors: [
+      "[role='feed']",
+      "[data-pagelet='Stories']",
+      "[aria-label='Stories']",
+      "[data-pagelet='RightRail']"
+    ]
+  }
+};
+function getSocialPlatformByDomain(domain) {
+  const clean = domain.toLowerCase().replace(/^(www\.|m\.)/, "");
+  for (const platform of Object.values(SOCIAL_PLATFORMS)) {
+    if (platform.domains.some((d) => clean === d || clean.endsWith("." + d))) {
+      return platform;
+    }
+  }
+  return null;
+}
+
+// electron/focus/socialFilterEngine.ts
+var currentFocusState = {
+  isActive: false,
+  profile: {
+    id: "deep_work",
+    name: "Deep Work",
+    tiers: {}
+  }
+};
+function updateFocusState(state) {
+  currentFocusState = state;
+}
+function evaluateFocusRequest(urlStr) {
+  if (!currentFocusState.isActive) {
+    return { blocked: false, action: "allow" };
+  }
+  try {
+    const parsed = new URL(urlStr);
+    const domain = parsed.hostname;
+    const platform = getSocialPlatformByDomain(domain);
+    if (!platform) {
+      return { blocked: false, action: "allow" };
+    }
+    const tier = currentFocusState.profile?.tiers?.[platform.id] || platform.defaultTier || "ALLOW";
+    if (tier === "BLOCK") {
+      return {
+        blocked: true,
+        action: "block",
+        platformName: platform.name,
+        reason: `${platform.name} is completely blocked during Focus Mode.`
+      };
+    }
+    if (tier === "LIMIT") {
+      if (platform.isBlockedUnderLimit(parsed.pathname)) {
+        return {
+          blocked: true,
+          action: "limit_block",
+          platformName: platform.name,
+          reason: `Shorts, reels, and feeds on ${platform.name} are restricted in Focus Mode.`
+        };
+      }
+    }
+    return { blocked: false, action: "allow" };
+  } catch {
+    return { blocked: false, action: "allow" };
+  }
+}
+function getFocusShieldHtml(platformName, reason) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Focus Mode \u2014 Forge Browser</title>
+  <style>
+    :root {
+      --bg: #090A0F;
+      --card: #13151F;
+      --border: #232736;
+      --primary: #FF6B00;
+      --purple: #8B5CF6;
+      --text: #F3F4F6;
+      --text-muted: #9CA3AF;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: radial-gradient(ellipse at 50% 30%, #171026 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7), 0 0 40px rgba(139, 92, 246, 0.15);
+      animation: popIn 0.25s ease-out;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .icon-badge {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #A78BFA;
+      font-size: 28px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .platform {
+      color: var(--primary);
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 28px;
+    }
+    .quote {
+      background: rgba(0,0,0,0.3);
+      border-left: 3px solid #8B5CF6;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      font-style: italic;
+      font-size: 13px;
+      color: #DDD6FE;
+      margin-bottom: 28px;
+      text-align: left;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-back {
+      background: var(--primary);
+      color: #FFF;
+      border: none;
+    }
+    .btn-back:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-badge">\u{1F3AF}</div>
+    <h1>Focus Mode Active</h1>
+    <p><strong class="platform">${platformName}</strong> is restricted during your active focus session.<br>${reason}</p>
+    <div class="quote">
+      "Concentration is the secret of strength in politics, in war, in trade, in short in all management of human affairs."
+    </div>
+    <div class="actions">
+      <button class="btn-back" onclick="history.back()">\u2190 Return to Safety</button>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// electron/compat/compatManager.ts
+import { app as app6, session as session6, ipcMain as ipcMain6, webContents as webContents2 } from "electron";
+import * as os from "os";
+var isCorsBypassActive = false;
+var bypassPrivateNetworkAccess = true;
+function setupCorsBypassInterceptor(targetSession) {
+  targetSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!isCorsBypassActive) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+    const responseHeaders = { ...details.responseHeaders || {} };
+    const reqOrigin = details.requestHeaders?.Origin || details.requestHeaders?.origin || "*";
+    responseHeaders["access-control-allow-origin"] = [reqOrigin];
+    responseHeaders["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD"];
+    responseHeaders["access-control-allow-headers"] = ["*"];
+    responseHeaders["access-control-allow-credentials"] = ["true"];
+    if (bypassPrivateNetworkAccess) {
+      responseHeaders["access-control-allow-private-network"] = ["true"];
+    }
+    delete responseHeaders["x-frame-options"];
+    delete responseHeaders["X-Frame-Options"];
+    callback({ responseHeaders });
+  });
+}
+function getPrimaryLocalIp() {
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      const netList = interfaces[name];
+      if (!netList) continue;
+      for (const net3 of netList) {
+        if (net3.family === "IPv4" && !net3.internal) {
+          return net3.address;
+        }
+      }
+    }
+  } catch {
+  }
+  return "127.0.0.1";
+}
+function initCompatManager() {
+  setupCorsBypassInterceptor(session6.defaultSession);
+  app6.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() !== "webview") return;
+    contents.on("render-process-gone", (_ev, details) => {
+      console.warn(`[Compat Manager] Guest webview ${contents.id} crashed:`, details.reason, details.exitCode);
+      const allWeb = webContents2.getAllWebContents();
+      for (const w of allWeb) {
+        if (w.getType() === "window") {
+          w.send("compat:tab-crashed", {
+            contentsId: contents.id,
+            reason: details.reason,
+            exitCode: details.exitCode
+          });
+        }
+      }
+    });
+    contents.on("console-message", (_ev, level, message, line, sourceId) => {
+      if (message.toLowerCase().includes("deprecation") || message.toLowerCase().includes("[deprecation]")) {
+        const allWeb = webContents2.getAllWebContents();
+        for (const w of allWeb) {
+          if (w.getType() === "window") {
+            w.send("compat:deprecation-logged", {
+              contentsId: contents.id,
+              level,
+              message,
+              line,
+              source: sourceId
+            });
+          }
+        }
+      }
+    });
+  });
+  ipcMain6.handle("compat:set-cors-bypass", (_event, active) => {
+    isCorsBypassActive = Boolean(active);
+    console.log(`[Compat Manager] Developer CORS Bypass set to: ${isCorsBypassActive}`);
+    return { success: true, isCorsBypassActive };
+  });
+  ipcMain6.handle("compat:get-cors-bypass", () => {
+    return isCorsBypassActive;
+  });
+  ipcMain6.handle("compat:get-versions", () => {
+    return {
+      chromium: process.versions.chrome || "132.0.0.0",
+      v8: process.versions.v8 || "13.0.0.0",
+      node: process.versions.node || "20.0.0",
+      electron: process.versions.electron || "34.0.0"
+    };
+  });
+  ipcMain6.handle("compat:get-local-ip", () => {
+    return getPrimaryLocalIp();
+  });
+  ipcMain6.handle("compat:set-emulation", async (_event, targetContentsId, options) => {
+    const target = targetContentsId ? webContents2.fromId(targetContentsId) : null;
+    const targets = target ? [target] : webContents2.getAllWebContents().filter((c) => c.getType() === "webview");
+    for (const c of targets) {
+      if (c.isDestroyed()) continue;
+      try {
+        if (!c.debugger.isAttached()) {
+          c.debugger.attach("1.3");
+        }
+        if (typeof options?.cpuThrottlingRate === "number") {
+          await c.debugger.sendCommand("Emulation.setCPUThrottlingRate", {
+            rate: Math.max(1, options.cpuThrottlingRate)
+          }).catch(() => {
+          });
+        }
+        if (options?.networkConditions !== void 0) {
+          if (options.networkConditions === null) {
+            await c.debugger.sendCommand("Network.emulateNetworkConditions", {
+              offline: false,
+              latency: 0,
+              downloadThroughput: -1,
+              uploadThroughput: -1
+            }).catch(() => {
+            });
+          } else {
+            await c.debugger.sendCommand("Network.emulateNetworkConditions", {
+              offline: Boolean(options.networkConditions.offline),
+              latency: options.networkConditions.latency || 0,
+              downloadThroughput: options.networkConditions.downloadThroughput || -1,
+              uploadThroughput: options.networkConditions.uploadThroughput || -1
+            }).catch(() => {
+            });
+          }
+        }
+        if (typeof options?.touchEmulation === "boolean") {
+          await c.debugger.sendCommand("Emulation.setTouchEmulationEnabled", {
+            enabled: options.touchEmulation,
+            maxTouchPoints: 5
+          }).catch(() => {
+          });
+          await c.debugger.sendCommand("Emulation.setEmitTouchEventsForMouse", {
+            enabled: options.touchEmulation,
+            configuration: "mobile"
+          }).catch(() => {
+          });
+        }
+      } catch (err) {
+        console.warn(`[Compat Manager] Emulation command error on ${c.id}:`, err);
+      }
+    }
+    return { success: true };
+  });
+  ipcMain6.handle("compat:collect-garbage", async (_event, targetContentsId) => {
+    const target = targetContentsId ? webContents2.fromId(targetContentsId) : null;
+    const targets = target ? [target] : webContents2.getAllWebContents().filter((c) => c.getType() === "webview");
+    let executedCount = 0;
+    for (const c of targets) {
+      if (c.isDestroyed()) continue;
+      try {
+        if (!c.debugger.isAttached()) {
+          c.debugger.attach("1.3");
+        }
+        await c.debugger.sendCommand("HeapProfiler.enable").catch(() => {
+        });
+        await c.debugger.sendCommand("HeapProfiler.collectGarbage").catch(() => {
+        });
+        executedCount++;
+      } catch (err) {
+        console.warn(`[Compat Manager] GC command error on ${c.id}:`, err);
+      }
+    }
+    return { success: executedCount > 0, count: executedCount };
+  });
+}
+
+// electron/sessions/sessionManager.ts
 var __filename2 = fileURLToPath2(import.meta.url);
 var __dirname2 = path4.dirname(__filename2);
-if (process.platform === "win32") {
-  app6.setAppUserModelId("com.forge.browser");
+var configuredSessions = /* @__PURE__ */ new Set();
+function configureSessionPartition(ses, partitionName) {
+  if (configuredSessions.has(partitionName)) return;
+  configuredSessions.add(partitionName);
+  const guestPreload = path4.join(__dirname2, "../guestPreload.cjs");
+  if (fs4.existsSync(guestPreload)) {
+    try {
+      ses.setPreloads([guestPreload]);
+    } catch (err) {
+      console.warn(`[SessionManager] Could not set preloads for ${partitionName}:`, err);
+    }
+  }
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    try {
+      if (details.url.startsWith("devtools:") || details.url.startsWith("chrome-extension:")) {
+        callback({});
+        return;
+      }
+      const focusDecision = evaluateFocusRequest(details.url);
+      if (focusDecision.blocked) {
+        if (details.resourceType === "mainFrame") {
+          const html = getFocusShieldHtml(focusDecision.platformName || "Social Media", focusDecision.reason || "");
+          callback({ redirectURL: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
+          return;
+        } else {
+          callback({ cancel: true });
+          return;
+        }
+      }
+      const adblock = evaluateAdBlockRequest({
+        url: details.url,
+        method: details.method,
+        resourceType: details.resourceType,
+        referrer: details.referrer
+      });
+      if (adblock.cancel) {
+        callback({ cancel: true });
+        return;
+      }
+    } catch {
+    }
+    callback({});
+  });
+  setupCorsBypassInterceptor(ses);
 }
-var gotTheLock = app6.requestSingleInstanceLock();
+function initSessionManager() {
+  const defaultSes = session7.fromPartition("persist:forge");
+  configureSessionPartition(defaultSes, "persist:forge");
+  app7.on("session-created", (createdSession) => {
+    try {
+      const partition = createdSession._partition || createdSession.partition || "";
+      if (partition) {
+        configureSessionPartition(createdSession, partition);
+      }
+    } catch {
+    }
+  });
+  ipcMain7.handle("sessions:clear-data", async (_event, partition, types = ["cache", "cookies", "storage"]) => {
+    try {
+      const targetSes = session7.fromPartition(partition);
+      const storages = [];
+      if (types.includes("cookies")) storages.push("cookies");
+      if (types.includes("storage")) {
+        storages.push("localstorage", "indexdb", "websql", "serviceworkers", "cachestorage");
+      }
+      if (storages.length > 0) {
+        await targetSes.clearStorageData({ storages });
+      }
+      if (types.includes("cache")) {
+        await targetSes.clearCache();
+      }
+      console.log(`[SessionManager] Cleared ${types.join(", ")} for partition ${partition}`);
+      return { success: true };
+    } catch (err) {
+      console.error(`[SessionManager] Error clearing data for ${partition}:`, err);
+      return { success: false, error: err?.message };
+    }
+  });
+  ipcMain7.handle("focus:sync-state", (_event, payload) => {
+    updateFocusState(payload);
+    return true;
+  });
+}
+
+// electron/main.ts
+var __filename3 = fileURLToPath3(import.meta.url);
+var __dirname3 = path5.dirname(__filename3);
+if (process.platform === "win32") {
+  app8.setAppUserModelId("com.forge.browser");
+}
+var gotTheLock = app8.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app6.quit();
+  app8.quit();
 } else {
-  app6.on("second-instance", () => {
+  app8.on("second-instance", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -4616,15 +5220,15 @@ if (!gotTheLock) {
     }
   });
 }
-app6.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
-app6.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
-app6.commandLine.appendSwitch("disable-background-timer-throttling");
-app6.commandLine.appendSwitch("disable-renderer-backgrounding");
-app6.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
-app6.commandLine.appendSwitch("disable-gpu-process-crash-limit");
-app6.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
-app6.commandLine.appendSwitch("log-level", "3");
-app6.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
+app8.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app8.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
+app8.commandLine.appendSwitch("disable-background-timer-throttling");
+app8.commandLine.appendSwitch("disable-renderer-backgrounding");
+app8.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app8.commandLine.appendSwitch("disable-gpu-process-crash-limit");
+app8.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
+app8.commandLine.appendSwitch("log-level", "3");
+app8.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
   event.preventDefault();
   callback(false);
 });
@@ -4637,15 +5241,15 @@ process.on("unhandledRejection", (reason) => {
   }
   console.error("[Electron Main] Unhandled Rejection (crash prevented):", reason);
 });
-app6.on("child-process-gone", (_event, details) => {
+app8.on("child-process-gone", (_event, details) => {
   console.warn("[Electron Main] Child process gone:", details.type, details.reason, details.exitCode);
 });
-app6.on("render-process-gone", (_event, webContents, details) => {
+app8.on("render-process-gone", (_event, webContents3, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
-    if (!webContents.isDestroyed()) {
+    if (!webContents3.isDestroyed()) {
       try {
-        webContents.reload();
+        webContents3.reload();
       } catch {
       }
     }
@@ -4657,9 +5261,9 @@ var terminalCwd = process.cwd();
 var isMediaPlaying = false;
 var recentDownloads = [];
 function setupDownloadListeners(sess) {
-  sess.on("will-download", (_event, item, webContents) => {
+  sess.on("will-download", (_event, item, webContents3) => {
     const filename = item.getFilename();
-    const savePath = path4.join(app6.getPath("downloads"), filename);
+    const savePath = path5.join(app8.getPath("downloads"), filename);
     item.setSavePath(savePath);
     const record = {
       id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -4672,7 +5276,7 @@ function setupDownloadListeners(sess) {
       url: item.getURL()
     };
     recentDownloads.unshift(record);
-    const win = BrowserWindow5.fromWebContents(webContents) || mainWindow;
+    const win = BrowserWindow5.fromWebContents(webContents3) || mainWindow;
     win?.webContents.send("downloads:item-created", record);
     item.on("updated", (_e, state) => {
       record.receivedBytes = item.getReceivedBytes();
@@ -4777,15 +5381,15 @@ powerMonitor.on("resume", () => {
 });
 function getAssetPath(filename) {
   const candidates = [
-    path4.join(__dirname2, "assets", filename),
-    path4.join(__dirname2, "../electron/assets", filename),
-    path4.join(process.cwd(), "apps/forge-app/electron/assets", filename),
-    path4.join(process.cwd(), "electron/assets", filename)
+    path5.join(__dirname3, "assets", filename),
+    path5.join(__dirname3, "../electron/assets", filename),
+    path5.join(process.cwd(), "apps/forge-app/electron/assets", filename),
+    path5.join(process.cwd(), "electron/assets", filename)
   ];
   for (const candidate of candidates) {
-    if (fs4.existsSync(candidate)) return candidate;
+    if (fs5.existsSync(candidate)) return candidate;
   }
-  return path4.join(__dirname2, "assets", filename);
+  return path5.join(__dirname3, "assets", filename);
 }
 function updateTaskbarMediaButtons(win, isPlaying) {
   if (process.platform !== "win32" || !win || win.isDestroyed()) return;
@@ -4830,9 +5434,9 @@ function updateTaskbarMediaButtons(win, isPlaying) {
   }
 }
 function createWindow(isIncognito = false) {
-  const icoPath = path4.join(__dirname2, "../public/icon.ico");
-  const pngPath = path4.join(__dirname2, "../public/logo.png");
-  const appIcon = fs4.existsSync(icoPath) ? icoPath : pngPath;
+  const icoPath = path5.join(__dirname3, "../public/icon.ico");
+  const pngPath = path5.join(__dirname3, "../public/logo.png");
+  const appIcon = fs5.existsSync(icoPath) ? icoPath : pngPath;
   const win = new BrowserWindow5({
     width: 1400,
     height: 900,
@@ -4847,7 +5451,7 @@ function createWindow(isIncognito = false) {
     show: false,
     icon: appIcon,
     webPreferences: {
-      preload: path4.join(__dirname2, "preload.cjs"),
+      preload: path5.join(__dirname3, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -4882,7 +5486,7 @@ function createWindow(isIncognito = false) {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    win.loadFile(path4.join(__dirname2, "../dist/index.html"), {
+    win.loadFile(path5.join(__dirname3, "../dist/index.html"), {
       query: isIncognito ? { incognito: "1" } : void 0
     });
   }
@@ -4903,7 +5507,7 @@ function getTargetBrowserWindow(event) {
   if (anyWin && !anyWin.isDestroyed()) return anyWin;
   return null;
 }
-ipcMain6.on("window:minimize", (event) => {
+ipcMain8.on("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -4912,7 +5516,7 @@ ipcMain6.on("window:minimize", (event) => {
     win.minimize();
   }
 });
-ipcMain6.handle("window:minimize", (event) => {
+ipcMain8.handle("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -4923,7 +5527,7 @@ ipcMain6.handle("window:minimize", (event) => {
   }
   return false;
 });
-ipcMain6.on("window:maximize", (event) => {
+ipcMain8.on("window:maximize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isMaximized()) {
@@ -4933,30 +5537,30 @@ ipcMain6.on("window:maximize", (event) => {
     }
   }
 });
-ipcMain6.on("window:close", (event) => {
+ipcMain8.on("window:close", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     win.close();
   }
 });
-ipcMain6.handle("window:is-maximized", (event) => {
+ipcMain8.handle("window:is-maximized", (event) => {
   const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
-ipcMain6.on("window:set-fullscreen", (event, flag) => {
+ipcMain8.on("window:set-fullscreen", (event, flag) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   win?.setFullScreen(flag);
 });
-ipcMain6.handle("window:is-fullscreen", (event) => {
+ipcMain8.handle("window:is-fullscreen", (event) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   return win?.isFullScreen() ?? false;
 });
-ipcMain6.on("theme:set", (_event, mode) => {
+ipcMain8.on("theme:set", (_event, mode) => {
   if (["system", "light", "dark"].includes(mode)) {
     nativeTheme2.themeSource = mode;
   }
 });
-ipcMain6.on("window:set-title", (_event, title) => {
+ipcMain8.on("window:set-title", (_event, title) => {
   const win = BrowserWindow5.getFocusedWindow() || mainWindow;
   if (win && !win.isDestroyed()) {
     const cleanTitle = title?.trim();
@@ -4984,11 +5588,11 @@ function restoreAndFocusWindow(win) {
 }
 function applyPipWindowIcon() {
   if (process.platform !== "win32") return;
-  const scriptPath = path4.join(__dirname2, "setPipIcon.ps1");
-  const fallbackScript = path4.join(__dirname2, "../electron/setPipIcon.ps1");
-  const psPath = fs4.existsSync(scriptPath) ? scriptPath : fallbackScript;
-  const icoPath = path4.join(__dirname2, "../public/icon.ico");
-  if (!fs4.existsSync(psPath) || !fs4.existsSync(icoPath)) return;
+  const scriptPath = path5.join(__dirname3, "setPipIcon.ps1");
+  const fallbackScript = path5.join(__dirname3, "../electron/setPipIcon.ps1");
+  const psPath = fs5.existsSync(scriptPath) ? scriptPath : fallbackScript;
+  const icoPath = path5.join(__dirname3, "../public/icon.ico");
+  if (!fs5.existsSync(psPath) || !fs5.existsSync(icoPath)) return;
   let attempts = 0;
   const interval = setInterval(() => {
     attempts++;
@@ -5000,22 +5604,24 @@ function applyPipWindowIcon() {
     if (attempts >= 10) clearInterval(interval);
   }, 200);
 }
-app6.on("browser-window-created", (_event, win) => {
+app8.on("browser-window-created", (_event, win) => {
   try {
-    const icoPath = path4.join(__dirname2, "../public/icon.ico");
-    const pngPath = path4.join(__dirname2, "../public/logo.png");
-    const appIcon = fs4.existsSync(icoPath) ? icoPath : pngPath;
+    const icoPath = path5.join(__dirname3, "../public/icon.ico");
+    const pngPath = path5.join(__dirname3, "../public/logo.png");
+    const appIcon = fs5.existsSync(icoPath) ? icoPath : pngPath;
     win.setIcon(appIcon);
   } catch {
   }
 });
-ipcMain6.on("window:restore-and-focus", (event) => {
+ipcMain8.on("window:restore-and-focus", (event) => {
   const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
 var recentlyExitedPipWebContents = /* @__PURE__ */ new Map();
-app6.on("web-contents-created", (_event, contents) => {
+var webviewContentsMap = /* @__PURE__ */ new Map();
+var playingWebContents = /* @__PURE__ */ new Set();
+app8.on("web-contents-created", (_event, contents) => {
   try {
     contents.setMaxListeners(50);
   } catch {
@@ -5036,6 +5642,11 @@ app6.on("web-contents-created", (_event, contents) => {
     return { action: "deny" };
   });
   if (contents.getType() !== "webview") return;
+  webviewContentsMap.set(contents.id, contents);
+  contents.on("destroyed", () => {
+    webviewContentsMap.delete(contents.id);
+    playingWebContents.delete(contents.id);
+  });
   contents.on("enter-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("webview:html-full-screen-change", { isFullscreen: true, contentsId: contents.id });
@@ -5044,6 +5655,37 @@ app6.on("web-contents-created", (_event, contents) => {
   contents.on("leave-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("webview:html-full-screen-change", { isFullscreen: false, contentsId: contents.id });
+    }
+  });
+  contents.on("media-started-playing", () => {
+    playingWebContents.add(contents.id);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("tabs:audio-changed", {
+        contentsId: contents.id,
+        isPlayingAudio: true,
+        isMuted: contents.isAudioMuted()
+      });
+    }
+  });
+  contents.on("media-paused", () => {
+    playingWebContents.delete(contents.id);
+    const stillAudible = typeof contents.isCurrentlyAudible === "function" ? contents.isCurrentlyAudible() : false;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("tabs:audio-changed", {
+        contentsId: contents.id,
+        isPlayingAudio: stillAudible,
+        isMuted: contents.isAudioMuted()
+      });
+    }
+  });
+  contents.on("audio-state-changed", (_e, audible) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const isPlaying = Boolean(audible) || playingWebContents.has(contents.id);
+      mainWindow.webContents.send("tabs:audio-changed", {
+        contentsId: contents.id,
+        isPlayingAudio: isPlaying,
+        isMuted: contents.isAudioMuted()
+      });
     }
   });
   contents.on("did-fail-load", (_event2, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -5083,12 +5725,12 @@ app6.on("web-contents-created", (_event, contents) => {
     recentlyExitedPipWebContents.delete(contents.id);
   });
 });
-ipcMain6.on("media:status-update", (_event, data) => {
+ipcMain8.on("media:status-update", (_event, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     updateTaskbarMediaButtons(mainWindow, Boolean(data?.isPlaying));
   }
 });
-ipcMain6.handle("forge:http:request", async (_event, options) => {
+ipcMain8.handle("forge:http:request", async (_event, options) => {
   try {
     const response = await request(options);
     return { ok: true, data: response };
@@ -5096,13 +5738,13 @@ ipcMain6.handle("forge:http:request", async (_event, options) => {
     return { ok: false, error: err.message || String(err) };
   }
 });
-ipcMain6.handle("terminal:get-cwd", () => {
+ipcMain8.handle("terminal:get-cwd", () => {
   return terminalCwd;
 });
-ipcMain6.handle("terminal:set-cwd", (_event, newCwd) => {
+ipcMain8.handle("terminal:set-cwd", (_event, newCwd) => {
   try {
-    const resolved = path4.resolve(terminalCwd, newCwd);
-    if (fs4.existsSync(resolved) && fs4.statSync(resolved).isDirectory()) {
+    const resolved = path5.resolve(terminalCwd, newCwd);
+    if (fs5.existsSync(resolved) && fs5.statSync(resolved).isDirectory()) {
       terminalCwd = resolved;
       return { ok: true, cwd: terminalCwd };
     }
@@ -5111,7 +5753,7 @@ ipcMain6.handle("terminal:set-cwd", (_event, newCwd) => {
     return { ok: false, error: err.message, cwd: terminalCwd };
   }
 });
-ipcMain6.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
+ipcMain8.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
   const trimmed = command.trim();
   if (!trimmed) {
     return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
@@ -5120,14 +5762,14 @@ ipcMain6.handle("terminal:exec", async (_event, command, shellType = "powershell
   if (cdMatch) {
     let target = (cdMatch[1] || cdMatch[2])?.trim();
     if (!target || target === "~") {
-      terminalCwd = os.homedir();
+      terminalCwd = os2.homedir();
       return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
     }
     target = target.replace(/^\/d\s+/i, "");
     target = target.replace(/^["']|["']$/g, "");
     try {
-      const resolved = path4.resolve(terminalCwd, target);
-      if (fs4.existsSync(resolved) && fs4.statSync(resolved).isDirectory()) {
+      const resolved = path5.resolve(terminalCwd, target);
+      if (fs5.existsSync(resolved) && fs5.statSync(resolved).isDirectory()) {
         terminalCwd = resolved;
         return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
       } else {
@@ -5139,7 +5781,7 @@ ipcMain6.handle("terminal:exec", async (_event, command, shellType = "powershell
   }
   if (/^[a-zA-Z]:$/.test(trimmed)) {
     const drive = trimmed.toUpperCase() + "\\";
-    if (fs4.existsSync(drive)) {
+    if (fs5.existsSync(drive)) {
       terminalCwd = drive;
       return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
     } else {
@@ -5163,43 +5805,139 @@ ipcMain6.handle("terminal:exec", async (_event, command, shellType = "powershell
     });
   });
 });
-ipcMain6.on("window:open-private", () => {
+ipcMain8.on("window:open-private", () => {
   createWindow(true);
 });
-ipcMain6.handle("downloads:get-recent", () => recentDownloads);
-ipcMain6.handle("downloads:clear-history", () => {
+ipcMain8.handle("downloads:get-recent", () => recentDownloads);
+ipcMain8.handle("downloads:clear-history", () => {
   recentDownloads.length = 0;
   return true;
 });
-ipcMain6.handle("downloads:open-folder", () => {
-  shell.openPath(app6.getPath("downloads"));
+ipcMain8.handle("downloads:open-folder", () => {
+  shell.openPath(app8.getPath("downloads"));
   return true;
 });
-ipcMain6.handle("downloads:open-file", (_event, filePath) => {
-  if (filePath && fs4.existsSync(filePath)) {
+ipcMain8.handle("downloads:open-file", (_event, filePath) => {
+  if (filePath && fs5.existsSync(filePath)) {
     shell.openPath(filePath);
     return true;
   }
   return false;
 });
-ipcMain6.handle("downloads:show-in-folder", (_event, filePath) => {
-  if (filePath && fs4.existsSync(filePath)) {
+ipcMain8.handle("downloads:show-in-folder", (_event, filePath) => {
+  if (filePath && fs5.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
   }
-  shell.openPath(app6.getPath("downloads"));
+  shell.openPath(app8.getPath("downloads"));
   return true;
 });
-app6.whenReady().then(() => {
+var sessionBackupPath = path5.join(app8.getPath("userData"), "session-tabs.json");
+ipcMain8.handle("session:save-backup", (_event, data) => {
+  try {
+    if (data && Array.isArray(data.tabs)) {
+      const dir = path5.dirname(sessionBackupPath);
+      if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
+      fs5.writeFileSync(sessionBackupPath, JSON.stringify(data, null, 2), "utf-8");
+      return true;
+    }
+  } catch (err) {
+    console.error("[Main] Error writing session backup:", err);
+  }
+  return false;
+});
+ipcMain8.handle("session:get-backup", () => {
+  try {
+    if (fs5.existsSync(sessionBackupPath)) {
+      const raw = fs5.readFileSync(sessionBackupPath, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error("[Main] Error reading session backup:", err);
+  }
+  return null;
+});
+ipcMain8.handle(
+  "tabs:get-memory",
+  (_event, items) => {
+    try {
+      const metrics = app8.getAppMetrics();
+      const allWcs = webContents.getAllWebContents();
+      const result = {};
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          try {
+            const cid = item.contentsId ?? item.webContentsId;
+            let wc = cid ? webviewContentsMap.get(cid) || webContents.fromId(cid) : null;
+            if (!wc && item.url && item.url !== "about:blank") {
+              const baseTarget = item.url.split("?")[0].split("#")[0];
+              wc = allWcs.find(
+                (w) => w.getType() === "webview" && !w.isDestroyed() && (w.getURL() === item.url || baseTarget.length > 8 && w.getURL().includes(baseTarget))
+              ) || null;
+            }
+            if (wc && !wc.isDestroyed()) {
+              const pid = wc.getOSProcessId();
+              if (pid > 0) {
+                const match = metrics.find((m) => m.pid === pid);
+                if (match) {
+                  const memKB = match.memory.workingSetSize || match.memory.privateBytes || 0;
+                  const memMB = Math.max(12, Math.round(memKB / 1024 * 10) / 10);
+                  result[item.tabId] = {
+                    memoryMB: memMB,
+                    cpuPercent: Math.round(match.cpu.percentCPUUsage || 0)
+                  };
+                }
+              }
+            }
+            if (!result[item.tabId]) {
+              const isBlank = !item.url || item.url === "about:blank";
+              const tabMetrics = metrics.filter((m) => m.type === "Tab");
+              if (tabMetrics.length > 0) {
+                const avgMem = Math.round(
+                  tabMetrics.reduce((acc, m) => acc + (m.memory.workingSetSize || 0), 0) / (tabMetrics.length * 1024) * 10
+                ) / 10;
+                result[item.tabId] = {
+                  memoryMB: isBlank ? 25 : Math.max(45, avgMem),
+                  cpuPercent: 0
+                };
+              } else {
+                result[item.tabId] = {
+                  memoryMB: isBlank ? 22 : 68,
+                  cpuPercent: 0
+                };
+              }
+            }
+          } catch {
+          }
+        }
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+);
+ipcMain8.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
+  try {
+    const wc = webContents.fromId(contentsId);
+    if (wc && !wc.isDestroyed() && typeof wc.setAudioMuted === "function") {
+      wc.setAudioMuted(isMuted);
+      return true;
+    }
+  } catch {
+  }
+  return false;
+});
+app8.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   try {
-    setupDownloadListeners(session6.defaultSession);
-    const forgeSession = session6.fromPartition("persist:forge");
+    setupDownloadListeners(session8.defaultSession);
+    const forgeSession = session8.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
     const defaultUA = forgeSession.getUserAgent();
     const cleanUA = defaultUA.replace(/Electron\/[0-9.]+\s?/gi, "").replace(/forge(-app)?\/[0-9.]+\s?/gi, "").trim();
     forgeSession.setUserAgent(cleanUA);
-    session6.defaultSession.setUserAgent(cleanUA);
+    session8.defaultSession.setUserAgent(cleanUA);
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;
@@ -5222,11 +5960,13 @@ app6.whenReady().then(() => {
     },
     getRecentDownloadsCount: () => recentDownloads.length
   });
+  initSessionManager();
+  initCompatManager();
   createWindow();
-  app6.on("activate", () => {
+  app8.on("activate", () => {
     if (BrowserWindow5.getAllWindows().length === 0) createWindow();
   });
 });
-app6.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app6.quit();
+app8.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app8.quit();
 });

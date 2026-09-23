@@ -1461,21 +1461,15 @@
         let selectors = [];
         if (host.includes("youtube.com") || host.includes("youtu.be")) {
           selectors = [
-            "#related",
-            "#comments",
-            "ytd-comments",
             "ytd-reel-shelf-renderer",
-            "ytd-rich-shelf-renderer",
+            "ytd-rich-shelf-renderer:has(a[href*='/shorts'])",
             "#shorts-container",
             "ytd-guide-entry-renderer:has(a[title='Shorts'])",
-            "ytd-mini-guide-entry-renderer[aria-label='Shorts']",
-            "ytd-browse[page-subtype='home'] #contents"
+            "ytd-mini-guide-entry-renderer[aria-label='Shorts']"
           ];
         } else if (host.includes("twitter.com") || host.includes("x.com")) {
           selectors = [
-            "[aria-label='Timeline: Your Home Timeline']",
             "[aria-label='Timeline: Trending now']",
-            "[data-testid='sidebarColumn']",
             "[data-testid='trend']",
             "aside[role='complementary']"
           ];
@@ -1483,60 +1477,52 @@
           selectors = [
             "a[href='/reels/']",
             "a[href='/explore/']",
-            "article[role='presentation']",
-            "main[role='main'] > div > div:first-child",
             "div:has(> a[href*='/reels/'])"
           ];
         } else if (host.includes("tiktok.com")) {
           selectors = [
-            "[data-e2e='recommend-list-item-container']",
             "[data-e2e='feed-live']"
           ];
         } else if (host.includes("reddit.com")) {
           selectors = [
-            "shreddit-feed[tab-name='popular']",
-            "shreddit-feed[tab-name='all']",
-            "#right-sidebar-container",
-            "[data-testid='recent-posts']"
+            "#right-sidebar-container"
           ];
         } else if (host.includes("linkedin.com")) {
           selectors = [
-            "main.scaffold-layout__main",
-            ".feed-shared-update-v2",
-            "aside.scaffold-layout__aside",
             "#news-module"
           ];
         } else if (host.includes("facebook.com")) {
           selectors = [
-            "[role='feed']",
-            "[data-pagelet='Stories']",
-            "[aria-label='Stories']",
             "[data-pagelet='RightRail']"
           ];
         }
-        if (selectors.length > 0) {
-          const injectCss = () => {
-            if (document.getElementById("__forge_focus_cosmetics")) return;
-            const style = document.createElement("style");
-            style.id = "__forge_focus_cosmetics";
-            style.textContent = `
-            ${selectors.join(",\n")} {
-              display: none !important;
-              visibility: hidden !important;
-              pointer-events: none !important;
-              opacity: 0 !important;
-              height: 0 !important;
-              max-height: 0 !important;
-              overflow: hidden !important;
-            }
-          `;
-            (document.head || document.documentElement).appendChild(style);
-          };
-          injectCss();
-          if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", injectCss);
+        const applyCosmetics = (active) => {
+          const existing = document.getElementById("__forge_focus_cosmetics");
+          if (!active) {
+            if (existing) existing.remove();
+            return;
           }
-        }
+          if (existing || selectors.length === 0) return;
+          const style = document.createElement("style");
+          style.id = "__forge_focus_cosmetics";
+          style.textContent = `
+          ${selectors.join(",\n")} {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            max-height: 0 !important;
+            overflow: hidden !important;
+          }
+        `;
+          (document.head || document.documentElement).appendChild(style);
+        };
+        window.addEventListener("message", (e) => {
+          if (e.data && e.data.type === "__FORGE_SET_FOCUS_MODE__") {
+            applyCosmetics(!!e.data.active);
+          }
+        });
       } catch {
       }
     };

@@ -13,6 +13,7 @@ import {
   FolderGit2,
   Puzzle,
   Disc3,
+  Boxes,
 } from "lucide-react";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
@@ -20,6 +21,7 @@ import { useFavoritesStore } from "../../core/favorites/useFavoritesStore";
 import { useProjectsStore } from "../../core/projects/useProjectsStore";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
+import { useIdeExtensionsStore } from "../../core/extensions/useIdeExtensionsStore";
 import { FavoritesView } from "./FavoritesView";
 
 interface SidebarProps {
@@ -33,8 +35,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const { setDashboardOpen, runningProcesses } = useProjectsStore();
   const { setManagerOpen, extensions } = useExtensionsStore();
   const { setPlayerModalOpen, isPlaying, currentTrack } = useFocusPlayerStore();
+  const { setIdeModalOpen, extensions: ideExtensions } = useIdeExtensionsStore();
   const activeProcessesCount = Object.keys(runningProcesses).length;
   const enabledExtensionsCount = extensions.filter((e) => e.enabled).length;
+  const enabledIdeCount = ideExtensions.filter((e) => e.installed && e.enabled).length;
 
   useEffect(() => {
     const handleOpenHistory = () => {
@@ -62,17 +66,17 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   // Collapsed icon strip
   if (!expanded) {
     return (
-      <div className="w-10 bg-[var(--forge-surface)] border-r border-[var(--forge-border)] flex flex-col items-center py-2 shrink-0 transition-all select-none">
+      <div className="w-11 flex flex-col items-center py-2 shrink-0 transition-all select-none" style={{ background: 'linear-gradient(180deg, var(--forge-surface), var(--forge-bg))', borderRight: '1px solid var(--forge-border)' }}>
         {/* Expand button */}
         <button
           onClick={() => setExpanded(true)}
           title="Expand sidebar"
-          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-all cursor-pointer"
         >
-          <PanelLeftOpen size={14} />
+          <PanelLeftOpen size={15} />
         </button>
 
-        <div className="w-5 border-t border-[var(--forge-border)] my-1" />
+        <div className="w-6 border-t border-[var(--forge-border)] my-1.5" />
 
         {/* Favorites icon */}
         <button
@@ -81,9 +85,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             setExpanded(true);
           }}
           title={`Favorites (${favoriteItems.length})`}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer relative"
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
+            activeSidebarTab === "favorites"
+              ? "text-[#FF6B00] bg-[#FF6B00]/10"
+              : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
+          }`}
         >
-          <Star size={14} className="text-[#FF6B00]" />
+          {activeSidebarTab === "favorites" && (
+            <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#FF6B00] rounded-r-full" />
+          )}
+          <Star size={15} />
           {favoriteItems.length > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-[#FF6B00] text-white text-[8px] font-bold rounded-full flex items-center justify-center">
               {favoriteItems.length > 9 ? "9+" : favoriteItems.length}
@@ -98,32 +109,50 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             setExpanded(true);
           }}
           title={`History (${entries.length})`}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
+            activeSidebarTab === "history"
+              ? "text-[var(--forge-text)] bg-[var(--forge-hover)]"
+              : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
+          }`}
         >
-          <Clock size={14} />
+          {activeSidebarTab === "history" && (
+            <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#FF6B00] rounded-r-full" />
+          )}
+          <Clock size={15} />
         </button>
 
-        <div className="w-5 border-t border-[var(--forge-border)] my-1" />
+        <div className="w-6 border-t border-[var(--forge-border)] my-1.5" />
 
-        {/* Projects Launcher button */}
         <button
           onClick={() => setDashboardOpen(true)}
           title={`Developer Projects Launcher (${activeProcessesCount} active)`}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer relative"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
         >
-          <FolderGit2 size={14} />
+          <FolderGit2 size={15} />
           {activeProcessesCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
           )}
         </button>
 
-        {/* Extensions Manager button */}
+        <button
+          onClick={() => setIdeModalOpen(true)}
+          title={`IDE Extensions — marketplace.visualstudio.com (${enabledIdeCount} active)`}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-blue-400 hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
+        >
+          <Boxes size={15} />
+          {enabledIdeCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-xs">
+              {enabledIdeCount}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => setManagerOpen(true)}
           title={`Extensions & Verification Gate (${enabledExtensionsCount} active)`}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-sky-400 hover:bg-[var(--forge-hover)] transition-colors cursor-pointer relative"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-sky-400 hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
         >
-          <Puzzle size={14} />
+          <Puzzle size={15} />
           {enabledExtensionsCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-sky-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
               {enabledExtensionsCount}
@@ -131,27 +160,26 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           )}
         </button>
 
-        {/* Focus Player button */}
         <button
           onClick={() => setPlayerModalOpen(true)}
           title={isPlaying && currentTrack ? `Focus Player: ${currentTrack.title}` : "Focus Sound Player"}
-          className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer relative ${
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
             isPlaying
               ? "text-[#FF6B00] bg-[#FF6B00]/10"
               : "text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)]"
           }`}
         >
-          <Disc3 size={14} className={isPlaying ? "animate-spin" : ""} />
+          <Disc3 size={15} className={isPlaying ? "animate-spin" : ""} />
         </button>
 
         {/* Theme at bottom */}
-        <div className="mt-auto flex flex-col items-center gap-1">
+        <div className="mt-auto flex flex-col items-center gap-0.5">
           {themeOptions.map((opt) => (
             <button
               key={opt.mode}
               onClick={() => setThemeMode(opt.mode)}
               title={`${opt.label} mode`}
-              className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer ${
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer ${
                 themeMode === opt.mode
                   ? "bg-[var(--forge-hover)] text-[var(--forge-text)]"
                   : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
@@ -167,27 +195,27 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   // Expanded sidebar
   return (
-    <div className="w-64 bg-[var(--forge-surface)] border-r border-[var(--forge-border)] flex flex-col overflow-hidden shrink-0 transition-all select-none">
+    <div className="w-64 bg-[var(--forge-surface)] flex flex-col overflow-hidden shrink-0 transition-all select-none shadow-xl" style={{ borderRight: '1px solid var(--forge-border)' }}>
       {/* Header: tabs & collapse button */}
-      <div className="px-2.5 py-1.5 border-b border-[var(--forge-border)] flex items-center justify-between bg-[var(--forge-surface-elevated)]/40">
-        <div className="flex items-center gap-1 bg-[var(--forge-input)] p-0.5 rounded-md">
+      <div className="px-2.5 py-1.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--forge-border)' }}>
+        <div className="flex items-center gap-0">
           <button
             onClick={() => setActiveSidebarTab("favorites")}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
               activeSidebarTab === "favorites"
-                ? "bg-[var(--forge-surface)] text-[#FF6B00] font-semibold shadow-xs"
-                : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
+                : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
             }`}
           >
-            <Star size={11} className="text-[#FF6B00]" />
+            <Star size={11} />
             Favorites
           </button>
           <button
             onClick={() => setActiveSidebarTab("history")}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
               activeSidebarTab === "history"
-                ? "bg-[var(--forge-surface)] text-[var(--forge-text)] font-semibold shadow-xs"
-                : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                ? "border-[#FF6B00] text-[var(--forge-text)] font-semibold"
+                : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
             }`}
           >
             <Clock size={11} />
@@ -198,7 +226,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <button
           onClick={() => setExpanded(false)}
           title="Collapse sidebar"
-          className="w-6 h-6 flex items-center justify-center rounded text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-all cursor-pointer"
         >
           <PanelLeftClose size={14} />
         </button>
@@ -268,7 +296,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               return filtered.slice(0, 100).map((entry) => (
                 <div
                   key={entry.id}
-                  className="group flex items-center gap-2 px-2.5 py-1.5 hover:bg-[var(--forge-hover)] rounded cursor-pointer transition-colors relative"
+                  className="group flex items-center gap-2 px-2.5 py-2 hover:bg-[var(--forge-hover)] rounded-lg cursor-pointer transition-all relative"
                   onClick={() => handleClick(entry.url)}
                 >
                   {entry.favicon ? (
@@ -309,17 +337,17 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       {/* Workspace Quick Launchers Strip */}
-      <div className="p-2 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]/30 space-y-1">
+      <div className="p-2.5 border-t border-[var(--forge-border)] space-y-1.5">
         <div className="text-[9px] uppercase font-semibold text-[var(--forge-text-muted)] tracking-wider">
           Workspace Tools
         </div>
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-4 gap-1">
           <button
             onClick={() => setDashboardOpen(true)}
             title="Projects Launcher"
-            className="flex flex-col items-center gap-1 p-1.5 rounded bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] border border-[var(--forge-border)] transition-colors cursor-pointer relative"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-all cursor-pointer relative shadow-sm"
           >
-            <FolderGit2 size={12} />
+            <FolderGit2 size={13} />
             <span className="text-[9px] font-medium">Projects</span>
             {activeProcessesCount > 0 && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
@@ -327,51 +355,63 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           </button>
 
           <button
-            onClick={() => setManagerOpen(true)}
-            title="Extensions Manager"
-            className="flex flex-col items-center gap-1 p-1.5 rounded bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-sky-400 border border-[var(--forge-border)] transition-colors cursor-pointer"
+            onClick={() => setIdeModalOpen(true)}
+            title="VS Code Marketplace IDE Extensions"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-blue-400 transition-all cursor-pointer relative shadow-sm"
           >
-            <Puzzle size={12} />
-            <span className="text-[9px] font-medium">Extensions</span>
+            <Boxes size={13} />
+            <span className="text-[9px] font-medium">VS Code</span>
+            {enabledIdeCount > 0 && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setManagerOpen(true)}
+            title="Extensions Platform"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-sky-400 transition-all cursor-pointer shadow-sm"
+          >
+            <Puzzle size={13} />
+            <span className="text-[9px] font-medium">Platform</span>
           </button>
 
           <button
             onClick={() => setPlayerModalOpen(true)}
             title="Focus Sound Player"
-            className={`flex flex-col items-center gap-1 p-1.5 rounded border transition-colors cursor-pointer ${
+            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all cursor-pointer shadow-sm ${
               isPlaying
-                ? "bg-[#FF6B00]/15 text-[#FF6B00] border-[#FF6B00]/30"
-                : "bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] border-[var(--forge-border)]"
+                ? "bg-[#FF6B00]/15 text-[#FF6B00]"
+                : "bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00]"
             }`}
           >
-            <Disc3 size={12} className={isPlaying ? "animate-spin" : ""} />
+            <Disc3 size={13} className={isPlaying ? "animate-spin" : ""} />
             <span className="text-[9px] font-medium">Audio</span>
           </button>
         </div>
       </div>
 
       {/* Footer: Theme */}
-      <div className="p-2 border-t border-[var(--forge-border)] bg-[var(--forge-surface-elevated)] transition-colors">
-        <div className="flex items-center justify-between mb-1">
+      <div className="p-2.5 border-t border-[var(--forge-border)] transition-colors">
+        <div className="flex items-center justify-between mb-1.5">
           <span className="text-[9px] uppercase font-semibold text-[var(--forge-text-muted)] tracking-wider">
             Theme
           </span>
           {themeMode === "system" && (
-            <span className="text-[9px] text-[var(--forge-text-muted)] font-mono">
+            <span className="text-[9px] text-[var(--forge-text-muted)] font-mono-ide">
               ({resolvedTheme})
             </span>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-0.5 bg-[var(--forge-input)] p-0.5 rounded-md">
+        <div className="grid grid-cols-3 gap-0.5 bg-[var(--forge-input)] p-0.5 rounded-lg">
           {themeOptions.map((opt) => {
             const isSelected = themeMode === opt.mode;
             return (
               <button
                 key={opt.mode}
                 onClick={() => setThemeMode(opt.mode)}
-                className={`flex items-center justify-center gap-1 py-0.5 rounded text-[10px] font-medium transition-all ${
+                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-medium transition-all ${
                   isSelected
-                    ? "bg-[var(--forge-surface)] text-[var(--forge-text)] shadow-xs font-semibold"
+                    ? "bg-[var(--forge-surface)] text-[var(--forge-text)] shadow-sm font-semibold"
                     : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
                 }`}
                 title={`${opt.label} mode`}

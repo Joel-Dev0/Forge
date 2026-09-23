@@ -130,9 +130,9 @@ export function NewTabHome({ onNavigate }: Props) {
       <div className="relative z-10 w-full max-w-5xl px-6 py-4 flex items-center justify-between">
         {/* Left: Clock & Greeting */}
         <div className="flex items-center gap-3">
-          <div className="px-3 py-1.5 rounded-xl bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/60 backdrop-blur-md flex items-center gap-2 shadow-sm">
+          <div className="px-3 py-1.5 rounded-lg bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/60 backdrop-blur-md flex items-center gap-2 shadow-sm">
             <Clock size={13} className="text-[#FF6B00]" />
-            <span className="text-xs font-mono font-semibold text-[var(--forge-text)]">
+            <span className="text-xs font-mono-ide font-semibold text-[var(--forge-text)]">
               {currentTime}
             </span>
             <span className="text-[11px] text-[var(--forge-text-muted)] font-medium">
@@ -148,7 +148,7 @@ export function NewTabHome({ onNavigate }: Props) {
         <button
           type="button"
           onClick={() => setIsWallpaperModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--forge-surface)]/75 hover:bg-[var(--forge-surface)] border border-[var(--forge-border)]/70 hover:border-[#FF6B00]/60 backdrop-blur-md text-xs font-medium text-[var(--forge-text-secondary)] hover:text-[var(--forge-text)] transition-all cursor-pointer shadow-sm hover:shadow"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--forge-surface)]/75 hover:bg-[var(--forge-surface)] border border-[var(--forge-border)]/70 hover:border-[#FF6B00]/60 backdrop-blur-md text-xs font-medium text-[var(--forge-text-secondary)] hover:text-[var(--forge-text)] transition-all cursor-pointer shadow-sm hover:shadow"
         >
           <Sparkles size={13} className="text-[#FF6B00]" />
           <span>Customize Wallpaper</span>
@@ -161,20 +161,23 @@ export function NewTabHome({ onNavigate }: Props) {
         <div className="w-full max-w-2xl flex flex-col items-center gap-6">
           {/* Logo with interactive glowing badge */}
           <div className="relative group cursor-default">
-            <div className="absolute inset-0 bg-[#FF6B00]/35 rounded-2xl blur-xl scale-95 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div className="relative p-3.5 rounded-2xl bg-[var(--forge-surface)]/85 border border-[var(--forge-border)] shadow-xl backdrop-blur-md">
+            <div className="absolute inset-0 bg-[#FF6B00]/30 rounded-lg blur-xl scale-95 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="relative p-3 rounded-lg bg-[var(--forge-surface)]/85 border border-[var(--forge-border)] shadow-xl backdrop-blur-md">
               <img
                 src="/logo.png"
                 alt="Forge"
-                className="w-14 h-14 rounded-xl object-contain"
+                className="w-12 h-12 rounded-lg object-contain"
               />
             </div>
+            <p className="text-center mt-2 text-base font-bold tracking-tight text-[var(--forge-text)] drop-shadow-sm">
+              Forge
+            </p>
           </div>
 
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="w-full">
             <div
-              className="flex items-center h-12 rounded-2xl backdrop-blur-md transition-all duration-200"
+              className="flex items-center h-11 rounded-xl backdrop-blur-md transition-all duration-200"
               style={{
                 background: "var(--forge-surface)",
                 opacity: 0.95,
@@ -182,8 +185,8 @@ export function NewTabHome({ onNavigate }: Props) {
                   ? "1px solid #FF6B00"
                   : "1px solid var(--forge-border)",
                 boxShadow: focused
-                  ? "0 0 0 3px rgba(255,107,0,0.18), 0 10px 25px -5px rgba(0,0,0,0.3)"
-                  : "0 4px 15px -2px rgba(0,0,0,0.25)",
+                  ? "0 0 0 3px rgba(255,107,0,0.15), 0 8px 20px -4px rgba(0,0,0,0.3)"
+                  : "0 2px 10px -2px rgba(0,0,0,0.2)",
               }}
             >
               {/* Search Engine Dropdown */}
@@ -215,7 +218,7 @@ export function NewTabHome({ onNavigate }: Props) {
                   type="button"
                   onClick={() => setQuery("")}
                   title="Clear"
-                  className="w-6 h-6 mr-1.5 flex items-center justify-center rounded-full text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
+                  className="w-6 h-6 mr-1.5 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
                 >
                   <X size={12} />
                 </button>
@@ -224,7 +227,7 @@ export function NewTabHome({ onNavigate }: Props) {
               <button
                 type="submit"
                 title="Search (Enter)"
-                className="h-full px-4 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-colors duration-150 cursor-pointer border-l border-[var(--forge-border)] shrink-0"
+                className="h-full px-4 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[#FF6B00]/8 transition-all duration-150 cursor-pointer border-l border-[var(--forge-border)] shrink-0 rounded-r-xl"
               >
                 <ArrowRight size={16} />
               </button>
@@ -233,19 +236,19 @@ export function NewTabHome({ onNavigate }: Props) {
 
           {/* Quick Shortcuts */}
           <div className="w-full">
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               {DEFAULT_DEV_SHORTCUTS.map((sc) => (
                 <button
                   key={sc.id}
                   type="button"
                   title={sc.name}
                   onClick={() => onNavigate(sc.url)}
-                  className="group flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl bg-[var(--forge-surface)]/75 hover:bg-[var(--forge-surface)] border border-[var(--forge-border)]/70 hover:border-[#FF6B00]/60 backdrop-blur-md transition-all duration-150 cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5"
+                  className="group flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-[var(--forge-surface)]/75 hover:bg-[var(--forge-surface)] border border-[var(--forge-border)]/70 hover:border-[#FF6B00]/50 backdrop-blur-md transition-all duration-150 cursor-pointer shadow-sm hover:shadow hover:-translate-y-px"
                 >
                   <span className="text-[var(--forge-text-secondary)] group-hover:text-[#FF6B00] transition-colors duration-150">
                     {sc.icon}
                   </span>
-                  <span className="text-[10px] font-medium text-[var(--forge-text-muted)] group-hover:text-[var(--forge-text)] transition-colors truncate w-full text-center px-1">
+                  <span className="text-[11px] font-medium text-[var(--forge-text-muted)] group-hover:text-[var(--forge-text)] transition-colors">
                     {sc.name}
                   </span>
                 </button>
@@ -255,23 +258,25 @@ export function NewTabHome({ onNavigate }: Props) {
         </div>
 
         {/* ================= DEVELOPER NEWS FEED SECTION ================= */}
-        <div className="w-full rounded-2xl bg-[var(--forge-surface)]/45 border border-[var(--forge-border)]/70 p-5 md:p-6 backdrop-blur-md shadow-lg">
-          <DevNewsFeed onNavigate={onNavigate} />
+        <div className="w-full rounded-xl bg-[var(--forge-surface)]/45 border border-[var(--forge-border)]/70 backdrop-blur-md shadow-lg overflow-hidden" style={{ borderTop: '2px solid rgba(255,107,0,0.25)' }}>
+          <div className="p-5 md:p-6">
+            <DevNewsFeed onNavigate={onNavigate} />
+          </div>
         </div>
 
         {/* ================= FOOTER STATUS PILLS ================= */}
-        <div className="flex flex-wrap items-center justify-center gap-2.5 text-[10px] font-mono text-[var(--forge-text-muted)] pt-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/70 backdrop-blur-sm shadow-sm">
+        <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] font-mono-ide text-[var(--forge-text-muted)] pt-2 opacity-60 hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--forge-surface)]/50 border border-[var(--forge-border)]/50 backdrop-blur-sm">
             <Flame size={10} className="text-[#FF6B00]" />
             <span>HTTP Turbo Engine</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/70 backdrop-blur-sm shadow-sm">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--forge-surface)]/50 border border-[var(--forge-border)]/50 backdrop-blur-sm">
             <ShieldCheck size={10} className="text-emerald-500" />
             <span>AdBlock & Shield Active</span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/70 backdrop-blur-sm shadow-sm">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--forge-surface)]/50 border border-[var(--forge-border)]/50 backdrop-blur-sm">
             <Terminal size={10} className="text-blue-400" />
             <span>Press Ctrl+T for New Tab • Ctrl+L for URL</span>
           </div>

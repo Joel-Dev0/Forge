@@ -1,4 +1,4 @@
-export type SoundProviderType = "local" | "youtube" | "spotify";
+export type SoundProviderType = "local" | "youtube" | "spotify" | "soundcloud" | "stream";
 
 export interface FocusTrack {
   id: string;
@@ -7,9 +7,10 @@ export interface FocusTrack {
   album?: string;
   durationSeconds: number;
   provider: SoundProviderType;
-  sourceUrl: string; // File URI or stream/embed URL
+  sourceUrl: string; // File URI, stream URL, YouTube link, or Spotify link
+  embedUrl?: string; // Generated iframe embed URL for YouTube, Spotify, SoundCloud
   coverArt?: string;
-  category?: "lofi" | "classical" | "ambient" | "binaural" | "nature" | "custom";
+  category?: "lofi" | "classical" | "ambient" | "binaural" | "nature" | "custom" | "radio";
 }
 
 export interface FocusPlaylist {
@@ -21,6 +22,7 @@ export interface FocusPlaylist {
   coverGradient: string;
   isFolderBacked?: boolean;
   folderPath?: string;
+  isCustom?: boolean;
 }
 
 export interface SoundProviderAdapter {

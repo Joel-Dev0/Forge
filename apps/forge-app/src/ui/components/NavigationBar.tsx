@@ -12,6 +12,7 @@ import { FocusModeButton } from "./FocusModeButton";
 import { FocusPlayerMiniWidget } from "./FocusPlayerMiniWidget";
 import { SplitViewButton } from "./SplitViewButton";
 import { SessionBadgeButton } from "./SessionBadgeButton";
+import { WebStoreExtensionsButton } from "./WebStoreExtensionsButton";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -89,9 +90,12 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
   };
 
   return (
-    <div className="h-8 bg-[var(--forge-surface)] flex items-center gap-1.5 px-2 border-b border-[var(--forge-border)] shrink-0 transition-colors">
+    <div
+      className="h-9 bg-[var(--forge-surface)] flex items-center gap-2 px-2 shrink-0 transition-colors"
+      style={{ boxShadow: 'inset 0 -1px 0 var(--forge-border)' }}
+    >
       {/* Back / Forward / Reload */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5 bg-[var(--forge-surface-elevated)]/60 rounded-md p-0.5">
         <NavBtn onClick={onBack} disabled={!activeTab?.canGoBack} title="Back">
           <ChevronLeft size={15} />
         </NavBtn>
@@ -104,19 +108,18 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           title="Reload"
           className={activeTab?.isLoading ? "animate-spin text-[#FF6B00]" : ""}
         >
-          <RotateCw size={14} />
+          <RotateCw size={13} />
         </NavBtn>
       </div>
 
-      {/* Divider */}
-      <div className="w-px h-5 bg-[var(--forge-border)]" />
+
 
       {/* URL bar Form */}
       <form
         onSubmit={handleSubmit}
-        className={`flex-1 flex items-center gap-1.5 h-6 px-2 rounded-md transition-all ${
+        className={`flex-1 flex items-center gap-1.5 h-7 px-2.5 rounded-lg transition-all ${
           focused
-            ? "bg-[var(--forge-surface)] ring-1 ring-[#FF6B00] shadow-sm"
+            ? "bg-[var(--forge-bg)] ring-2 ring-[#FF6B00]/35 shadow-sm shadow-[#FF6B00]/5"
             : "bg-[var(--forge-input)] hover:bg-[var(--forge-hover)]"
         }`}
       >
@@ -134,7 +137,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           onMouseUp={handleInputMouseUp}
           onBlur={() => setFocused(false)}
           onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent text-[var(--forge-text)] text-sm outline-none placeholder-[var(--forge-text-muted)] font-mono selection:bg-[#FF6B00]/20 min-w-0"
+          className="flex-1 bg-transparent text-[var(--forge-text)] text-[13px] outline-none placeholder-[var(--forge-text-muted)] font-mono-ide selection:bg-[#FF6B00]/20 min-w-0"
           placeholder={SEARCH_ENGINES[searchEngine]?.placeholder || "Search or enter address..."}
           spellCheck={false}
         />
@@ -158,7 +161,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
         {isCorsBypassActive && (
           <span
             title="CORS & Private Network Access Bypass Active for Local API Development"
-            className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-semibold bg-amber-500/10 text-amber-400/70 border border-amber-500/20 shrink-0 hover:text-amber-400 hover:bg-amber-500/15 transition-colors"
           >
             CORS OFF
           </span>
@@ -167,7 +170,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
         {cpuThrottlingRate > 1 && (
           <span
             title={`CPU Throttled: ${cpuThrottlingRate}x Slowdown Active`}
-            className="flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0"
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-mono font-semibold bg-purple-500/10 text-purple-400/70 border border-purple-500/20 shrink-0 hover:text-purple-400 hover:bg-purple-500/15 transition-colors"
           >
             <Cpu size={9} />
             {cpuThrottlingRate}x
@@ -179,7 +182,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           <span
             title={`Environment: ${activeAlias.alias} (Port ${activeAlias.port})`}
             style={{ color: activeAlias.color, borderColor: `${activeAlias.color}50`, backgroundColor: `${activeAlias.color}15` }}
-            className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border shrink-0 uppercase tracking-tighter"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-semibold border shrink-0 uppercase tracking-tighter opacity-70 hover:opacity-100 transition-opacity"
           >
             {activeAlias.alias}
           </span>
@@ -189,7 +192,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
         <button
           type="submit"
           title="Search or Go (Enter)"
-          className="w-5 h-5 flex items-center justify-center rounded text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer shrink-0"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[#FF6B00]/10 transition-all cursor-pointer shrink-0"
         >
           <ArrowRight size={13} />
         </button>
@@ -240,6 +243,9 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
       {/* Active Session Container Badge & Switcher */}
       <SessionBadgeButton />
 
+      {/* Chrome Web Store Extensions Menu & Pinned Icons */}
+      <WebStoreExtensionsButton onNavigate={onNavigate} />
+
       {/* Forge Secure Network Button */}
       <SecureNetworkButton />
     </div>
@@ -264,10 +270,10 @@ function NavBtn({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+      className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
         disabled
-          ? "text-[var(--forge-text-muted)] opacity-40 cursor-not-allowed"
-          : "text-[var(--forge-text-secondary)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)]"
+          ? "text-[var(--forge-text-muted)] opacity-30 cursor-not-allowed"
+          : "text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)]"
       } ${className}`}
     >
       {children}

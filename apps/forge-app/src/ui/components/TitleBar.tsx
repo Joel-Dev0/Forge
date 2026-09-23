@@ -72,14 +72,22 @@ export function TitleBar() {
   const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
 
   return (
-    <header className="h-7 bg-[var(--forge-bg)] flex items-center justify-between pl-2 pr-0 select-none shrink-0 border-b border-[var(--forge-border)] transition-colors relative z-50">
+    <header
+      className="h-8 flex items-center justify-between pl-2.5 pr-0 select-none shrink-0 transition-colors relative z-50"
+      style={{ background: 'var(--forge-bg)', boxShadow: 'inset 0 -1px 0 var(--forge-border), 0 1px 0 rgba(255,107,0,0.04)' }}
+    >
       {/* Brand & Workspace Selector */}
       <div className="flex items-center gap-2 titlebar-drag h-full select-none cursor-default" style={dragStyle}>
         <img
           src="/logo.png"
           alt="Forge"
-          className="w-5 h-5 rounded-sm object-contain pointer-events-none"
+          className="w-4.5 h-4.5 rounded object-contain pointer-events-none"
         />
+        <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[var(--forge-text-muted)] pointer-events-none select-none">
+          FORGE
+        </span>
+
+        <div className="w-px h-3 bg-[var(--forge-border)] mx-0.5" />
 
         <div style={noDragStyle} className="titlebar-no-drag">
           <WorkspaceSelector />
@@ -101,7 +109,7 @@ export function TitleBar() {
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("forge:toggle-hotkeys"))}
-          className="titlebar-no-drag w-7 h-full flex items-center justify-center hover:bg-[var(--forge-hover)] text-[var(--forge-text-secondary)] hover:text-[#FF6B00] transition-colors cursor-pointer"
+          className="titlebar-no-drag w-8 h-full flex items-center justify-center hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-colors cursor-pointer"
           style={noDragStyle}
           title="Keyboard Shortcuts (F1)"
           aria-label="Keyboard Shortcuts"
@@ -109,11 +117,11 @@ export function TitleBar() {
           <Keyboard size={13} className="pointer-events-none select-none" />
         </button>
 
-        <div className="px-1 h-full flex items-center">
+        <div className="px-0.5 h-full flex items-center">
           <ThemeToggle />
         </div>
 
-        <div className="w-px h-3.5 bg-[var(--forge-border)] mx-1" />
+        <div className="w-px h-3.5 bg-[var(--forge-border-strong)]/40 mx-1" />
 
         {/* Minimize Button */}
         <button
@@ -121,19 +129,19 @@ export function TitleBar() {
           onClick={handleMinimize}
           onMouseDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="window-control-btn titlebar-no-drag h-full w-10 flex items-center justify-center text-[var(--forge-text-secondary)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
+          className="window-control-btn titlebar-no-drag h-full w-11 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
           style={noDragStyle}
           title="Minimize"
           aria-label="Minimize"
         >
-          <Minus size={13} className="pointer-events-none select-none" />
+          <Minus size={14} className="pointer-events-none select-none" />
         </button>
 
         {/* Maximize / Restore Button */}
         <button
           type="button"
           onClick={handleMaximize}
-          className="window-control-btn titlebar-no-drag h-full w-10 flex items-center justify-center text-[var(--forge-text-secondary)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
+          className="window-control-btn titlebar-no-drag h-full w-11 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-colors cursor-pointer"
           style={noDragStyle}
           title={isMax ? "Restore Down" : "Maximize"}
           aria-label={isMax ? "Restore Down" : "Maximize"}
@@ -152,12 +160,12 @@ export function TitleBar() {
         <button
           type="button"
           onClick={handleClose}
-          className="window-control-btn titlebar-no-drag h-full w-11 flex items-center justify-center text-[var(--forge-text-secondary)] hover:text-white hover:bg-[#e81123] transition-colors cursor-pointer"
+          className="window-control-btn titlebar-no-drag h-full w-12 flex items-center justify-center text-[var(--forge-text-muted)] hover:text-white hover:bg-[#e81123] transition-colors cursor-pointer"
           style={noDragStyle}
           title="Close"
           aria-label="Close"
         >
-          <X size={13} className="pointer-events-none select-none" />
+          <X size={14} className="pointer-events-none select-none" />
         </button>
       </div>
     </header>

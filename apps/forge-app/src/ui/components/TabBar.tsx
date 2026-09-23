@@ -165,8 +165,8 @@ export function TabBar() {
   return (
     <div
       onMouseLeave={handleTabBarMouseLeave}
-      className="h-7 bg-[var(--forge-bg)] flex items-end px-1 gap-[2px] border-b border-[var(--forge-border)] shrink-0 overflow-hidden transition-colors select-none w-full max-w-full relative"
-      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      className="h-8 bg-[var(--forge-bg)] flex items-stretch px-0 shrink-0 overflow-hidden transition-colors select-none w-full max-w-full relative"
+      style={{ WebkitAppRegion: "no-drag", boxShadow: 'inset 0 -1px 0 var(--forge-border)' } as React.CSSProperties}
     >
       {tabs.map((tab, index) => {
         const isActive = tab.id === activeTabId;
@@ -198,30 +198,40 @@ export function TabBar() {
             }}
             className={`group relative flex items-center ${
               isUltraCompact
-                ? "justify-center px-0.5"
+                ? "justify-center px-1"
                 : isCompact
-                ? "justify-start px-1 gap-1"
-                : "justify-start px-2 gap-1.5"
-            } h-6 flex-1 min-w-0 max-w-[200px] rounded-t-md select-none transition-all ${
+                ? "justify-start px-2 gap-1"
+                : "justify-start px-3 gap-1.5"
+            } flex-1 min-w-0 max-w-[220px] select-none transition-all ${
               isBeingDragged
-                ? "opacity-35 scale-[0.97] border border-dashed border-[#FF6B00]/70 cursor-default bg-[var(--forge-surface-elevated)]"
+                ? "opacity-35 scale-[0.97] border-x border-dashed border-[#FF6B00]/70 cursor-default bg-[var(--forge-surface-elevated)]"
                 : "cursor-default"
             } ${
               isActive && !isBeingDragged
-                ? "bg-[var(--forge-surface)] text-[var(--forge-text)] border-t border-l border-r border-[var(--forge-border)] border-b-0 shadow-sm font-medium"
+                ? "bg-[var(--forge-surface)] text-[var(--forge-text)] font-medium"
                 : !isBeingDragged
-                ? `bg-transparent text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)] ${
-                    isSleeping ? "opacity-75" : ""
+                ? `bg-transparent text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)]/60 hover:text-[var(--forge-text-secondary)] ${
+                    isSleeping ? "opacity-70" : ""
                   }`
                 : ""
             }`}
           >
-            {/* Session container colored top border line */}
+            {/* Active tab top accent bar */}
+            {isActive && !isBeingDragged && (
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#FF6B00] pointer-events-none z-30" />
+            )}
+
+            {/* Session container colored top border line (overrides accent when non-default session) */}
             {session.id !== "default" && (
               <div
-                className="absolute top-0 left-0 right-0 h-[2px] rounded-t-sm pointer-events-none z-30"
+                className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none z-31"
                 style={{ backgroundColor: session.color }}
               />
+            )}
+
+            {/* Right separator for inactive tabs */}
+            {!isActive && !isBeingDragged && index < tabs.length - 1 && (
+              <div className="absolute right-0 top-1.5 bottom-1.5 w-px bg-[var(--forge-border)] opacity-40 pointer-events-none" />
             )}
 
             {/* Drop Insertion Line (glowing vertical bar) */}
@@ -335,35 +345,35 @@ export function TabBar() {
                 e.stopPropagation();
                 closeTab(tab.id);
               }}
-              className={`w-3.5 h-3.5 flex items-center justify-center rounded transition-colors shrink-0 ${
+              className={`w-4 h-4 flex items-center justify-center rounded-sm transition-all shrink-0 ${
                 isCompact
-                  ? "opacity-0 group-hover:opacity-100 hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  ? "opacity-0 group-hover:opacity-100 hover:bg-white/10 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
                   : isActive
-                  ? "opacity-80 hover:opacity-100 hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
-                  : "opacity-0 group-hover:opacity-100 hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  ? "opacity-70 hover:opacity-100 hover:bg-white/10 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  : "opacity-0 group-hover:opacity-100 hover:bg-white/10 text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
               }`}
               title="Close Tab (Ctrl+W)"
             >
               <X size={10} />
             </button>
 
-            {/* Active tab orange indicator */}
-            {isActive && (
-              <div className="absolute bottom-0 left-0.5 right-0.5 h-[2px] bg-[#FF6B00] rounded-full" />
+            {/* Bottom edge fill for active tab to merge with content below */}
+            {isActive && !isBeingDragged && (
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-[var(--forge-surface)]" />
             )}
           </div>
         );
       })}
 
       {/* New tab button and container quick opener */}
-      <div ref={newTabDropdownRef} className="relative flex items-center mb-0.5 ml-0.5 shrink-0">
+      <div ref={newTabDropdownRef} className="relative flex items-center mx-1 shrink-0">
         <button
           type="button"
           onClick={() => openTab()}
           onDragOver={handleSpacerDragOver}
           onDrop={handleSpacerDrop}
           title="New Tab (Ctrl + T)"
-          className="w-5 h-5 flex items-center justify-center rounded text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)] transition-colors cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:bg-[#FF6B00]/12 hover:text-[#FF6B00] transition-all cursor-pointer"
         >
           <Plus size={13} />
         </button>

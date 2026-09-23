@@ -15,6 +15,7 @@ export interface DevNewsItem {
   source: string;
   timeAgo: string;
   publishedAt: number;
+  imageUrl?: string;
 }
 
 const CURATED_DEV_NEWS: DevNewsItem[] = [
@@ -29,6 +30,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "GitHub Advisory",
     timeAgo: "1h ago",
     publishedAt: Date.now() - 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600&h=400&fit=crop",
   },
   {
     id: "ts-5-8-announcement",
@@ -41,6 +43,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Microsoft DevBlogs",
     timeAgo: "3h ago",
     publishedAt: Date.now() - 3 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1516116216624-53e697fedbea?w=600&h=400&fit=crop",
   },
   {
     id: "react-19-server-actions",
@@ -53,6 +56,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "React Core Team",
     timeAgo: "5h ago",
     publishedAt: Date.now() - 5 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=600&h=400&fit=crop",
   },
   {
     id: "rust-1-85-async-closures",
@@ -65,6 +69,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Rust Blog",
     timeAgo: "7h ago",
     publishedAt: Date.now() - 7 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1515879218367-8466d910auj7?w=600&h=400&fit=crop",
   },
   {
     id: "cve-py-fastapi-auth-bypass",
@@ -77,6 +82,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "NVD / NIST",
     timeAgo: "8h ago",
     publishedAt: Date.now() - 8 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=600&h=400&fit=crop",
   },
   {
     id: "tailwind-v4-performance",
@@ -89,6 +95,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Tailwind Labs",
     timeAgo: "12h ago",
     publishedAt: Date.now() - 12 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1507721999472-8ed4421c4af2?w=600&h=400&fit=crop",
   },
   {
     id: "bun-v1-2-release",
@@ -101,6 +108,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Bun.sh",
     timeAgo: "14h ago",
     publishedAt: Date.now() - 14 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&h=400&fit=crop",
   },
   {
     id: "vite-6-environment-api",
@@ -113,6 +121,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Vite Team",
     timeAgo: "1d ago",
     publishedAt: Date.now() - 24 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=600&h=400&fit=crop",
   },
   {
     id: "cve-go-crypto-sidechannel",
@@ -125,6 +134,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Go Security",
     timeAgo: "1d ago",
     publishedAt: Date.now() - 26 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&h=400&fit=crop",
   },
   {
     id: "ecmascript-2025-stage4",
@@ -137,6 +147,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "TC39 Committee",
     timeAgo: "2d ago",
     publishedAt: Date.now() - 48 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1627398242454-45a1465c2479?w=600&h=400&fit=crop",
   },
   {
     id: "nextjs-turbopack-default",
@@ -149,6 +160,7 @@ const CURATED_DEV_NEWS: DevNewsItem[] = [
     source: "Next.js Blog",
     timeAgo: "2d ago",
     publishedAt: Date.now() - 52 * 3600 * 1000,
+    imageUrl: "https://images.unsplash.com/photo-1504639725590-34d0984388bd?w=600&h=400&fit=crop",
   },
 ];
 

@@ -1,41 +1,44 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   /* Light Theme Tokens */
-  --forge-bg: #f5f6f8;
+  --forge-bg: #f4f5f7;
   --forge-surface: #ffffff;
   --forge-surface-elevated: #f0f1f4;
-  --forge-input: #e9ebef;
-  --forge-hover: #e5e7eb;
-  --forge-border: #e2e4e9;
-  --forge-border-strong: #d1d5db;
-  --forge-text: #111827;
-  --forge-text-secondary: #4b5563;
-  --forge-text-muted: #8a94a6;
+  --forge-input: #e8eaee;
+  --forge-hover: #e3e5e9;
+  --forge-border: #dfe1e6;
+  --forge-border-strong: #c9cdd4;
+  --forge-text: #0f1419;
+  --forge-text-secondary: #3d4752;
+  --forge-text-muted: #7a8494;
   --forge-accent: #ff6b00;
   --forge-accent-hover: #ff8533;
   --forge-accent-warm: #f59e0b;
-  --forge-scrollbar: #d1d5db;
-  --forge-scrollbar-hover: #9ca3af;
+  --forge-scrollbar: #cdd1d8;
+  --forge-scrollbar-hover: #a0a8b4;
+  --forge-glow: rgba(255, 107, 0, 0.06);
 }
 
 html.dark, :root[data-theme="dark"] {
-  /* Dark Theme Tokens */
+  /* Dark Theme — User-specified palette */
   --forge-bg: #0d0d0d;
-  --forge-surface: #111111;
-  --forge-surface-elevated: #1e1e1e;
+  --forge-surface: #1e1e1e;
+  --forge-surface-elevated: #252525;
   --forge-input: #1a1a1a;
-  --forge-hover: #222222;
+  --forge-hover: #2b2b2b;
   --forge-border: #2b2b2b;
   --forge-border-strong: #3d3d3d;
-  --forge-text: #ededed;
-  --forge-text-secondary: #9ca3af;
-  --forge-text-muted: #6b7280;
+  --forge-text: #e4e4e7;
+  --forge-text-secondary: #a1a1aa;
+  --forge-text-muted: #636370;
   --forge-accent: #ff6b00;
   --forge-accent-hover: #ff8533;
   --forge-accent-warm: #ffb347;
   --forge-scrollbar: #2b2b2b;
-  --forge-scrollbar-hover: #374151;
+  --forge-scrollbar-hover: #3d3d3d;
+  --forge-glow: rgba(255, 107, 0, 0.08);
 }
 
 *, *::before, *::after {
@@ -50,15 +53,24 @@ html, body, #root {
   overflow: hidden;
   background-color: var(--forge-bg);
   color: var(--forge-text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+/* Branded text selection */
+::selection {
+  background-color: rgba(255, 107, 0, 0.22);
+  color: inherit;
+}
+
 /* Thin custom scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--forge-scrollbar); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--forge-scrollbar); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--forge-scrollbar-hover); }
 
 /* Hide scrollbar utility */
@@ -95,4 +107,9 @@ html, body, #root {
 .window-control-btn svg,
 .window-control-btn svg * {
   pointer-events: none !important;
+}
+
+/* Monospace stack for URL bar and code elements */
+.font-mono-ide {
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
 }

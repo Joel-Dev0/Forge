@@ -23,6 +23,8 @@ export interface ForgeExtension {
   author: string;
   icon?: string;
   enabled: boolean;
+  pinned?: boolean;
+  webStoreUrl?: string;
   installedAt: number;
   verification: ExtensionVerificationReport;
   settings?: Record<string, any>;

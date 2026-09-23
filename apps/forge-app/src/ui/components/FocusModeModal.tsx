@@ -11,8 +11,12 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
+  Bell,
+  BellOff,
+  Volume2,
 } from "lucide-react";
 import { useFocusStore } from "../../core/focus/useFocusStore";
+import { testFocusAlarmSound } from "../../core/focus/focusAlarm";
 import {
   SOCIAL_PLATFORMS,
   type FocusActionTier,
@@ -28,6 +32,7 @@ export function FocusModeModal() {
     profiles,
     schedules,
     isFocusModalOpen,
+    lastAlarmTriggered,
     setFocusModalOpen,
     toggleFocusMode,
     setActiveProfile,
@@ -36,6 +41,8 @@ export function FocusModeModal() {
     pauseTimer,
     resumeTimer,
     stopTimer,
+    dismissAlarm,
+    toggleAlarmSound,
     addSchedule,
     deleteSchedule,
     toggleSchedule,
@@ -51,7 +58,7 @@ export function FocusModeModal() {
   const [newScheduleEnd, setNewScheduleEnd] = useState("17:00");
   const [newScheduleProfile, setNewScheduleProfile] = useState("deep_work");
 
-  if (!isFocusModalOpen) return null;
+  if (!isFocusModalOpen && !lastAlarmTriggered) return null;
 
   const activeProfile = profiles[activeProfileId] || Object.values(profiles)[0];
 
@@ -90,11 +97,54 @@ export function FocusModeModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div
-        className="w-full max-w-2xl bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] text-[var(--forge-text)] font-sans"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <>
+      {/* Floating alarm toast if modal is closed */}
+      {lastAlarmTriggered && !isFocusModalOpen && (
+        <div className="fixed top-12 right-6 z-[9999] flex items-center gap-3.5 p-4 bg-[var(--forge-surface-elevated)] border-2 border-[#FF6B00] rounded-2xl shadow-2xl animate-in slide-in-from-top-4 duration-200">
+          <div className="w-10 h-10 rounded-xl bg-[#FF6B00] text-white flex items-center justify-center font-bold shadow-[0_0_15px_rgba(255,107,0,0.5)] animate-bounce">
+            <Bell size={20} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>⏰ Timer Complete!</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#FF6B00]/20 text-[#FF6B00]">
+                {lastAlarmTriggered.phase === "break" ? "BREAK OVER" : "FOCUS OVER"}
+              </span>
+            </p>
+            <p className="text-xs text-[var(--forge-text-muted)] mt-0.5 max-w-[260px]">
+              {lastAlarmTriggered.message}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 ml-2">
+            <button
+              type="button"
+              onClick={() => {
+                dismissAlarm();
+                setFocusModalOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#FF8533] text-white text-xs font-bold transition-all shadow cursor-pointer"
+            >
+              Open Timer
+            </button>
+            <button
+              type="button"
+              onClick={dismissAlarm}
+              className="p-1.5 rounded-lg bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-white transition-colors cursor-pointer"
+              title="Dismiss notification"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Focus Mode Modal */}
+      {isFocusModalOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-2xl bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] text-[var(--forge-text)] font-sans"
+            onClick={(e) => e.stopPropagation()}
+          >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]">
           <div className="flex items-center gap-3">
@@ -186,6 +236,28 @@ export function FocusModeModal() {
           </button>
         </div>
 
+        {/* Active Alarm Banner inside Modal */}
+        {lastAlarmTriggered && (
+          <div className="mx-6 mt-4 p-3.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-[#FF6B00]/20 to-amber-500/20 border border-[#FF6B00]/50 flex items-center justify-between shadow-lg animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#FF6B00] text-white flex items-center justify-center font-bold">
+                <Bell size={16} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white">⏰ Countdown Finished!</p>
+                <p className="text-[11px] text-zinc-300">{lastAlarmTriggered.message}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={dismissAlarm}
+              className="px-3 py-1 rounded-lg bg-[#FF6B00] hover:bg-[#FF8533] text-white font-bold text-xs shadow transition-colors cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Tab Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-5">
           {/* TAB 1: POMODORO & PROFILES */}
@@ -264,6 +336,32 @@ export function FocusModeModal() {
                     className="px-2.5 py-1 rounded-lg text-xs bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-zinc-300 font-mono transition-colors"
                   >
                     50m (Deep)
+                  </button>
+                </div>
+
+                {/* Alarm Sound Settings & Test */}
+                <div className="flex items-center justify-between w-full mt-3 pt-3 border-t border-[var(--forge-border)]/60 text-xs px-2">
+                  <button
+                    type="button"
+                    onClick={toggleAlarmSound}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all text-xs font-medium cursor-pointer ${
+                      timer.alarmSoundEnabled
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : "bg-zinc-800/80 border-zinc-700 text-zinc-400"
+                    }`}
+                    title="Toggle audible chime when countdown finishes"
+                  >
+                    {timer.alarmSoundEnabled ? <Bell size={13} /> : <BellOff size={13} />}
+                    <span>Alarm: {timer.alarmSoundEnabled ? "Enabled" : "Muted"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={testFocusAlarmSound}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--forge-input)] hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white border border-[var(--forge-border)] transition-colors text-xs font-medium cursor-pointer"
+                    title="Play test chime"
+                  >
+                    <Volume2 size={13} className="text-[#FF6B00]" />
+                    <span>Test Chime</span>
                   </button>
                 </div>
               </div>
@@ -601,5 +699,7 @@ export function FocusModeModal() {
         </div>
       </div>
     </div>
+    )}
+  </>
   );
 }

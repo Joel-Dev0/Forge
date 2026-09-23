@@ -20,12 +20,24 @@ const STORAGE_KEY_ADVANCED = "forge:vpn:advanced-settings";
 function loadSavedAdvancedSettings(): VpnAdvancedSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ADVANCED);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        autoConnectOnStartup: false, // strictly default to false
+        autoConnectOnPublicWifi: false,
+        autoReconnect: false, // strictly default to false
+        dnsRoutingMode: parsed.dnsRoutingMode || "vpn_dns",
+        customDnsServer: parsed.customDnsServer || "1.1.1.1",
+        splitTunnelRules: Array.isArray(parsed.splitTunnelRules)
+          ? parsed.splitTunnelRules
+          : ["localhost", "127.0.0.1", "*.internal", "192.168.0.0/16"],
+      };
+    }
   } catch {}
   return {
     autoConnectOnStartup: false,
-    autoConnectOnPublicWifi: true,
-    autoReconnect: true,
+    autoConnectOnPublicWifi: false,
+    autoReconnect: false,
     dnsRoutingMode: "vpn_dns",
     customDnsServer: "1.1.1.1",
     splitTunnelRules: ["localhost", "127.0.0.1", "*.internal", "192.168.0.0/16"],
@@ -85,6 +97,9 @@ const DEFAULT_STATUS: VpnStatus = {
 };
 
 let isInitialized = false;
+let userInitiatedDisconnect = false;
+let reconnectTimeout: any = null;
+let reconnectAttempts = 0;
 
 const initialAdv = loadSavedAdvancedSettings();
 
@@ -140,9 +155,9 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
           lastError: st.lastError || null,
         });
 
-        if (get().autoConnectOnStartup && st.state === "disconnected") {
+        if (get().autoConnectOnStartup && !userInitiatedDisconnect && st.state === "disconnected") {
           setTimeout(() => {
-            if (get().state === "disconnected") {
+            if (get().state === "disconnected" && !userInitiatedDisconnect) {
               get().connect();
             }
           }, 1000);
@@ -151,9 +166,6 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
     }).catch(() => {});
 
     // Listen to status updates & handle auto-reconnect
-    let reconnectTimeout: any = null;
-    let reconnectAttempts = 0;
-
     bridge.onStatusChanged((st: VpnStatus) => {
       if (st) {
         const prevState = get().state;
@@ -165,31 +177,42 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
           lastError: st.lastError || null,
         });
 
-        // Auto-reconnect with backoff on unexpected drop
+        if (st.state === "connected") {
+          reconnectAttempts = 0;
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+        }
+
+        // Auto-reconnect ONLY when enabled, NOT user-disconnected, and on unexpected "error" state
         if (
           get().autoReconnect &&
+          !userInitiatedDisconnect &&
           prevState === "connected" &&
-          (st.state === "disconnected" || st.state === "error")
+          st.state === "error"
         ) {
           if (reconnectAttempts < 5) {
             const delay = Math.min(30000, 2000 * Math.pow(1.5, reconnectAttempts));
             reconnectAttempts++;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
             reconnectTimeout = setTimeout(() => {
-              if (get().state !== "connected" && !get().isConnecting) {
+              if (get().state !== "connected" && !get().isConnecting && !userInitiatedDisconnect) {
                 get().connect();
               }
             }, delay);
           }
-        } else if (st.state === "connected") {
-          reconnectAttempts = 0;
-          if (reconnectTimeout) clearTimeout(reconnectTimeout);
         }
       }
     });
   },
 
   connect: async (profileIdOrConfig?: any) => {
+    userInitiatedDisconnect = false;
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      reconnectTimeout = null;
+    }
     const bridge = (window as any).forge?.vpn;
     set({ isConnecting: true, lastError: null });
 
@@ -234,15 +257,22 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
   },
 
   disconnect: async () => {
+    userInitiatedDisconnect = true;
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      reconnectTimeout = null;
+    }
+    reconnectAttempts = 0;
+
     const bridge = (window as any).forge?.vpn;
-    set({ isConnecting: true, lastError: null });
+    set({
+      isConnecting: false,
+      state: "disconnected",
+      lastError: null,
+      status: { ...get().status, state: "disconnected" },
+    });
 
     if (!bridge) {
-      set({
-        state: "disconnected",
-        isConnecting: false,
-        status: { ...get().status, state: "disconnected" },
-      });
       return true;
     }
 
@@ -257,6 +287,7 @@ export const useVpnStore = create<VpnStoreState>((set, get) => ({
       return true;
     } catch (err: any) {
       set({
+        state: "disconnected",
         isConnecting: false,
         lastError: err.message || "Failed to disconnect",
       });

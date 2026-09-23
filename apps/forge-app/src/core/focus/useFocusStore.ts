@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { SOCIAL_PLATFORMS, type FocusActionTier } from "./socialRulesets";
+import { playFocusAlarmSound } from "./focusAlarm";
 
 export interface FocusSchedule {
   id: string;
@@ -29,6 +30,13 @@ export interface FocusTimer {
   mode: "pomodoro" | "duration" | "indefinite";
   focusDurationMinutes: number; // default 25
   breakDurationMinutes: number; // default 5
+  alarmSoundEnabled: boolean; // default true
+}
+
+export interface FocusAlarmEvent {
+  phase: "focus" | "break";
+  timestamp: number;
+  message: string;
 }
 
 interface FocusState {
@@ -38,6 +46,7 @@ interface FocusState {
   profiles: Record<string, FocusProfile>;
   schedules: FocusSchedule[];
   isFocusModalOpen: boolean;
+  lastAlarmTriggered: FocusAlarmEvent | null;
 
   setFocusModalOpen: (open: boolean) => void;
   toggleFocusMode: () => void;
@@ -51,6 +60,8 @@ interface FocusState {
   resumeTimer: () => void;
   stopTimer: () => void;
   tickTimer: () => void;
+  dismissAlarm: () => void;
+  toggleAlarmSound: () => void;
 
   // Schedule management
   addSchedule: (schedule: Omit<FocusSchedule, "id">) => void;
@@ -204,6 +215,7 @@ export const useFocusStore = create<FocusState>((set, get) => ({
   isFocusModeActive: initial.isFocusModeActive,
   activeProfileId: initial.activeProfileId,
   isFocusModalOpen: false,
+  lastAlarmTriggered: null,
   profiles: initial.profiles,
   schedules: initial.schedules,
 
@@ -215,10 +227,24 @@ export const useFocusStore = create<FocusState>((set, get) => ({
     mode: "pomodoro",
     focusDurationMinutes: initial.timerConfig.focusDurationMinutes,
     breakDurationMinutes: initial.timerConfig.breakDurationMinutes,
+    alarmSoundEnabled: true,
   },
 
   setFocusModalOpen(open) {
     set({ isFocusModalOpen: open });
+  },
+
+  dismissAlarm() {
+    set({ lastAlarmTriggered: null });
+  },
+
+  toggleAlarmSound() {
+    set((s) => ({
+      timer: {
+        ...s.timer,
+        alarmSoundEnabled: !s.timer.alarmSoundEnabled,
+      },
+    }));
   },
 
   toggleFocusMode() {
@@ -295,6 +321,7 @@ export const useFocusStore = create<FocusState>((set, get) => ({
     const totalSec = durMinutes * 60;
     set((s) => ({
       isFocusModeActive: true,
+      lastAlarmTriggered: null,
       timer: {
         ...s.timer,
         isRunning: true,
@@ -344,30 +371,46 @@ export const useFocusStore = create<FocusState>((set, get) => ({
     if (!timer.isRunning) return;
 
     if (timer.remainingSeconds <= 1) {
+      const isFocus = timer.phase === "focus";
+      const alarmType = isFocus ? "focus_complete" : "break_complete";
+
+      // Synthesize audible alarm sound immediately
+      if (timer.alarmSoundEnabled) {
+        playFocusAlarmSound(alarmType).catch(() => {});
+      }
+
+      const alarmMessage = isFocus
+        ? "🎯 Focus countdown ended! Fantastic work."
+        : "☕ Break countdown ended! Ready to focus again?";
+
+      set({
+        lastAlarmTriggered: {
+          phase: timer.phase,
+          timestamp: Date.now(),
+          message: alarmMessage,
+        },
+      });
+
       if (timer.mode === "pomodoro") {
-        const nextPhase = timer.phase === "focus" ? "break" : "focus";
+        const nextPhase = isFocus ? "break" : "focus";
         const nextMinutes =
           nextPhase === "focus" ? timer.focusDurationMinutes : timer.breakDurationMinutes;
         const nextSec = nextMinutes * 60;
-        set({
+        set((s) => ({
           isFocusModeActive: nextPhase === "focus",
           timer: {
-            ...timer,
+            ...s.timer,
             phase: nextPhase,
             remainingSeconds: nextSec,
             totalSeconds: nextSec,
           },
-        });
-        // Play notification or toast if available
+        }));
+
         try {
-          new Notification(
-            nextPhase === "focus"
-              ? "🎯 Focus session started!"
-              : "☕ Break time! Take a breather."
-          );
+          new Notification(alarmMessage);
         } catch {}
       } else {
-        // Duration finished
+        // Duration mode finished
         get().stopTimer();
       }
     } else {

@@ -23,6 +23,7 @@ import { FocusModeModal } from "../components/FocusModeModal";
 import { CrashGuardBanner } from "../components/CrashGuardBanner";
 import { ProjectDashboardModal } from "../components/ProjectDashboardModal";
 import { ExtensionsManagerModal } from "../components/ExtensionsManagerModal";
+import { IdeExtensionsModal } from "../components/IdeExtensionsModal";
 import { FocusPlayerModal } from "../components/FocusPlayerModal";
 import { ForgeAnvilLoader } from "../components/ForgeAnvilLoader";
 import { useCompatStore } from "../../core/compat/useCompatStore";
@@ -1476,6 +1477,9 @@ export function BrowserLayout() {
 
       {/* Forge Extension Platform & Security Verification Gate Modal (Section 10) */}
       <ExtensionsManagerModal />
+
+      {/* Visual Studio Code Marketplace IDE Extensions Modal */}
+      <IdeExtensionsModal />
 
       {/* Focus Sound Environment Player Modal (Section 9) */}
       <FocusPlayerModal />

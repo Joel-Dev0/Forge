@@ -93,6 +93,15 @@ contextBridge.exposeInMainWorld("forge", {
       return () => ipcRenderer.removeListener("webview:activate-tab-by-contents-id", listener);
     },
   },
+  contextMenu: {
+    onShow: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("browser:context-menu", listener);
+      return () => ipcRenderer.removeListener("browser:context-menu", listener);
+    },
+    inspectElement: (data: { contentsId?: number; x: number; y: number }) =>
+      ipcRenderer.invoke("browser:inspect-element", data),
+  },
   power: {
     onPowerResume: (callback: () => void) => {
       const listener = () => callback();

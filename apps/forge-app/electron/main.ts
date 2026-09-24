@@ -555,6 +555,30 @@ app.on("web-contents-created", (_event, contents) => {
     playingWebContents.delete(contents.id);
   });
 
+  // Bridge guest webview context-menu to Forge Browser UI
+  contents.on("context-menu", (_e, params) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() || mainWindow;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("browser:context-menu", {
+          x: params.x,
+          y: params.y,
+          selectionText: params.selectionText || "",
+          linkURL: params.linkURL || "",
+          srcURL: params.srcURL || "",
+          mediaType: params.mediaType || "none",
+          isEditable: params.isEditable || false,
+          pageURL: params.pageURL || "",
+          canGoBack: contents.canGoBack(),
+          canGoForward: contents.canGoForward(),
+          contentsId: contents.id,
+        });
+      }
+    } catch (err) {
+      console.error("[Main] Error sending context-menu event:", err);
+    }
+  });
+
   contents.on("enter-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("webview:html-full-screen-change", { isFullscreen: true, contentsId: contents.id });
@@ -745,6 +769,20 @@ ipcMain.handle("terminal:exec", async (_event, command: string, shellType: "powe
 });
 
 // Window controls & downloads IPC
+ipcMain.handle("browser:inspect-element", (_event, { contentsId, x, y }: { contentsId?: number; x: number; y: number }) => {
+  try {
+    if (contentsId && webviewContentsMap.has(contentsId)) {
+      webviewContentsMap.get(contentsId)!.inspectElement(x, y);
+    } else {
+      const win = BrowserWindow.getFocusedWindow() || mainWindow;
+      win?.webContents.inspectElement(x, y);
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.on("window:open-private", () => {
   createWindow(true);
 });

@@ -90,6 +90,14 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       return () => import_electron.ipcRenderer.removeListener("webview:activate-tab-by-contents-id", listener);
     }
   },
+  contextMenu: {
+    onShow: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("browser:context-menu", listener);
+      return () => import_electron.ipcRenderer.removeListener("browser:context-menu", listener);
+    },
+    inspectElement: (data) => import_electron.ipcRenderer.invoke("browser:inspect-element", data)
+  },
   power: {
     onPowerResume: (callback) => {
       const listener = () => callback();

@@ -25,6 +25,7 @@ import { ProjectDashboardModal } from "../components/ProjectDashboardModal";
 import { ExtensionsManagerModal } from "../components/ExtensionsManagerModal";
 import { IdeExtensionsModal } from "../components/IdeExtensionsModal";
 import { FocusPlayerModal } from "../components/FocusPlayerModal";
+import { BrowserContextMenu, type BrowserContextParams } from "../components/BrowserContextMenu";
 import { useCompatStore } from "../../core/compat/useCompatStore";
 import { Minimize2, ArrowLeftRight, X as CloseIcon } from "lucide-react";
 
@@ -41,6 +42,7 @@ export function BrowserLayout() {
     setFocusedSplitPane,
     setSplitTab,
     setActiveTab,
+    openTab,
   } = useTabsStore();
   const getSession = useSessionsStore((s) => s.getSession);
   const initTheme = useThemeStore((s) => s.initTheme);
@@ -223,6 +225,7 @@ export function BrowserLayout() {
 
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [isHotkeysOpen, setIsHotkeysOpen] = useState(false);
+  const [browserContextParams, setBrowserContextParams] = useState<BrowserContextParams | null>(null);
   const [zoomBadge, setZoomBadge] = useState<number | null>(null);
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -242,6 +245,66 @@ export function BrowserLayout() {
   }, []);
 
   const activeWebview = useCallback(() => webviewRefs.current.get(activeTabId) ?? null, [activeTabId]);
+
+  // Global Browser-wide Right-Click Context Menu Listener
+  useEffect(() => {
+    const handleGlobalContextMenu = (e: MouseEvent) => {
+      // Don't intercept if already handled by a component that stopped propagation or called preventDefault
+      if (e.defaultPrevented) return;
+
+      const target = e.target as HTMLElement | null;
+      // Also ignore if clicking specifically inside the Explorer sidebar or Titlebar
+      if (target?.closest("[data-ignore-browser-context]")) return;
+
+      const isInput = Boolean(
+        target?.matches("input, textarea, [contenteditable='true']") ||
+        target?.closest("input, textarea, [contenteditable='true']")
+      );
+      const linkEl = target?.closest("a") as HTMLAnchorElement | null;
+      const imgEl = target?.closest("img") as HTMLImageElement | null;
+      const sel = window.getSelection()?.toString() || "";
+
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const wv = activeWebview();
+
+      e.preventDefault();
+      setBrowserContextParams({
+        x: e.clientX,
+        y: e.clientY,
+        selectionText: sel,
+        linkURL: linkEl?.href || "",
+        srcURL: imgEl?.src || "",
+        mediaType: imgEl ? "image" : "none",
+        isEditable: isInput,
+        pageURL: activeTab?.url || "",
+        canGoBack: wv && typeof wv.canGoBack === "function" ? wv.canGoBack() : false,
+        canGoForward: wv && typeof wv.canGoForward === "function" ? wv.canGoForward() : false,
+      });
+    };
+
+    window.addEventListener("contextmenu", handleGlobalContextMenu);
+    return () => window.removeEventListener("contextmenu", handleGlobalContextMenu);
+  }, [tabs, activeTabId, activeWebview]);
+
+  // IPC listener for Electron guest <webview> context menu
+  useEffect(() => {
+    const unsub = (window as any).forge?.contextMenu?.onShow?.((params: any) => {
+      const activeTab = useTabsStore.getState().tabs.find((t) => t.id === useTabsStore.getState().activeTabId);
+      setBrowserContextParams({
+        x: params.x,
+        y: params.y,
+        selectionText: params.selectionText || "",
+        linkURL: params.linkURL || "",
+        srcURL: params.srcURL || "",
+        mediaType: params.mediaType || "none",
+        isEditable: params.isEditable || false,
+        pageURL: params.pageURL || activeTab?.url || "",
+        canGoBack: params.canGoBack,
+        canGoForward: params.canGoForward,
+      });
+    });
+    return () => unsub?.();
+  }, []);
 
   // Cleanly exit fullscreen both in the Forge shell and in the guest webview
   const handleExitFullscreen = useCallback(() => {
@@ -1462,7 +1525,145 @@ export function BrowserLayout() {
       {/* Focus Sound Environment Player Modal (Section 9) */}
       <FocusPlayerModal />
 
+      {/* In-Page Search Bar (Ctrl + F) */}
+      <FindInPageBar
+        getActiveWebview={activeWebview}
+        isOpen={isFindOpen}
+        onClose={() => setIsFindOpen(false)}
+      />
 
+      {/* Global Browser-Wide Right-Click Context Menu */}
+      {browserContextParams && (
+        <BrowserContextMenu
+          params={browserContextParams}
+          onClose={() => setBrowserContextParams(null)}
+          onGoBack={() => {
+            const wv = activeWebview();
+            if (wv && typeof wv.canGoBack === "function" && wv.canGoBack()) {
+              wv.goBack();
+            } else if (window.history.length > 1) {
+              window.history.back();
+            }
+          }}
+          onGoForward={() => {
+            const wv = activeWebview();
+            if (wv && typeof wv.canGoForward === "function" && wv.canGoForward()) {
+              wv.goForward();
+            } else {
+              window.history.forward();
+            }
+          }}
+          onReload={() => {
+            const wv = activeWebview();
+            if (wv && typeof wv.reload === "function") {
+              wv.reload();
+            } else {
+              window.location.reload();
+            }
+          }}
+          onOpenNewTab={(url) => {
+            openTab(url || "about:blank");
+          }}
+          onOpenInSplit={(url) => {
+            const newId = openTab(url);
+            if (newId) setSplitTab(newId);
+          }}
+          onBookmarkPage={() => {
+            const activeTab = tabs.find((t) => t.id === activeTabId);
+            if (activeTab) {
+              useBookmarksStore.getState().addBookmark(activeTab.url, activeTab.title);
+              triggerToast("Bookmark saved!");
+            }
+          }}
+          onFindInPage={() => setIsFindOpen(true)}
+          onPrint={() => {
+            const wv = activeWebview();
+            if (wv && typeof wv.print === "function") {
+              wv.print();
+            } else {
+              window.print();
+            }
+          }}
+          onViewSource={(url) => {
+            if (url && url !== "about:blank") {
+              const srcUrl = url.startsWith("view-source:") ? url : `view-source:${url}`;
+              openTab(srcUrl);
+            }
+          }}
+          onInspectElement={(x, y) => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).inspectElement === "function") {
+              try {
+                (wv as any).inspectElement(x, y);
+              } catch {}
+            } else {
+              (window as any).forge?.contextMenu?.inspectElement?.({ x, y });
+            }
+          }}
+          onCopyText={(text) => {
+            try {
+              navigator.clipboard?.writeText(text);
+            } catch {}
+            triggerToast("Copied to clipboard");
+          }}
+          onSearchSelection={(query) => {
+            openTab(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
+          }}
+          onTranslateSelection={(text) => {
+            openTab(`https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(text)}`);
+          }}
+          onReadAloud={(text) => {
+            if (window.speechSynthesis) {
+              window.speechSynthesis.cancel();
+              const utter = new SpeechSynthesisUtterance(text);
+              window.speechSynthesis.speak(utter);
+              triggerToast("Reading text aloud...");
+            }
+          }}
+          onDownloadUrl={(url) => {
+            const forge = (window as any).forge;
+            if (forge?.downloads?.start) {
+              forge.downloads.start(url);
+            } else {
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "";
+              a.click();
+            }
+            triggerToast("Download started");
+          }}
+          onUndo={() => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).undo === "function") (wv as any).undo();
+            else document.execCommand("undo");
+          }}
+          onRedo={() => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).redo === "function") (wv as any).redo();
+            else document.execCommand("redo");
+          }}
+          onCut={() => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).cut === "function") (wv as any).cut();
+            else document.execCommand("cut");
+          }}
+          onPaste={() => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).paste === "function") (wv as any).paste();
+            else document.execCommand("paste");
+          }}
+          onSelectAll={() => {
+            const wv = activeWebview();
+            if (wv && typeof (wv as any).selectAll === "function") (wv as any).selectAll();
+            else document.execCommand("selectAll");
+          }}
+          onToggleDarkMode={() => {
+            const { toggleTheme } = useThemeStore.getState();
+            toggleTheme();
+            triggerToast("Theme toggled");
+          }}
+        />
+      )}
     </div>
   );
 }

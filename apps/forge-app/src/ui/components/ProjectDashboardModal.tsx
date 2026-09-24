@@ -14,6 +14,7 @@ import {
 import { useProjectsStore } from "../../core/projects/useProjectsStore";
 import { type ProjectEcosystem } from "../../core/projects/projectScanner";
 import { useTerminalStore } from "../../core/terminal/useTerminalStore";
+import { IdeExplorerSidebarView } from "./IdeExplorerSidebarView";
 
 export function ProjectDashboardModal() {
   const {
@@ -31,6 +32,7 @@ export function ProjectDashboardModal() {
   } = useProjectsStore();
 
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"explorer" | "overview">("explorer");
   const setTerminalCwd = useTerminalStore((s) => s.setCwd);
 
   if (!isDashboardOpen) return null;
@@ -71,18 +73,51 @@ export function ProjectDashboardModal() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setDashboardOpen(false)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-          >
-            <X size={16} />
-          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode("explorer")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  viewMode === "explorer"
+                    ? "bg-[#FF6B00] text-white shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                Explorer Tree
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("overview")}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  viewMode === "overview"
+                    ? "bg-[#FF6B00] text-white shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                Project Overview
+              </button>
+            </div>
+
+            <button
+              onClick={() => setDashboardOpen(false)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Content - Two Columns */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left: Project List */}
-          <div className="w-80 border-r border-[var(--forge-border)] bg-[#10121d] flex flex-col">
+          {/* Left: Explorer View or Project List */}
+          {viewMode === "explorer" ? (
+            <div className="w-80 border-r border-[var(--forge-border)] h-full">
+              <IdeExplorerSidebarView />
+            </div>
+          ) : (
+            <div className="w-80 border-r border-[var(--forge-border)] bg-[#10121d] flex flex-col">
             {/* Search and Filters */}
             <div className="p-3 border-b border-[var(--forge-border)] space-y-2">
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--forge-input)] border border-[var(--forge-border)]">
@@ -151,6 +186,7 @@ export function ProjectDashboardModal() {
               })}
             </div>
           </div>
+        )}
 
           {/* Right: Project Details & Runner */}
           {selected ? (

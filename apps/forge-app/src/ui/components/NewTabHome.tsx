@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Sparkles,
   Clock,
+  Boxes,
+  Newspaper,
 } from "lucide-react";
 import {
   normalizeUrl,
@@ -21,6 +23,7 @@ import { SearchEngineDropdown } from "./SearchEngineDropdown";
 import { useWallpaperStore } from "../../core/wallpaper/useWallpaperStore";
 import { WallpaperModal } from "./newtab/WallpaperModal";
 import { DevNewsFeed } from "./newtab/DevNewsFeed";
+import { DevIdeExtensionsFeed } from "./newtab/DevIdeExtensionsFeed";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -52,6 +55,20 @@ export function NewTabHome({ onNavigate }: Props) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
+  const [activeFeedTab, setActiveFeedTab] = useState<"news" | "extensions">(() => {
+    try {
+      const saved = localStorage.getItem("forge_newtab_active_feed_v2");
+      if (saved === "extensions" || saved === "news") return saved;
+    } catch {}
+    return "extensions"; // Default to Extensions so the user immediately sees the requested IDE extensions feed
+  });
+
+  const switchFeedTab = (tab: "news" | "extensions") => {
+    setActiveFeedTab(tab);
+    try {
+      localStorage.setItem("forge_newtab_active_feed_v2", tab);
+    } catch {}
+  };
   const [currentTime, setCurrentTime] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [greeting, setGreeting] = useState("Developer");
@@ -257,10 +274,66 @@ export function NewTabHome({ onNavigate }: Props) {
           </div>
         </div>
 
-        {/* ================= DEVELOPER NEWS FEED SECTION ================= */}
-        <div className="w-full rounded-xl bg-[var(--forge-surface)]/45 border border-[var(--forge-border)]/70 backdrop-blur-md shadow-lg overflow-hidden" style={{ borderTop: '2px solid rgba(255,107,0,0.25)' }}>
+        {/* ================= CONTENT FEED: DEVELOPER PULSE & IDE EXTENSIONS ================= */}
+        <div
+          className="w-full rounded-2xl bg-[var(--forge-surface)]/55 border border-[var(--forge-border)]/70 backdrop-blur-md shadow-xl overflow-hidden transition-all"
+          style={{
+            borderTop: activeFeedTab === "news" ? "2px solid rgba(255,107,0,0.5)" : "2px solid rgba(59,130,246,0.6)",
+          }}
+        >
+          {/* Magazine Section Header & Switcher */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-[var(--forge-border)]/60 bg-[var(--forge-surface-elevated)]/30">
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[var(--forge-input)] border border-[var(--forge-border)]/60">
+              <button
+                type="button"
+                onClick={() => switchFeedTab("extensions")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeFeedTab === "extensions"
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                    : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
+                }`}
+              >
+                <Boxes size={14} />
+                <span>Developer & IDE Extensions</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-white/20 text-white font-semibold">
+                  VS Code Marketplace
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchFeedTab("news")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeFeedTab === "news"
+                    ? "bg-[#FF6B00] text-white shadow-md shadow-[#FF6B00]/25"
+                    : "text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)]"
+                }`}
+              >
+                <Newspaper size={14} />
+                <span>Developer Pulse</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              </button>
+            </div>
+
+            <div className="text-[11px] text-[var(--forge-text-muted)] font-mono hidden md:flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              <span>
+                {activeFeedTab === "news"
+                  ? "Live Developer Intelligence & CVE Alerts"
+                  : "VS Code Marketplace Extensions & Workspace Tools"}
+              </span>
+            </div>
+          </div>
+
           <div className="p-5 md:p-6">
-            <DevNewsFeed onNavigate={onNavigate} />
+            {activeFeedTab === "news" ? (
+              <DevNewsFeed onNavigate={onNavigate} />
+            ) : (
+              <DevIdeExtensionsFeed
+                onNavigate={onNavigate}
+                onSwitchToNews={() => switchFeedTab("news")}
+              />
+            )}
           </div>
         </div>
 

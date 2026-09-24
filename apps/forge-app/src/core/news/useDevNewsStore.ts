@@ -176,8 +176,8 @@ interface DevNewsState {
   getFilteredItems: () => DevNewsItem[];
 }
 
-const STORAGE_CACHE_KEY = "forge_dev_news_cache_v1";
-const STORAGE_TIMESTAMP_KEY = "forge_dev_news_timestamp_v1";
+const STORAGE_CACHE_KEY = "forge_dev_news_cache_v2";
+const STORAGE_TIMESTAMP_KEY = "forge_dev_news_timestamp_v2";
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -195,12 +195,23 @@ export const useDevNewsStore = create<DevNewsState>((set, get) => {
 
   if (typeof window !== "undefined") {
     try {
+      // Purge old v1 cache that lacked image URLs
+      localStorage.removeItem("forge_dev_news_cache_v1");
+      localStorage.removeItem("forge_dev_news_timestamp_v1");
+
       const cached = localStorage.getItem(STORAGE_CACHE_KEY);
       const ts = localStorage.getItem(STORAGE_TIMESTAMP_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          initialItems = parsed;
+          const curatedMap = new Map(CURATED_DEV_NEWS.map((c) => [c.id, c]));
+          initialItems = parsed.map((item: DevNewsItem) => {
+            const match = curatedMap.get(item.id);
+            return {
+              ...item,
+              imageUrl: item.imageUrl || match?.imageUrl,
+            };
+          });
         }
       }
       if (ts) {

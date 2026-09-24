@@ -23,6 +23,8 @@ import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { useIdeExtensionsStore } from "../../core/extensions/useIdeExtensionsStore";
 import { FavoritesView } from "./FavoritesView";
+import { IdeExtensionsSidebarView } from "./IdeExtensionsSidebarView";
+import { IdeExplorerSidebarView } from "./IdeExplorerSidebarView";
 
 interface SidebarProps {
   onNavigate: (url: string) => void;
@@ -30,7 +32,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<"favorites" | "history">("favorites");
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"explorer" | "extensions" | "favorites" | "history">("explorer");
 
   const { setDashboardOpen, runningProcesses } = useProjectsStore();
   const { setManagerOpen, extensions } = useExtensionsStore();
@@ -124,10 +126,20 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="w-6 border-t border-[var(--forge-border)] my-1.5" />
 
         <button
-          onClick={() => setDashboardOpen(true)}
-          title={`Developer Projects Launcher (${activeProcessesCount} active)`}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
+          onClick={() => {
+            setActiveSidebarTab("explorer");
+            setExpanded(true);
+          }}
+          title={`Explorer & Developer Projects (${activeProcessesCount} active)`}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
+            activeSidebarTab === "explorer"
+              ? "text-[#FF6B00] bg-[#FF6B00]/10"
+              : "text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)]"
+          }`}
         >
+          {activeSidebarTab === "explorer" && (
+            <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#FF6B00] rounded-r-full" />
+          )}
           <FolderGit2 size={15} />
           {activeProcessesCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -135,10 +147,20 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </button>
 
         <button
-          onClick={() => setIdeModalOpen(true)}
-          title={`IDE Extensions — marketplace.visualstudio.com (${enabledIdeCount} active)`}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-blue-400 hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
+          onClick={() => {
+            setActiveSidebarTab("extensions");
+            setExpanded(true);
+          }}
+          title={`IDE Extensions — Open VSX & Marketplace (${enabledIdeCount} active)`}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
+            activeSidebarTab === "extensions"
+              ? "text-blue-400 bg-blue-500/10"
+              : "text-[var(--forge-text-muted)] hover:text-blue-400 hover:bg-[var(--forge-hover)]"
+          }`}
         >
+          {activeSidebarTab === "extensions" && (
+            <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-blue-500 rounded-r-full" />
+          )}
           <Boxes size={15} />
           {enabledIdeCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-xs">
@@ -195,13 +217,38 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   // Expanded sidebar
   return (
-    <div className="w-64 bg-[var(--forge-surface)] flex flex-col overflow-hidden shrink-0 transition-all select-none shadow-xl" style={{ borderRight: '1px solid var(--forge-border)' }}>
+    <div className={`${activeSidebarTab === "explorer" || activeSidebarTab === "extensions" ? "w-80" : "w-64"} bg-[var(--forge-surface)] flex flex-col overflow-hidden shrink-0 transition-all select-none shadow-xl`} style={{ borderRight: '1px solid var(--forge-border)' }}>
       {/* Header: tabs & collapse button */}
-      <div className="px-2.5 py-1.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--forge-border)' }}>
-        <div className="flex items-center gap-0">
+      <div className="px-2 py-1 flex items-center justify-between" style={{ borderBottom: '1px solid var(--forge-border)' }}>
+        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setActiveSidebarTab("explorer")}
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
+              activeSidebarTab === "explorer"
+                ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
+                : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+            }`}
+          >
+            <FolderGit2 size={11} />
+            Explorer
+          </button>
+          <button
+            onClick={() => setActiveSidebarTab("extensions")}
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
+              activeSidebarTab === "extensions"
+                ? "border-blue-500 text-blue-400 font-semibold"
+                : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+            }`}
+          >
+            <Boxes size={11} />
+            Extensions
+            <span className="px-1 rounded-full bg-blue-500/20 text-blue-400 text-[9px] font-mono">
+              {ideExtensions.filter((e) => e.installed).length}
+            </span>
+          </button>
           <button
             onClick={() => setActiveSidebarTab("favorites")}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
               activeSidebarTab === "favorites"
                 ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
                 : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
@@ -212,7 +259,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           </button>
           <button
             onClick={() => setActiveSidebarTab("history")}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
               activeSidebarTab === "history"
                 ? "border-[#FF6B00] text-[var(--forge-text)] font-semibold"
                 : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
@@ -226,15 +273,19 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <button
           onClick={() => setExpanded(false)}
           title="Collapse sidebar"
-          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-all cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:bg-[var(--forge-hover)] transition-all cursor-pointer shrink-0 ml-1"
         >
           <PanelLeftClose size={14} />
         </button>
       </div>
 
-      {/* Body: Favorites View or History */}
+      {/* Body: Explorer, Extensions, Favorites View, or History */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {activeSidebarTab === "favorites" ? (
+        {activeSidebarTab === "explorer" ? (
+          <IdeExplorerSidebarView onNavigate={handleClick} onOpenModal={() => setDashboardOpen(true)} />
+        ) : activeSidebarTab === "extensions" ? (
+          <IdeExtensionsSidebarView onOpenModal={() => setIdeModalOpen(true)} />
+        ) : activeSidebarTab === "favorites" ? (
           <FavoritesView onNavigate={handleClick} />
         ) : (
           <div className="flex-1 overflow-y-auto scrollbar-thin p-1">
@@ -343,24 +394,38 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </div>
         <div className="grid grid-cols-4 gap-1">
           <button
-            onClick={() => setDashboardOpen(true)}
-            title="Projects Launcher"
-            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00] transition-all cursor-pointer relative shadow-sm"
+            onClick={() => {
+              setActiveSidebarTab("explorer");
+              setExpanded(true);
+            }}
+            title="Explorer & Projects"
+            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all cursor-pointer relative shadow-sm ${
+              activeSidebarTab === "explorer"
+                ? "bg-[#FF6B00]/15 text-[#FF6B00]"
+                : "bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00]"
+            }`}
           >
             <FolderGit2 size={13} />
-            <span className="text-[9px] font-medium">Projects</span>
+            <span className="text-[9px] font-medium">Explorer</span>
             {activeProcessesCount > 0 && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
             )}
           </button>
 
           <button
-            onClick={() => setIdeModalOpen(true)}
+            onClick={() => {
+              setActiveSidebarTab("extensions");
+              setExpanded(true);
+            }}
             title="VS Code Marketplace IDE Extensions"
-            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-blue-400 transition-all cursor-pointer relative shadow-sm"
+            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all cursor-pointer relative shadow-sm ${
+              activeSidebarTab === "extensions"
+                ? "bg-blue-500/15 text-blue-400"
+                : "bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-blue-400"
+            }`}
           >
             <Boxes size={13} />
-            <span className="text-[9px] font-medium">VS Code</span>
+            <span className="text-[9px] font-medium">Extensions</span>
             {enabledIdeCount > 0 && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full" />
             )}

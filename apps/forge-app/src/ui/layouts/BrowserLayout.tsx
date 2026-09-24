@@ -25,7 +25,6 @@ import { ProjectDashboardModal } from "../components/ProjectDashboardModal";
 import { ExtensionsManagerModal } from "../components/ExtensionsManagerModal";
 import { IdeExtensionsModal } from "../components/IdeExtensionsModal";
 import { FocusPlayerModal } from "../components/FocusPlayerModal";
-import { ForgeAnvilLoader } from "../components/ForgeAnvilLoader";
 import { useCompatStore } from "../../core/compat/useCompatStore";
 import { Minimize2, ArrowLeftRight, X as CloseIcon } from "lucide-react";
 
@@ -51,27 +50,6 @@ export function BrowserLayout() {
   const [showExitHint, setShowExitHint] = useState(false);
   const exitHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [showStartupSplash, setShowStartupSplash] = useState(() => {
-    try {
-      return !sessionStorage.getItem("forge:splash-shown");
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    if (showStartupSplash) {
-      try {
-        sessionStorage.setItem("forge:splash-shown", "true");
-      } catch {}
-    }
-  }, [showStartupSplash]);
-
-  useEffect(() => {
-    const handleShowSplash = () => setShowStartupSplash(true);
-    window.addEventListener("forge:show-anvil-loader", handleShowSplash);
-    return () => window.removeEventListener("forge:show-anvil-loader", handleShowSplash);
-  }, []);
 
   // Synchronize session on window unload to prevent tab loss on quit/restart
   useEffect(() => {
@@ -1484,14 +1462,7 @@ export function BrowserLayout() {
       {/* Focus Sound Environment Player Modal (Section 9) */}
       <FocusPlayerModal />
 
-      {/* Visuals & Branding Anvil Particle Loader (Section 13) */}
-      {showStartupSplash && (
-        <ForgeAnvilLoader
-          fullScreen={true}
-          autoDismissMs={2200}
-          onFinish={() => setShowStartupSplash(false)}
-        />
-      )}
+
     </div>
   );
 }

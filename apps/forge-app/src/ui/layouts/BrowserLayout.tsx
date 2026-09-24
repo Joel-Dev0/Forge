@@ -1236,9 +1236,32 @@ export function BrowserLayout() {
     useNavigationStore.getState().setUrlBarValue(cleanUrl);
   };
 
-  const handleBack    = () => activeWebview()?.goBack();
-  const handleForward = () => activeWebview()?.goForward();
-  const handleReload  = () => activeWebview()?.reload();
+  const handleBack = () => {
+    const wv = activeWebview();
+    if (wv && typeof wv.canGoBack === "function" && wv.canGoBack()) {
+      wv.goBack();
+    } else if (window.history.length > 1) {
+      window.history.back();
+    }
+  };
+
+  const handleForward = () => {
+    const wv = activeWebview();
+    if (wv && typeof wv.canGoForward === "function" && wv.canGoForward()) {
+      wv.goForward();
+    } else {
+      window.history.forward();
+    }
+  };
+
+  const handleReload = () => {
+    const wv = activeWebview();
+    if (wv && typeof wv.reload === "function") {
+      wv.reload();
+    } else {
+      window.location.reload();
+    }
+  };
 
   return (
     <div
@@ -1621,15 +1644,7 @@ export function BrowserLayout() {
             }
           }}
           onDownloadUrl={(url) => {
-            const forge = (window as any).forge;
-            if (forge?.downloads?.start) {
-              forge.downloads.start(url);
-            } else {
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "";
-              a.click();
-            }
+            useDownloadsStore.getState().startDownload(url);
             triggerToast("Download started");
           }}
           onUndo={() => {

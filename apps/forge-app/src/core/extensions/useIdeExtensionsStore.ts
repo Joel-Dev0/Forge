@@ -321,6 +321,71 @@ export const DEFAULT_IDE_EXTENSIONS: IdeExtension[] = [
     enabled: false,
     iconSvg: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#1C1817"/><circle cx="12" cy="12" r="8" stroke="#DEA584" stroke-width="2"/><path d="M12 8V16M8 12H16" stroke="#DEA584" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="#CE412B"/></svg>`,
   },
+  {
+    id: "ritwickdey.liveserver",
+    name: "Live Server",
+    publisher: "Ritwick Dey",
+    version: "5.7.9",
+    description: "Launch a development local Server with live reload feature for static & dynamic pages.",
+    tagline: "Launch a local development server with live reload",
+    category: "tools",
+    badge: "Popular Web",
+    featured: true,
+    rating: 5,
+    downloads: "48.2M",
+    marketplaceUrl: "https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer",
+    installed: false,
+    enabled: false,
+    iconSvg: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#581C87"/><path d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20C16.42 20 20 16.42 20 12C20 7.58 16.42 4 12 4ZM10 16.5V7.5L16 12L10 16.5Z" fill="#F3E8FF"/><circle cx="12" cy="12" r="7" stroke="#C084FC" stroke-width="1.5"/></svg>`,
+  },
+  {
+    id: "ms-vsliveshare.vsliveshare",
+    name: "Live Share",
+    publisher: "Microsoft",
+    version: "1.0.5941",
+    description: "Real-time collaborative development from the comfort of your favorite tools.",
+    tagline: "Real-time collaborative development and pair programming",
+    category: "tools",
+    badge: "Collaboration",
+    rating: 4.8,
+    downloads: "19.4M",
+    marketplaceUrl: "https://marketplace.visualstudio.com/items?itemName=MS-vsliveshare.vsliveshare",
+    installed: false,
+    enabled: false,
+    iconSvg: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0E2E5C"/><circle cx="9" cy="9" r="3.5" fill="#38BDF8"/><circle cx="15" cy="15" r="3.5" fill="#0284C7"/><path d="M9 13.5C6.5 13.5 4.5 15.5 4.5 17.5V19H13.5V17.5C13.5 15.5 11.5 13.5 9 13.5Z" fill="#38BDF8"/><path d="M15 11C16.5 11 17.5 12 17.5 13.5V15H19.5V13.5C19.5 12 18 11 16.5 10.5" stroke="#38BDF8" stroke-width="1.2"/></svg>`,
+  },
+  {
+    id: "glenn2223.live-sass",
+    name: "Live Sass Compiler",
+    publisher: "Glenn Marks",
+    version: "6.1.5",
+    description: "Compile Sass or Scss to CSS at realtime with live browser reload.",
+    tagline: "Realtime Sass / SCSS to CSS compiler with live reload",
+    category: "tools",
+    badge: "CSS Tool",
+    rating: 4.8,
+    downloads: "6.8M",
+    marketplaceUrl: "https://marketplace.visualstudio.com/items?itemName=glenn2223.live-sass",
+    installed: false,
+    enabled: false,
+    iconSvg: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#CF649A"/><path d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20C16.42 20 20 16.42 20 12C20 7.58 16.42 4 12 4Z" fill="#BF4080"/><text x="12" y="16" font-size="10" font-weight="900" fill="#FFFFFF" text-anchor="middle" font-family="sans-serif">S</text></svg>`,
+  },
+  {
+    id: "ms-vscode.live-server",
+    name: "Live Preview",
+    publisher: "Microsoft",
+    version: "0.4.15",
+    description: "Hosts a local server in your workspace for you to preview your web pages.",
+    tagline: "Embedded web server & live preview browser in your editor",
+    category: "tools",
+    badge: "Microsoft",
+    rating: 4.7,
+    downloads: "3.5M",
+    marketplaceUrl: "https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server",
+    installed: false,
+    enabled: false,
+    iconSvg: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M5 8C5 6.5 6.5 5 8 5H16C17.5 5 19 6.5 19 8V16C19 17.5 17.5 19 16 19H8C6.5 19 5 17.5 5 16V8Z" fill="#005BA1"/><polygon points="10,9 16,12 10,15" fill="#FFFFFF"/></svg>`,
+  },
 ];
 
 const STORAGE_KEY = "forge_ide_extensions_v3";
@@ -512,7 +577,7 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
     const q = query.toLowerCase().trim();
     if (!q) return get().extensions;
 
-    // Filter local list first
+    // 1. Gather all local matching extensions
     const localMatches = get().extensions.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
@@ -520,6 +585,56 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
         e.description.toLowerCase().includes(q) ||
         e.id.toLowerCase().includes(q)
     );
+
+    // 2. Query Open VSX API with 4s timeout
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`https://open-vsx.org/api/-/search?query=${encodeURIComponent(q)}&size=20`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        const existingIds = new Set(localMatches.map((e) => e.id.toLowerCase()));
+        const apiExtensions: IdeExtension[] = (data.extensions || [])
+          .filter((item: any) => !existingIds.has(`${item.namespace}.${item.name}`.toLowerCase()))
+          .map((item: any) => {
+            const extId = `${item.namespace}.${item.name}`;
+            const iconUrl = item.files?.icon;
+            const dlCount = item.downloadCount
+              ? item.downloadCount > 1000000
+                ? `${(item.downloadCount / 1000000).toFixed(1)}M`
+                : item.downloadCount > 1000
+                ? `${Math.round(item.downloadCount / 1000)}K`
+                : `${item.downloadCount}`
+              : "5K+";
+
+            return {
+              id: extId,
+              name: item.displayName || item.name,
+              publisher: item.namespace,
+              version: item.version || "1.0.0",
+              description: item.description || `Open VSX extension ${extId}`,
+              tagline: item.description || "",
+              category: "tools" as const,
+              rating: item.averageRating ? Math.round(item.averageRating * 10) / 10 : 4.8,
+              downloads: dlCount,
+              marketplaceUrl: item.url || `https://open-vsx.org/extension/${item.namespace}/${item.name}`,
+              iconSvg: iconUrl
+                ? `<img src="${iconUrl}" alt="${item.displayName || item.name}" class="w-full h-full object-contain" />`
+                : `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M12 4L19 8V16L12 20L5 16V8L12 4Z" fill="#FFFFFF"/></svg>`,
+              installed: false,
+              enabled: false,
+            };
+          });
+
+        return [...localMatches, ...apiExtensions];
+      }
+    } catch (err) {
+      console.warn("[IdeExtensions] Online search fallback to local catalog:", err);
+    }
 
     return localMatches;
   },

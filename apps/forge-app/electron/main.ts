@@ -349,6 +349,18 @@ function createWindow(isIncognito = false) {
     win.webContents.setMaxListeners(50);
   } catch {}
 
+  // Safeguard: The main app window must NEVER navigate away from the Forge UI shell!
+  win.webContents.on("will-navigate", (event, navUrl) => {
+    const isAppShell =
+      navUrl.startsWith("http://localhost:5173") ||
+      navUrl.startsWith("file://") ||
+      Boolean(process.env.VITE_DEV_SERVER_URL && navUrl.startsWith(process.env.VITE_DEV_SERVER_URL));
+    if (!isAppShell) {
+      event.preventDefault();
+      win.webContents.send("tabs:open-tab", { url: navUrl });
+    }
+  });
+
   win.webContents.on("will-attach-webview", (_event, webPreferences) => {
     webPreferences.nodeIntegrationInSubFrames = true;
   });
@@ -785,6 +797,21 @@ ipcMain.handle("browser:inspect-element", (_event, { contentsId, x, y }: { conte
 
 ipcMain.on("window:open-private", () => {
   createWindow(true);
+});
+
+ipcMain.handle("downloads:start", (event, { url, filename }: { url: string; filename?: string }) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win && !win.isDestroyed()) {
+      win.webContents.downloadURL(url);
+      return { ok: true };
+    }
+    session.defaultSession.downloadURL(url);
+    return { ok: true };
+  } catch (err: any) {
+    console.error("[Main] Error starting download for:", url, err);
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.handle("downloads:get-recent", () => recentDownloads);

@@ -13,6 +13,7 @@ import { FocusPlayerMiniWidget } from "./FocusPlayerMiniWidget";
 import { SplitViewButton } from "./SplitViewButton";
 import { SessionBadgeButton } from "./SessionBadgeButton";
 import { WebStoreExtensionsButton } from "./WebStoreExtensionsButton";
+import { DownloadsToolbarButton } from "./DownloadsToolbarButton";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -245,6 +246,9 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
 
       {/* Chrome Web Store Extensions Menu & Pinned Icons */}
       <WebStoreExtensionsButton onNavigate={onNavigate} />
+
+      {/* Downloads Hub with Live Progress Animation & Flyout */}
+      <DownloadsToolbarButton />
 
       {/* Forge Secure Network Button */}
       <SecureNetworkButton />

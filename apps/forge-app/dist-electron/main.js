@@ -5472,6 +5472,13 @@ function createWindow(isIncognito = false) {
     win.webContents.setMaxListeners(50);
   } catch {
   }
+  win.webContents.on("will-navigate", (event, navUrl) => {
+    const isAppShell = navUrl.startsWith("http://localhost:5173") || navUrl.startsWith("file://") || Boolean(process.env.VITE_DEV_SERVER_URL && navUrl.startsWith(process.env.VITE_DEV_SERVER_URL));
+    if (!isAppShell) {
+      event.preventDefault();
+      win.webContents.send("tabs:open-tab", { url: navUrl });
+    }
+  });
   win.webContents.on("will-attach-webview", (_event, webPreferences) => {
     webPreferences.nodeIntegrationInSubFrames = true;
   });
@@ -5842,6 +5849,20 @@ ipcMain8.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
 });
 ipcMain8.on("window:open-private", () => {
   createWindow(true);
+});
+ipcMain8.handle("downloads:start", (event, { url, filename }) => {
+  try {
+    const win = BrowserWindow5.fromWebContents(event.sender) || mainWindow;
+    if (win && !win.isDestroyed()) {
+      win.webContents.downloadURL(url);
+      return { ok: true };
+    }
+    session8.defaultSession.downloadURL(url);
+    return { ok: true };
+  } catch (err) {
+    console.error("[Main] Error starting download for:", url, err);
+    return { ok: false, error: err.message };
+  }
 });
 ipcMain8.handle("downloads:get-recent", () => recentDownloads);
 ipcMain8.handle("downloads:clear-history", () => {

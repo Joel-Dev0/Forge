@@ -62,6 +62,7 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     setMuted: (contentsId, isMuted) => import_electron.ipcRenderer.invoke("tabs:set-muted", { contentsId, isMuted })
   },
   downloads: {
+    start: (url, filename) => import_electron.ipcRenderer.invoke("downloads:start", { url, filename }),
     getRecent: () => import_electron.ipcRenderer.invoke("downloads:get-recent"),
     clearHistory: () => import_electron.ipcRenderer.invoke("downloads:clear-history"),
     openFolder: () => import_electron.ipcRenderer.invoke("downloads:open-folder"),

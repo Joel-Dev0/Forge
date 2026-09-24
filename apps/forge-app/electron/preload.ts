@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("forge", {
       ipcRenderer.invoke("tabs:set-muted", { contentsId, isMuted }),
   },
   downloads: {
+    start: (url: string, filename?: string) => ipcRenderer.invoke("downloads:start", { url, filename }),
     getRecent: () => ipcRenderer.invoke("downloads:get-recent"),
     clearHistory: () => ipcRenderer.invoke("downloads:clear-history"),
     openFolder: () => ipcRenderer.invoke("downloads:open-folder"),

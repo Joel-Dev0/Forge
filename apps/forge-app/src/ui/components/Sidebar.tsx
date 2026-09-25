@@ -14,6 +14,7 @@ import {
   Puzzle,
   Disc3,
   Boxes,
+  StickyNote,
 } from "lucide-react";
 import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
@@ -22,9 +23,11 @@ import { useProjectsStore } from "../../core/projects/useProjectsStore";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { useIdeExtensionsStore } from "../../core/extensions/useIdeExtensionsStore";
+import { useBlockNotesStore } from "../../core/notes/useBlockNotesStore";
 import { FavoritesView } from "./FavoritesView";
 import { IdeExtensionsSidebarView } from "./IdeExtensionsSidebarView";
 import { IdeExplorerSidebarView } from "./IdeExplorerSidebarView";
+import { BlockNotesSidebarView } from "./notes/BlockNotesSidebarView";
 
 interface SidebarProps {
   onNavigate: (url: string) => void;
@@ -32,7 +35,10 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<"explorer" | "extensions" | "favorites" | "history">("explorer");
+  const [activeSidebarTab, setActiveSidebarTab] = useState<"explorer" | "extensions" | "favorites" | "history" | "notes">("explorer");
+
+  const { notes, memoryCards, checklists, setModalOpen: setBlockNotesModalOpen } = useBlockNotesStore();
+  const totalNotesCount = notes.length + memoryCards.length;
 
   const { setDashboardOpen, runningProcesses } = useProjectsStore();
   const { setManagerOpen, extensions } = useExtensionsStore();
@@ -121,6 +127,30 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#FF6B00] rounded-r-full" />
           )}
           <Clock size={15} />
+        </button>
+
+        {/* Block Notes & Mind Palace */}
+        <button
+          onClick={() => {
+            setActiveSidebarTab("notes");
+            setExpanded(true);
+          }}
+          title={`Block Notes & Mind Palace (${totalNotesCount} notes & cards)`}
+          className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
+            activeSidebarTab === "notes"
+              ? "text-amber-400 bg-amber-500/10"
+              : "text-[var(--forge-text-muted)] hover:text-amber-400 hover:bg-[var(--forge-hover)]"
+          }`}
+        >
+          {activeSidebarTab === "notes" && (
+            <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-amber-500 rounded-r-full" />
+          )}
+          <StickyNote size={15} />
+          {totalNotesCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 text-black text-[8px] font-bold rounded-full flex items-center justify-center">
+              {totalNotesCount}
+            </span>
+          )}
         </button>
 
         <div className="w-6 border-t border-[var(--forge-border)] my-1.5" />
@@ -247,6 +277,20 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             </span>
           </button>
           <button
+            onClick={() => setActiveSidebarTab("notes")}
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
+              activeSidebarTab === "notes"
+                ? "border-amber-500 text-amber-400 font-semibold"
+                : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+            }`}
+          >
+            <StickyNote size={11} />
+            Notes
+            <span className="px-1 rounded-full bg-amber-500/20 text-amber-400 text-[9px] font-mono">
+              {totalNotesCount}
+            </span>
+          </button>
+          <button
             onClick={() => setActiveSidebarTab("favorites")}
             className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all cursor-pointer border-b-2 ${
               activeSidebarTab === "favorites"
@@ -279,12 +323,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </button>
       </div>
 
-      {/* Body: Explorer, Extensions, Favorites View, or History */}
+      {/* Body: Explorer, Extensions, Notes, Favorites View, or History */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {activeSidebarTab === "explorer" ? (
           <IdeExplorerSidebarView onNavigate={handleClick} onOpenModal={() => setDashboardOpen(true)} />
         ) : activeSidebarTab === "extensions" ? (
           <IdeExtensionsSidebarView onOpenModal={() => setIdeModalOpen(true)} />
+        ) : activeSidebarTab === "notes" ? (
+          <BlockNotesSidebarView onOpenFullModal={() => setBlockNotesModalOpen(true)} />
         ) : activeSidebarTab === "favorites" ? (
           <FavoritesView onNavigate={handleClick} />
         ) : (

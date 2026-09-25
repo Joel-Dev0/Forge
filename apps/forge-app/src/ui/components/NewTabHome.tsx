@@ -114,37 +114,41 @@ export function NewTabHome({ onNavigate }: Props) {
   const blurValue = config.blurPx ?? 0;
 
   return (
-    <div className="w-full h-full relative flex flex-col items-center bg-[var(--forge-bg)] text-[var(--forge-text)] select-none overflow-y-auto overflow-x-hidden">
-      {/* ================= WALLPAPER BACKGROUND LAYER ================= */}
-      {activeUrl ? (
-        <div
-          className="fixed inset-0 z-0 bg-cover bg-center transition-all duration-700 pointer-events-none"
-          style={{
-            backgroundImage: `url("${activeUrl}")`,
-            filter: blurValue > 0 ? `blur(${blurValue}px)` : "none",
-            transform: blurValue > 0 ? "scale(1.04)" : "none", // Prevent edge bleeding when blurred
-          }}
-        />
-      ) : (
-        /* Signature Forge Ember ambient glow when no wallpaper image is set */
-        <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[350px] bg-[#FF6B00]/12 rounded-full blur-[140px]" />
-          <div className="absolute top-2/3 left-1/3 w-[450px] h-[300px] bg-amber-500/8 rounded-full blur-[120px]" />
-        </div>
-      )}
+    <div className="w-full h-full relative overflow-hidden select-none bg-[var(--forge-bg)] text-[var(--forge-text)]">
+      {/* ================= WALLPAPER BACKGROUND LAYER (SCOPED TO TAB VIEWPORT) ================= */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        {activeUrl ? (
+          <div
+            className="w-full h-full bg-cover bg-center transition-all duration-700"
+            style={{
+              backgroundImage: `url("${activeUrl}")`,
+              filter: blurValue > 0 ? `blur(${blurValue}px)` : "none",
+              transform: blurValue > 0 ? "scale(1.04)" : "none", // Prevent edge bleeding when blurred
+            }}
+          />
+        ) : (
+          /* Signature Forge Ember ambient glow when no wallpaper image is set */
+          <div className="w-full h-full relative">
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[350px] bg-[#FF6B00]/12 rounded-full blur-[140px]" />
+            <div className="absolute top-2/3 left-1/3 w-[450px] h-[300px] bg-amber-500/8 rounded-full blur-[120px]" />
+          </div>
+        )}
 
-      {/* Dim / Darkness & Frost Overlay */}
-      {activeUrl && (
-        <div
-          className="fixed inset-0 z-0 pointer-events-none transition-colors duration-300"
-          style={{
-            backgroundColor: `rgba(13, 13, 13, ${dimAlpha})`,
-          }}
-        />
-      )}
+        {/* Dim / Darkness & Frost Overlay */}
+        {activeUrl && (
+          <div
+            className="absolute inset-0 transition-colors duration-300"
+            style={{
+              backgroundColor: `rgba(13, 13, 13, ${dimAlpha})`,
+            }}
+          />
+        )}
+      </div>
 
-      {/* ================= TOP BAR ================= */}
-      <div className="relative z-10 w-full max-w-5xl px-6 py-4 flex items-center justify-between">
+      {/* ================= SCROLLABLE DASHBOARD CONTENT ================= */}
+      <div className="w-full h-full relative z-10 overflow-y-auto overflow-x-hidden flex flex-col items-center">
+        {/* ================= TOP BAR ================= */}
+        <div className="relative z-10 w-full max-w-5xl px-6 py-4 flex items-center justify-between">
         {/* Left: Clock & Greeting */}
         <div className="flex items-center gap-3">
           <div className="px-3 py-1.5 rounded-lg bg-[var(--forge-surface)]/70 border border-[var(--forge-border)]/60 backdrop-blur-md flex items-center gap-2 shadow-sm">
@@ -354,6 +358,7 @@ export function NewTabHome({ onNavigate }: Props) {
             <span>Press Ctrl+T for New Tab • Ctrl+L for URL</span>
           </div>
         </div>
+      </div>
       </div>
 
       {/* ================= WALLPAPER CUSTOMIZER MODAL ================= */}

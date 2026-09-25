@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { SOCIAL_PLATFORMS, type FocusActionTier } from "./socialRulesets";
 import { playFocusAlarmSound } from "./focusAlarm";
+import { generateSeedSessions, toLocalDateString } from "./focusAnalytics";
 
 export interface FocusSchedule {
   id: string;
@@ -22,6 +23,17 @@ export interface FocusProfile {
   tiers: Record<string, FocusActionTier>; // platformId -> tier
 }
 
+export interface FocusSessionLog {
+  id: string;
+  dateStr: string; // "YYYY-MM-DD"
+  timestamp: number;
+  durationMinutes: number;
+  phase: "focus" | "break";
+  profileId: string;
+  category: "Development" | "Research" | "Checklist" | "Deep Work";
+  completed: boolean;
+}
+
 export interface FocusTimer {
   isRunning: boolean;
   remainingSeconds: number;
@@ -41,12 +53,14 @@ export interface FocusAlarmEvent {
 
 interface FocusState {
   isFocusModeActive: boolean;
+  manualOverrideOff: boolean;
   activeProfileId: string;
   timer: FocusTimer;
   profiles: Record<string, FocusProfile>;
   schedules: FocusSchedule[];
   isFocusModalOpen: boolean;
   lastAlarmTriggered: FocusAlarmEvent | null;
+  sessionLogs: FocusSessionLog[];
 
   setFocusModalOpen: (open: boolean) => void;
   toggleFocusMode: () => void;
@@ -54,7 +68,7 @@ interface FocusState {
   setActiveProfile: (profileId: string) => void;
   setPlatformTier: (profileId: string, platformId: string, tier: FocusActionTier) => void;
 
-  // Timer controls
+  // Timer controls & Custom Durations
   startTimer: (minutes?: number, mode?: "pomodoro" | "duration" | "indefinite") => void;
   pauseTimer: () => void;
   resumeTimer: () => void;
@@ -62,6 +76,13 @@ interface FocusState {
   tickTimer: () => void;
   dismissAlarm: () => void;
   toggleAlarmSound: () => void;
+  setCustomFocusDuration: (minutes: number) => void;
+  setCustomBreakDuration: (minutes: number) => void;
+  setTimerMode: (mode: "pomodoro" | "duration" | "indefinite") => void;
+
+  // Session analytics logging
+  logSession: (session: Omit<FocusSessionLog, "id" | "timestamp" | "dateStr">) => void;
+  clearSessionLogs: () => void;
 
   // Schedule management
   addSchedule: (schedule: Omit<FocusSchedule, "id">) => void;
@@ -75,7 +96,7 @@ interface FocusState {
   getTierForDomain: (domain: string) => FocusActionTier;
 }
 
-const STORAGE_KEY = "forge_focus_store_v1";
+const STORAGE_KEY = "forge_focus_store_v4";
 
 const DEFAULT_PROFILES: Record<string, FocusProfile> = {
   deep_work: {
@@ -145,6 +166,7 @@ function loadSavedFocusState(): {
   profiles: Record<string, FocusProfile>;
   schedules: FocusSchedule[];
   timerConfig: { focusDurationMinutes: number; breakDurationMinutes: number };
+  sessionLogs: FocusSessionLog[];
 } {
   try {
     if (typeof window === "undefined" || !window.localStorage) {
@@ -154,6 +176,7 @@ function loadSavedFocusState(): {
         profiles: DEFAULT_PROFILES,
         schedules: DEFAULT_SCHEDULES,
         timerConfig: { focusDurationMinutes: 25, breakDurationMinutes: 5 },
+        sessionLogs: generateSeedSessions(),
       };
     }
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -164,11 +187,12 @@ function loadSavedFocusState(): {
         profiles: DEFAULT_PROFILES,
         schedules: DEFAULT_SCHEDULES,
         timerConfig: { focusDurationMinutes: 25, breakDurationMinutes: 5 },
+        sessionLogs: generateSeedSessions(),
       };
     }
     const parsed = JSON.parse(raw);
     return {
-      isFocusModeActive: Boolean(parsed.isFocusModeActive),
+      isFocusModeActive: false,
       activeProfileId: parsed.activeProfileId || "deep_work",
       profiles: parsed.profiles || DEFAULT_PROFILES,
       schedules: Array.isArray(parsed.schedules) ? parsed.schedules : DEFAULT_SCHEDULES,
@@ -176,6 +200,9 @@ function loadSavedFocusState(): {
         focusDurationMinutes: parsed.timerConfig?.focusDurationMinutes || 25,
         breakDurationMinutes: parsed.timerConfig?.breakDurationMinutes || 5,
       },
+      sessionLogs: Array.isArray(parsed.sessionLogs) && parsed.sessionLogs.length > 0
+        ? parsed.sessionLogs
+        : generateSeedSessions(),
     };
   } catch {}
   return {
@@ -184,6 +211,7 @@ function loadSavedFocusState(): {
     profiles: DEFAULT_PROFILES,
     schedules: DEFAULT_SCHEDULES,
     timerConfig: { focusDurationMinutes: 25, breakDurationMinutes: 5 },
+    sessionLogs: generateSeedSessions(),
   };
 }
 
@@ -192,13 +220,21 @@ function persistFocusState(
   activeProfileId: string,
   profiles: Record<string, FocusProfile>,
   schedules: FocusSchedule[],
-  timerConfig: { focusDurationMinutes: number; breakDurationMinutes: number }
+  timerConfig: { focusDurationMinutes: number; breakDurationMinutes: number },
+  sessionLogs?: FocusSessionLog[]
 ) {
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ isFocusModeActive, activeProfileId, profiles, schedules, timerConfig })
+        JSON.stringify({
+          isFocusModeActive,
+          activeProfileId,
+          profiles,
+          schedules,
+          timerConfig,
+          sessionLogs: sessionLogs || useFocusStore.getState().sessionLogs,
+        })
       );
     }
     // Sync state to Electron main process
@@ -213,11 +249,51 @@ const initial = loadSavedFocusState();
 
 export const useFocusStore = create<FocusState>((set, get) => ({
   isFocusModeActive: initial.isFocusModeActive,
+  manualOverrideOff: false,
   activeProfileId: initial.activeProfileId,
   isFocusModalOpen: false,
   lastAlarmTriggered: null,
   profiles: initial.profiles,
   schedules: initial.schedules,
+  sessionLogs: initial.sessionLogs,
+
+  logSession(session) {
+    const dateStr = toLocalDateString(new Date());
+    const newLog: FocusSessionLog = {
+      ...session,
+      id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      dateStr,
+      timestamp: Date.now(),
+    };
+    const nextLogs = [newLog, ...get().sessionLogs];
+    set({ sessionLogs: nextLogs });
+    persistFocusState(
+      get().isFocusModeActive,
+      get().activeProfileId,
+      get().profiles,
+      get().schedules,
+      {
+        focusDurationMinutes: get().timer.focusDurationMinutes,
+        breakDurationMinutes: get().timer.breakDurationMinutes,
+      },
+      nextLogs
+    );
+  },
+
+  clearSessionLogs() {
+    set({ sessionLogs: [] });
+    persistFocusState(
+      get().isFocusModeActive,
+      get().activeProfileId,
+      get().profiles,
+      get().schedules,
+      {
+        focusDurationMinutes: get().timer.focusDurationMinutes,
+        breakDurationMinutes: get().timer.breakDurationMinutes,
+      },
+      []
+    );
+  },
 
   timer: {
     isRunning: false,
@@ -253,7 +329,25 @@ export const useFocusStore = create<FocusState>((set, get) => ({
   },
 
   setFocusMode(active) {
-    set({ isFocusModeActive: active });
+    if (!active) {
+      set((s) => ({
+        isFocusModeActive: false,
+        manualOverrideOff: true,
+        timer: {
+          ...s.timer,
+          isRunning: false,
+          remainingSeconds: s.timer.focusDurationMinutes * 60,
+          totalSeconds: s.timer.focusDurationMinutes * 60,
+          phase: "focus",
+        },
+      }));
+    } else {
+      set({
+        isFocusModeActive: true,
+        manualOverrideOff: false,
+      });
+    }
+
     const { activeProfileId, profiles, schedules, timer } = get();
     persistFocusState(active, activeProfileId, profiles, schedules, {
       focusDurationMinutes: timer.focusDurationMinutes,
@@ -262,17 +356,13 @@ export const useFocusStore = create<FocusState>((set, get) => ({
 
     // Orchestrate Focus Player
     try {
-      const player = (window as any).__forgeFocusPlayerStore || (import("./useFocusPlayerStore").then(m => {
+      import("./useFocusPlayerStore").then((m) => {
         if (active) {
           m.useFocusPlayerStore.getState().triggerProfileAutoPlay(activeProfileId);
         } else {
           m.useFocusPlayerStore.getState().pause();
         }
-      }));
-      if (player && player.getState) {
-        if (active) player.getState().triggerProfileAutoPlay(activeProfileId);
-        else player.getState().pause();
-      }
+      });
     } catch {}
   },
 
@@ -287,7 +377,7 @@ export const useFocusStore = create<FocusState>((set, get) => ({
 
     if (isFocusModeActive) {
       try {
-        import("./useFocusPlayerStore").then(m => {
+        import("./useFocusPlayerStore").then((m) => {
           m.useFocusPlayerStore.getState().triggerProfileAutoPlay(profileId);
         });
       } catch {}
@@ -321,6 +411,7 @@ export const useFocusStore = create<FocusState>((set, get) => ({
     const totalSec = durMinutes * 60;
     set((s) => ({
       isFocusModeActive: true,
+      manualOverrideOff: false,
       lastAlarmTriggered: null,
       timer: {
         ...s.timer,
@@ -329,12 +420,19 @@ export const useFocusStore = create<FocusState>((set, get) => ({
         totalSeconds: totalSec,
         phase: "focus",
         mode,
+        focusDurationMinutes: durMinutes,
       },
     }));
     persistFocusState(true, get().activeProfileId, get().profiles, get().schedules, {
-      focusDurationMinutes: get().timer.focusDurationMinutes,
+      focusDurationMinutes: durMinutes,
       breakDurationMinutes: get().timer.breakDurationMinutes,
     });
+
+    try {
+      import("./useFocusPlayerStore").then((m) => {
+        m.useFocusPlayerStore.getState().triggerProfileAutoPlay(get().activeProfileId);
+      });
+    } catch {}
   },
 
   pauseTimer() {
@@ -345,6 +443,8 @@ export const useFocusStore = create<FocusState>((set, get) => ({
 
   resumeTimer() {
     set((s) => ({
+      isFocusModeActive: true,
+      manualOverrideOff: false,
       timer: { ...s.timer, isRunning: true },
     }));
   },
@@ -352,6 +452,7 @@ export const useFocusStore = create<FocusState>((set, get) => ({
   stopTimer() {
     set((s) => ({
       isFocusModeActive: false,
+      manualOverrideOff: true,
       timer: {
         ...s.timer,
         isRunning: false,
@@ -364,6 +465,52 @@ export const useFocusStore = create<FocusState>((set, get) => ({
       focusDurationMinutes: get().timer.focusDurationMinutes,
       breakDurationMinutes: get().timer.breakDurationMinutes,
     });
+
+    try {
+      import("./useFocusPlayerStore").then((m) => {
+        m.useFocusPlayerStore.getState().pause();
+      });
+    } catch {}
+  },
+
+  setCustomFocusDuration(minutes: number) {
+    const clamped = Math.max(1, Math.min(360, Math.round(minutes)));
+    const totalSec = clamped * 60;
+    set((s) => ({
+      timer: {
+        ...s.timer,
+        focusDurationMinutes: clamped,
+        remainingSeconds: !s.timer.isRunning ? totalSec : s.timer.remainingSeconds,
+        totalSeconds: !s.timer.isRunning ? totalSec : s.timer.totalSeconds,
+      },
+    }));
+    persistFocusState(get().isFocusModeActive, get().activeProfileId, get().profiles, get().schedules, {
+      focusDurationMinutes: clamped,
+      breakDurationMinutes: get().timer.breakDurationMinutes,
+    });
+  },
+
+  setCustomBreakDuration(minutes: number) {
+    const clamped = Math.max(1, Math.min(60, Math.round(minutes)));
+    set((s) => ({
+      timer: {
+        ...s.timer,
+        breakDurationMinutes: clamped,
+      },
+    }));
+    persistFocusState(get().isFocusModeActive, get().activeProfileId, get().profiles, get().schedules, {
+      focusDurationMinutes: get().timer.focusDurationMinutes,
+      breakDurationMinutes: clamped,
+    });
+  },
+
+  setTimerMode(mode) {
+    set((s) => ({
+      timer: {
+        ...s.timer,
+        mode,
+      },
+    }));
   },
 
   tickTimer() {
@@ -390,6 +537,17 @@ export const useFocusStore = create<FocusState>((set, get) => ({
           message: alarmMessage,
         },
       });
+
+      // Log real session analytics
+      if (isFocus) {
+        get().logSession({
+          durationMinutes: timer.focusDurationMinutes,
+          phase: "focus",
+          profileId: get().activeProfileId,
+          category: "Deep Work",
+          completed: true,
+        });
+      }
 
       if (timer.mode === "pomodoro") {
         const nextPhase = isFocus ? "break" : "focus";
@@ -477,6 +635,9 @@ export const useFocusStore = create<FocusState>((set, get) => ({
   },
 
   checkAutomatedSchedules() {
+    // If the user explicitly turned off Focus Mode, never force it back on!
+    if (get().manualOverrideOff) return;
+
     const now = new Date();
     const day = now.getDay();
     const currentMins = now.getHours() * 60 + now.getMinutes();

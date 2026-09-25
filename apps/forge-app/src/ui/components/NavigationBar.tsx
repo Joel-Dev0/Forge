@@ -92,7 +92,7 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
 
   return (
     <div
-      className="h-9 bg-[var(--forge-surface)] flex items-center gap-2 px-2 shrink-0 transition-colors"
+      className="h-9 bg-[var(--forge-surface)] flex items-center gap-2 px-2 shrink-0 transition-colors titlebar-no-drag relative z-30"
       style={{ boxShadow: 'inset 0 -1px 0 var(--forge-border)' }}
     >
       {/* Back / Forward / Reload */}

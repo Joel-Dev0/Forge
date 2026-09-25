@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Briefcase,
   ChevronDown,
@@ -6,8 +6,11 @@ import {
   Trash2,
   Check,
   X,
+  Sparkles,
+  Pin,
 } from "lucide-react";
 import { useWorkspacesStore } from "../../core/workspaces/useWorkspacesStore";
+import { useBlockNotesStore } from "../../core/notes/useBlockNotesStore";
 
 export function WorkspaceSelector() {
   const [open, setOpen] = useState(false);
@@ -35,6 +38,15 @@ export function WorkspaceSelector() {
   } = useWorkspacesStore();
 
   const activeWs = getActiveWorkspace();
+
+  const {
+    memoryCards,
+    togglePinMemoryCard,
+    pinNewMemoryCard,
+    setModalOpen: setBlockNotesModalOpen,
+  } = useBlockNotesStore();
+
+  const pinnedCardsCount = memoryCards.filter((c) => c.isPinnedToScreen).length;
 
   // Close on outside click
   useEffect(() => {
@@ -250,19 +262,99 @@ export function WorkspaceSelector() {
             </div>
           )}
 
-          {/* Tab 3: Project Notes */}
+          {/* Tab 3: Project Notes & Pinned Memory Cards */}
           {activeTab === "notes" && (
-            <div className="p-2 flex flex-col gap-1.5">
-              <span className="text-[9px] uppercase font-bold text-[var(--forge-text-muted)]">
-                Scratchpad ({activeWs.name})
-              </span>
-              <textarea
-                value={activeWs.notes || ""}
-                onChange={(e) => setNotes(activeWs.id, e.target.value)}
-                placeholder="Write project links, credentials, or task notes..."
-                rows={5}
-                className="w-full bg-[var(--forge-input)] border border-[var(--forge-border)] p-2 rounded text-[10px] text-[var(--forge-text)] outline-none focus:border-[#FF6B00] resize-none font-mono"
-              />
+            <div className="p-2.5 flex flex-col gap-2.5">
+              {/* Scratchpad Section */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] uppercase font-bold text-[var(--forge-text-muted)] tracking-wider">
+                    Scratchpad ({activeWs.name})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      setBlockNotesModalOpen(true);
+                    }}
+                    className="px-2 py-0.5 rounded-md bg-[#FF4D2D]/15 text-[#FF4D2D] hover:bg-[#FF4D2D] hover:text-white transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles size={10} />
+                    <span>Open Mind Palace</span>
+                  </button>
+                </div>
+                <textarea
+                  value={activeWs.notes || ""}
+                  onChange={(e) => setNotes(activeWs.id, e.target.value)}
+                  placeholder="Write project links, credentials, or task notes..."
+                  rows={3}
+                  className="w-full bg-[var(--forge-input)] border border-[var(--forge-border)] p-2 rounded text-[10px] text-[var(--forge-text)] outline-none focus:border-[#FF6B00] resize-none font-mono"
+                />
+              </div>
+
+              {/* Screen Memory Cards Section */}
+              <div className="pt-2 border-t border-[var(--forge-border)] flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Pin size={11} className="text-[#FF6B00] rotate-45" />
+                    <span className="text-[9px] uppercase font-extrabold text-[var(--forge-text)] tracking-wider">
+                      Screen Memory Cards
+                    </span>
+                    {pinnedCardsCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#FF6B00]/20 text-[#FF6B00] text-[8px] font-mono font-bold">
+                        {pinnedCardsCount} pinned
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pinNewMemoryCard(`✨ Note: ${activeWs.name} task...`);
+                    }}
+                    className="px-2 py-0.5 rounded-md bg-[#FF6B00] hover:bg-[#FF8533] text-black font-extrabold text-[9px] flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+                    title="Pin a new sticky memory card anywhere on screen"
+                  >
+                    <Plus size={10} strokeWidth={3} />
+                    <span>Pin New</span>
+                  </button>
+                </div>
+
+                {/* Quick list of memory cards with Pin/Unpin action */}
+                <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto pr-0.5">
+                  {memoryCards.slice(0, 4).map((card) => {
+                    const isPinned = card.isPinnedToScreen;
+                    return (
+                      <div
+                        key={card.id}
+                        style={{ borderLeftColor: card.color }}
+                        className="flex items-center justify-between p-1.5 rounded bg-[var(--forge-input)] border border-[var(--forge-border)] border-l-4 text-[10px] gap-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-[var(--forge-text)] block truncate">
+                            {card.title || card.content.slice(0, 24)}
+                          </span>
+                          <span className="text-[8px] text-[var(--forge-text-muted)] truncate block">
+                            {card.content.slice(0, 36)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => togglePinMemoryCard(card.id)}
+                          className={`px-2 py-1 rounded text-[9px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                            isPinned
+                              ? "bg-[#FF6B00] text-black shadow-xs font-extrabold"
+                              : "bg-[var(--forge-surface)] text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] border border-[var(--forge-border)]"
+                          }`}
+                          title={isPinned ? "Unpin from screen" : "Pin to screen"}
+                        >
+                          <Pin size={9} className={isPinned ? "rotate-45" : ""} />
+                          <span>{isPinned ? "Pinned" : "Pin"}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>

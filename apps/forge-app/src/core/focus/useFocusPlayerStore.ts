@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import type { FocusPlaylist, FocusTrack, SoundProviderType } from "./focusPlayerTypes";
 import { type CuratedOnlineStation, stationToFocusTrack } from "./focusPresets";
+import {
+  saveLocalAudioBlob,
+  getLocalAudioUrl,
+  deleteLocalAudioBlob,
+  cacheOnlineAudioToLocal,
+} from "./focusAudioStorage";
 
 interface FocusPlayerState {
   isPlaying: boolean;
@@ -44,11 +50,32 @@ interface FocusPlayerState {
   removePlaylist: (playlistId: string) => void;
   addCuratedStation: (station: CuratedOnlineStation) => FocusTrack;
 
-  // Local Folder Importer
-  addFolderPlaylist: (name: string, folderPath: string, files: Array<{ name: string; url: string; size: number }>) => void;
+  // Local File & Folder Storage Management (IndexedDB Persistent)
+  addLocalTrack: (
+    file: File | Blob,
+    options?: {
+      title?: string;
+      artist?: string;
+      playlistId?: string;
+      category?: FocusTrack["category"];
+      fileName?: string;
+    }
+  ) => Promise<FocusTrack>;
+  addMultipleLocalTracks: (
+    files: Array<{ file: File; name?: string }>,
+    targetPlaylistId?: string,
+    playlistName?: string
+  ) => Promise<FocusTrack[]>;
+  addFolderPlaylist: (
+    name: string,
+    folderPath: string,
+    files: Array<{ name: string; url: string; size: number; rawFile?: File | Blob }>
+  ) => Promise<void>;
+  cacheTrackLocally: (playlistId: string, trackId: string) => Promise<boolean>;
+  hydrateLocalTracks: () => Promise<void>;
 }
 
-const STORAGE_KEY = "forge_focus_player_v2";
+const STORAGE_KEY = "forge_focus_player_v3";
 
 const DEFAULT_PLAYLISTS: FocusPlaylist[] = [
   {
@@ -343,13 +370,35 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     if (target.provider === "stream" || (target.provider === "local" && !target.sourceUrl.startsWith("synth://"))) {
       stopAmbientSynth();
       const audio = getOrCreateAudio();
-      if (audio.src !== target.sourceUrl) {
-        audio.src = target.sourceUrl;
-      }
-      audio.volume = effectiveVol;
-      audio.play().catch((err) => {
-        console.warn("[FocusPlayer] HTML5 audio playback notification:", err);
-      });
+
+      const prepareAndPlay = async () => {
+        let playSrc = target.sourceUrl;
+        if (target.storageKey) {
+          const fresh = await getLocalAudioUrl(target.storageKey);
+          if (fresh) {
+            playSrc = fresh;
+            if (target.sourceUrl !== fresh) {
+              set((s) => ({
+                currentTrack: { ...target, sourceUrl: fresh },
+                playlists: s.playlists.map((pl) => ({
+                  ...pl,
+                  tracks: pl.tracks.map((t) => (t.id === target.id ? { ...t, sourceUrl: fresh } : t)),
+                })),
+              }));
+            }
+          }
+        }
+
+        if (audio.src !== playSrc) {
+          audio.src = playSrc;
+        }
+        audio.volume = effectiveVol;
+        audio.play().catch((err) => {
+          console.warn("[FocusPlayer] HTML5 audio playback notification:", err);
+        });
+      };
+
+      prepareAndPlay();
     } else if (target.sourceUrl.startsWith("synth://") || target.sourceUrl.startsWith("ambient://")) {
       if (globalAudio) globalAudio.pause();
       startAmbientSynth(target.sourceUrl, effectiveVol);
@@ -572,6 +621,12 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   },
 
   removeTrack: (playlistId, trackId) => {
+    const pl = get().playlists.find((p) => p.id === playlistId);
+    const trk = pl?.tracks.find((t) => t.id === trackId);
+    if (trk?.storageKey) {
+      deleteLocalAudioBlob(trk.storageKey).catch(() => {});
+    }
+
     set((s) => {
       const updatedPlaylists = s.playlists.map((pl) => {
         if (pl.id === playlistId) {
@@ -589,6 +644,15 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   },
 
   removePlaylist: (playlistId) => {
+    const pl = get().playlists.find((p) => p.id === playlistId);
+    if (pl) {
+      for (const t of pl.tracks) {
+        if (t.storageKey) {
+          deleteLocalAudioBlob(t.storageKey).catch(() => {});
+        }
+      }
+    }
+
     set((s) => {
       const updated = s.playlists.filter((p) => p.id !== playlistId);
       const nextActiveId = updated[0]?.id || "playlist-online-curated";
@@ -597,16 +661,155 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     });
   },
 
-  addFolderPlaylist: (name, folderPath, files) => {
-    const tracks: FocusTrack[] = files.map((f, i) => ({
-      id: `local-track-${Date.now()}-${i}`,
-      title: f.name.replace(/\.[^/.]+$/, ""),
-      artist: "Local Storage",
+  addLocalTrack: async (file, options) => {
+    const trackId = `local-track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await saveLocalAudioBlob(trackId, file);
+    const freshUrl = (await getLocalAudioUrl(trackId)) || (file instanceof Blob ? URL.createObjectURL(file) : "");
+
+    const fileName = options?.fileName || (file instanceof File ? file.name : "Local Song.mp3");
+    const cleanTitle = options?.title?.trim() || fileName.replace(/\.[^/.]+$/, "");
+
+    const newTrack: FocusTrack = {
+      id: trackId,
+      title: cleanTitle,
+      artist: options?.artist?.trim() || "Local Device Audio",
       durationSeconds: 180,
       provider: "local",
-      sourceUrl: f.url,
-      category: "custom",
-    }));
+      sourceUrl: freshUrl,
+      category: options?.category || "custom",
+      storageKey: trackId,
+      fileSize: file.size,
+      mimeType: file.type || "audio/mpeg",
+      isOfflineAvailable: true,
+    };
+
+    set((s) => {
+      let targetId = options?.playlistId || s.currentPlaylistId;
+      let targetPlaylist = s.playlists.find((p) => p.id === targetId);
+
+      if (!targetPlaylist) {
+        targetPlaylist = s.playlists.find((p) => p.id === "playlist-local-library");
+      }
+
+      if (!targetPlaylist) {
+        targetPlaylist = {
+          id: "playlist-local-library",
+          name: "My Local Library",
+          description: "Permanent offline audio library saved from local device",
+          provider: "local",
+          tracks: [newTrack],
+          coverGradient: "from-emerald-600/30 via-teal-700/30 to-cyan-800/30",
+          isCustom: true,
+        };
+        const updated = [...s.playlists, targetPlaylist];
+        persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updated);
+        return { playlists: updated, currentPlaylistId: targetPlaylist.id };
+      }
+
+      const updatedPlaylists = s.playlists.map((pl) => {
+        if (pl.id === targetPlaylist!.id) {
+          return {
+            ...pl,
+            tracks: [newTrack, ...pl.tracks],
+          };
+        }
+        return pl;
+      });
+
+      persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updatedPlaylists);
+      return { playlists: updatedPlaylists };
+    });
+
+    get().play(newTrack);
+    return newTrack;
+  },
+
+  addMultipleLocalTracks: async (files, targetPlaylistId, playlistName) => {
+    const tracks: FocusTrack[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const item = files[i];
+      const trackId = `local-track-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      await saveLocalAudioBlob(trackId, item.file);
+      const freshUrl = (await getLocalAudioUrl(trackId)) || URL.createObjectURL(item.file);
+      const name = item.name || item.file.name;
+      tracks.push({
+        id: trackId,
+        title: name.replace(/\.[^/.]+$/, ""),
+        artist: "Local Storage",
+        durationSeconds: 180,
+        provider: "local",
+        sourceUrl: freshUrl,
+        category: "custom",
+        storageKey: trackId,
+        fileSize: item.file.size,
+        mimeType: item.file.type || "audio/mpeg",
+        isOfflineAvailable: true,
+      });
+    }
+
+    set((s) => {
+      let targetPl = targetPlaylistId ? s.playlists.find((p) => p.id === targetPlaylistId) : null;
+      if (!targetPl) {
+        const newPlId = `playlist-local-${Date.now()}`;
+        const newPl: FocusPlaylist = {
+          id: newPlId,
+          name: playlistName || "Imported Local Songs",
+          description: `Saved locally on device (${tracks.length} tracks)`,
+          provider: "local",
+          tracks,
+          coverGradient: "from-emerald-600/30 to-teal-800/30",
+          isCustom: true,
+        };
+        const updated = [...s.playlists, newPl];
+        persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updated);
+        return { playlists: updated, currentPlaylistId: newPl.id };
+      }
+
+      const updatedPlaylists = s.playlists.map((pl) => {
+        if (pl.id === targetPl!.id) {
+          return {
+            ...pl,
+            tracks: [...tracks, ...pl.tracks],
+          };
+        }
+        return pl;
+      });
+
+      persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updatedPlaylists);
+      return { playlists: updatedPlaylists, currentPlaylistId: targetPl.id };
+    });
+
+    if (tracks.length > 0) {
+      get().play(tracks[0]);
+    }
+    return tracks;
+  },
+
+  addFolderPlaylist: async (name, folderPath, files) => {
+    const tracks: FocusTrack[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const trackId = `local-folder-${Date.now()}-${i}`;
+      let liveUrl = f.url;
+
+      if (f.rawFile) {
+        await saveLocalAudioBlob(trackId, f.rawFile).catch(() => {});
+        liveUrl = (await getLocalAudioUrl(trackId)) || f.url;
+      }
+
+      tracks.push({
+        id: trackId,
+        title: f.name.replace(/\.[^/.]+$/, ""),
+        artist: "Local Storage",
+        durationSeconds: 180,
+        provider: "local",
+        sourceUrl: liveUrl,
+        category: "custom",
+        storageKey: f.rawFile ? trackId : undefined,
+        fileSize: f.size,
+        isOfflineAvailable: !!f.rawFile,
+      });
+    }
 
     const newPl: FocusPlaylist = {
       id: `playlist-folder-${Date.now()}`,
@@ -630,4 +833,66 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       get().play(tracks[0]);
     }
   },
+
+  cacheTrackLocally: async (playlistId, trackId) => {
+    const pl = get().playlists.find((p) => p.id === playlistId);
+    const trk = pl?.tracks.find((t) => t.id === trackId);
+    if (!trk || trk.provider !== "stream" || !trk.sourceUrl.startsWith("http")) return false;
+
+    const savedKey = await cacheOnlineAudioToLocal(trackId, trk.sourceUrl);
+    if (!savedKey) return false;
+
+    const freshUrl = await getLocalAudioUrl(savedKey);
+    set((s) => {
+      const updatedPlaylists = s.playlists.map((p) => {
+        if (p.id === playlistId) {
+          return {
+            ...p,
+            tracks: p.tracks.map((t) =>
+              t.id === trackId
+                ? { ...t, storageKey: savedKey, sourceUrl: freshUrl || t.sourceUrl, isOfflineAvailable: true }
+                : t
+            ),
+          };
+        }
+        return p;
+      });
+      persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updatedPlaylists);
+      return { playlists: updatedPlaylists };
+    });
+    return true;
+  },
+
+  hydrateLocalTracks: async () => {
+    const { playlists } = get();
+    let hasChanges = false;
+    const updatedPlaylists = await Promise.all(
+      playlists.map(async (pl) => {
+        const updatedTracks = await Promise.all(
+          pl.tracks.map(async (t) => {
+            if (t.storageKey) {
+              const freshUrl = await getLocalAudioUrl(t.storageKey);
+              if (freshUrl && freshUrl !== t.sourceUrl) {
+                hasChanges = true;
+                return { ...t, sourceUrl: freshUrl, isOfflineAvailable: true };
+              }
+            }
+            return t;
+          })
+        );
+        return { ...pl, tracks: updatedTracks };
+      })
+    );
+
+    if (hasChanges) {
+      set({ playlists: updatedPlaylists });
+    }
+  },
 }));
+
+// Automatically hydrate local tracks from IndexedDB
+if (typeof window !== "undefined") {
+  setTimeout(() => {
+    useFocusPlayerStore.getState().hydrateLocalTracks().catch(() => {});
+  }, 200);
+}

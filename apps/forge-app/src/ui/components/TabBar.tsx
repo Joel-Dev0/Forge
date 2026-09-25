@@ -165,7 +165,7 @@ export function TabBar() {
   return (
     <div
       onMouseLeave={handleTabBarMouseLeave}
-      className="h-8 bg-[var(--forge-bg)] flex items-stretch px-0 shrink-0 overflow-hidden transition-colors select-none w-full max-w-full relative"
+      className="h-8 bg-[var(--forge-bg)] flex items-stretch px-0 shrink-0 overflow-hidden transition-colors select-none w-full max-w-full relative z-10"
       style={{ WebkitAppRegion: "no-drag", boxShadow: 'inset 0 -1px 0 var(--forge-border)' } as React.CSSProperties}
     >
       {tabs.map((tab, index) => {

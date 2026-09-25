@@ -20,6 +20,8 @@ import { useFocusStore } from "../../core/focus/useFocusStore";
 import { useSessionsStore } from "../../core/sessions/useSessionsStore";
 import { SessionModal } from "../components/SessionModal";
 import { FocusModeModal } from "../components/FocusModeModal";
+import { BlockNotesModal } from "../components/notes/BlockNotesModal";
+import { PinnedMemoryCardsOverlay } from "../components/notes/PinnedMemoryCardsOverlay";
 import { CrashGuardBanner } from "../components/CrashGuardBanner";
 import { ProjectDashboardModal } from "../components/ProjectDashboardModal";
 import { ExtensionsManagerModal } from "../components/ExtensionsManagerModal";
@@ -1280,7 +1282,7 @@ export function BrowserLayout() {
       )}
 
       {/* 1. Header controls: TitleBar, NavigationBar, TabBar (preserved in DOM, hidden in fullscreen) */}
-      <div className={isFullscreen ? "hidden" : "w-full flex flex-col shrink-0"}>
+      <div className={isFullscreen ? "hidden" : "w-full flex flex-col shrink-0 relative z-40"}>
         <TitleBar />
         <NavigationBar
           onNavigate={handleNavigate}
@@ -1295,9 +1297,9 @@ export function BrowserLayout() {
       </div>
 
       {/* 2. Main content area: expands seamlessly to fixed inset-0 during fullscreen */}
-      <div className={`flex flex-1 overflow-hidden w-full ${isFullscreen ? "fixed inset-0 z-[9999] bg-black" : ""}`}>
+      <div className={`flex flex-1 overflow-hidden w-full ${isFullscreen ? "fixed inset-0 z-[9999] bg-black" : "relative z-10"}`}>
         {/* Left sidebar: Favorites, Collections & History (preserved in DOM, hidden in fullscreen) */}
-        <div className={isFullscreen ? "hidden" : "flex shrink-0 h-full"}>
+        <div className={isFullscreen ? "hidden" : "flex shrink-0 h-full relative z-30"}>
           <Sidebar onNavigate={handleNavigate} />
         </div>
 
@@ -1532,6 +1534,12 @@ export function BrowserLayout() {
 
       {/* Focus Mode & Social Distraction Shield Modal */}
       <FocusModeModal />
+
+      {/* Block Notes & Mind Palace Modal (Outliner, Checklists, Memory Cards) */}
+      <BlockNotesModal />
+
+      {/* Floating Pinned Memory Cards (Sticky Notes on Screen) */}
+      <PinnedMemoryCardsOverlay />
 
       {/* Web Engine Crash Guard Alert Banner */}
       <CrashGuardBanner />

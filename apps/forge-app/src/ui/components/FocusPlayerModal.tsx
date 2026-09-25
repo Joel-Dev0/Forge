@@ -21,12 +21,17 @@ import {
   ExternalLink,
   Headphones,
   Check,
+  HardDrive,
+  UploadCloud,
+  FileAudio,
+  CheckCircle2,
+  Download,
 } from "lucide-react";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { useFocusStore } from "../../core/focus/useFocusStore";
 import { parseOnlineMusicUrl, type ParsedOnlineMedia } from "../../core/focus/onlineMusicParser";
 import { CURATED_ONLINE_STATIONS, type CuratedOnlineStation } from "../../core/focus/focusPresets";
-import type { SoundProviderType } from "../../core/focus/focusPlayerTypes";
+import type { SoundProviderType, FocusTrack } from "../../core/focus/focusPlayerTypes";
 
 export function FocusPlayerModal() {
   const {
@@ -55,13 +60,17 @@ export function FocusPlayerModal() {
     profileBindings,
     bindPlaylistToProfile,
     addOnlineTrack,
+    addCustomPlaylist,
     addCuratedStation,
     removeTrack,
     removePlaylist,
     addFolderPlaylist,
+    addLocalTrack,
+    addMultipleLocalTracks,
+    cacheTrackLocally,
   } = useFocusPlayerStore();
 
-  const [activeTab, setActiveTab] = useState<"player" | "add_online" | "explore">("player");
+  const [activeTab, setActiveTab] = useState<"player" | "add_online" | "explore" | "add_local">("player");
   const [onlineUrlInput, setOnlineUrlInput] = useState("");
   const [onlineTitleInput, setOnlineTitleInput] = useState("");
   const [onlineArtistInput, setOnlineArtistInput] = useState("");
@@ -70,6 +79,17 @@ export function FocusPlayerModal() {
   const [addedNotification, setAddedNotification] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const singleFileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const [pendingLocalFiles, setPendingLocalFiles] = useState<
+    Array<{ file: File; id: string; title: string; artist: string; size: number }>
+  >([]);
+  const [targetLocalPlaylistId, setTargetLocalPlaylistId] = useState<string>("auto");
+  const [newPlaylistName, setNewPlaylistName] = useState<string>("");
+  const [isSavingLocal, setIsSavingLocal] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+
   const profiles = useFocusStore((s) => s.profiles);
 
   // Parse online URL on input change
@@ -128,29 +148,103 @@ export function FocusPlayerModal() {
     setActiveTab("player");
   };
 
-  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalFilesSelected = (filesList: FileList | File[]) => {
+    const valid: Array<{ file: File; id: string; title: string; artist: string; size: number }> = [];
+    for (let i = 0; i < filesList.length; i++) {
+      const f = filesList[i];
+      if (f.type.startsWith("audio/") || /\.(mp3|wav|flac|ogg|m4a|aac|opus|weba)$/i.test(f.name)) {
+        const cleanName = f.name.replace(/\.[^/.]+$/, "");
+        valid.push({
+          file: f,
+          id: `pending-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          title: cleanName,
+          artist: "Local Device Audio",
+          size: f.size,
+        });
+      }
+    }
+    if (valid.length > 0) {
+      setPendingLocalFiles((prev) => [...prev, ...valid]);
+      setActiveTab("add_local");
+    }
+  };
+
+  const handleSavePendingLocalSongs = async () => {
+    if (pendingLocalFiles.length === 0) return;
+    setIsSavingLocal(true);
+
+    try {
+      let targetPlId = targetLocalPlaylistId === "auto" ? undefined : targetLocalPlaylistId;
+      if (targetLocalPlaylistId === "new") {
+        const newPl = addCustomPlaylist(newPlaylistName || "My Local Songs", "Custom local offline tracks", "local");
+        targetPlId = newPl.id;
+      }
+
+      const filesToSave = pendingLocalFiles.map((p) => ({
+        file: p.file,
+        name: p.title || p.file.name,
+      }));
+
+      const added = await addMultipleLocalTracks(filesToSave, targetPlId, newPlaylistName);
+      setPendingLocalFiles([]);
+      setNewPlaylistName("");
+      setAddedNotification(`Successfully saved ${added.length} songs to your local library!`);
+      setTimeout(() => setAddedNotification(null), 4000);
+      setActiveTab("player");
+    } catch (err) {
+      console.error("Failed saving local songs:", err);
+    } finally {
+      setIsSavingLocal(false);
+    }
+  };
+
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const audioFiles: Array<{ name: string; url: string; size: number }> = [];
+    const audioFiles: Array<{ name: string; url: string; size: number; rawFile?: File }> = [];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      if (f.type.startsWith("audio/") || /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(f.name)) {
+      if (f.type.startsWith("audio/") || /\.(mp3|wav|flac|ogg|m4a|aac|opus)$/i.test(f.name)) {
         audioFiles.push({
           name: f.name,
           url: URL.createObjectURL(f),
           size: f.size,
+          rawFile: f,
         });
       }
     }
 
     if (audioFiles.length > 0) {
-      addFolderPlaylist("Imported Music Folder", "Local Device Folder", audioFiles);
+      setIsSavingLocal(true);
+      await addFolderPlaylist("Imported Music Folder", "Local Device Folder", audioFiles);
+      setIsSavingLocal(false);
+      setAddedNotification(`Saved ${audioFiles.length} local tracks permanently to offline storage!`);
+      setTimeout(() => setAddedNotification(null), 4000);
+      setActiveTab("player");
     }
   };
 
-  const renderProviderBadge = (provider?: SoundProviderType) => {
+  const handleCacheOnlineTrack = async (trk: FocusTrack) => {
+    setAddedNotification(`Saving "${trk.title}" offline to local storage...`);
+    const success = await cacheTrackLocally(currentPl.id, trk.id);
+    if (success) {
+      setAddedNotification(`Successfully saved "${trk.title}" offline!`);
+    } else {
+      setAddedNotification(`Could not download stream for offline caching.`);
+    }
+    setTimeout(() => setAddedNotification(null), 4000);
+  };
+
+  const renderProviderBadge = (provider?: SoundProviderType, isOffline?: boolean) => {
     switch (provider) {
+      case "local":
+        return (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <HardDrive size={10} />
+            {isOffline ? "Offline Saved" : "Local Audio"}
+          </span>
+        );
       case "youtube":
         return (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
@@ -175,7 +269,7 @@ export function FocusPlayerModal() {
         return (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
             <Radio size={10} />
-            Web Radio
+            {isOffline ? "Cached Offline" : "Web Radio"}
           </span>
         );
       default:
@@ -228,11 +322,11 @@ export function FocusPlayerModal() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 border-b border-[var(--forge-border)] bg-[#12141f] text-xs font-semibold">
+        <div className="flex items-center gap-1 px-4 border-b border-[var(--forge-border)] bg-[#12141f] text-xs font-semibold overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab("player")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === "player"
                 ? "border-[#FF6B00] text-[#FF6B00]"
                 : "border-transparent text-zinc-400 hover:text-white"
@@ -244,28 +338,46 @@ export function FocusPlayerModal() {
 
           <button
             type="button"
+            onClick={() => setActiveTab("add_local")}
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              activeTab === "add_local"
+                ? "border-emerald-500 text-emerald-400"
+                : "border-transparent text-zinc-400 hover:text-white"
+            }`}
+          >
+            <HardDrive size={13} />
+            <span>Add Local Songs</span>
+            {pendingLocalFiles.length > 0 && (
+              <span className="w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-bold flex items-center justify-center">
+                {pendingLocalFiles.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("add_online")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === "add_online"
                 ? "border-[#FF6B00] text-[#FF6B00]"
                 : "border-transparent text-zinc-400 hover:text-white"
             }`}
           >
             <Globe size={13} />
-            <span>Add Online Stream (YouTube, Spotify, URL)</span>
+            <span>Add Online Stream</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("explore")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === "explore"
                 ? "border-[#FF6B00] text-[#FF6B00]"
                 : "border-transparent text-zinc-400 hover:text-white"
             }`}
           >
             <Sparkles size={13} />
-            <span>Explore Curated Radios</span>
+            <span>Curated Radios</span>
           </button>
         </div>
 
@@ -496,6 +608,15 @@ export function FocusPlayerModal() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => setActiveTab("add_local")}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs border border-emerald-500/30 transition-colors font-bold cursor-pointer"
+                    >
+                      <HardDrive size={12} />
+                      <span>Add Local Songs</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setActiveTab("add_online")}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FF6B00]/15 hover:bg-[#FF6B00]/25 text-[#FF6B00] text-xs border border-[#FF6B00]/30 transition-colors font-bold cursor-pointer"
                     >
@@ -504,7 +625,7 @@ export function FocusPlayerModal() {
                     </button>
 
                     <input
-                      ref={fileInputRef}
+                      ref={folderInputRef}
                       type="file"
                       multiple
                       // @ts-ignore
@@ -515,7 +636,7 @@ export function FocusPlayerModal() {
                     />
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => folderInputRef.current?.click()}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-xs border border-white/10 transition-colors cursor-pointer"
                     >
                       <FolderPlus size={12} className="text-zinc-400" />
@@ -610,7 +731,20 @@ export function FocusPlayerModal() {
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
-                            {renderProviderBadge(trk.provider)}
+                            {renderProviderBadge(trk.provider, trk.isOfflineAvailable)}
+                            {trk.provider === "stream" && trk.sourceUrl.startsWith("http") && !trk.storageKey && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCacheOnlineTrack(trk);
+                                }}
+                                className="text-zinc-500 hover:text-emerald-400 transition-colors p-1 cursor-pointer"
+                                title="Save track offline to local device"
+                              >
+                                <Download size={12} />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -806,6 +940,253 @@ export function FocusPlayerModal() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: ADD LOCAL AUDIO & SONGS (PERSISTENT INDEXEDDB) */}
+          {activeTab === "add_local" && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Import & Save Local Songs</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <HardDrive size={10} />
+                    Permanent Offline Storage
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Save audio files (MP3, WAV, FLAC, OGG, M4A, AAC) directly into Forge's permanent offline database. Your songs stay preserved across browser restarts and offline sessions, just like online and Spotify streams.
+                </p>
+              </div>
+
+              {/* Drag and drop zone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingFiles(true);
+                }}
+                onDragLeave={() => setIsDraggingFiles(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingFiles(false);
+                  if (e.dataTransfer.files) {
+                    handleLocalFilesSelected(e.dataTransfer.files);
+                  }
+                }}
+                className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all flex flex-col items-center justify-center gap-3 ${
+                  isDraggingFiles
+                    ? "border-emerald-500 bg-emerald-500/10 scale-[1.01]"
+                    : "border-white/15 bg-white/5 hover:border-white/25"
+                }`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shadow-inner">
+                  <UploadCloud size={24} />
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-white">Drag & drop your local songs here</h4>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Supports .mp3, .wav, .flac, .ogg, .m4a, .aac, or select whole folders
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 mt-1">
+                  <input
+                    ref={singleFileInputRef}
+                    type="file"
+                    multiple
+                    accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.opus"
+                    className="hidden"
+                    onChange={(e) => e.target.files && handleLocalFilesSelected(e.target.files)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => singleFileInputRef.current?.click()}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileAudio size={14} />
+                    <span>Browse Song Files</span>
+                  </button>
+
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    multiple
+                    // @ts-ignore
+                    webkitdirectory=""
+                    directory=""
+                    className="hidden"
+                    onChange={handleFolderSelect}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => folderInputRef.current?.click()}
+                    className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 hover:text-white text-xs font-medium border border-white/10 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FolderPlus size={14} />
+                    <span>Select Music Folder</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Pending Files Queue */}
+              {pendingLocalFiles.length > 0 ? (
+                <div className="space-y-4 bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                        <span>Ready to Save</span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                          {pendingLocalFiles.length} {pendingLocalFiles.length === 1 ? "track" : "tracks"}
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-zinc-400">
+                        Total size: {(pendingLocalFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(1)} MB
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setPendingLocalFiles([])}
+                      className="text-xs text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  {/* Destination Playlist Selection */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-300 mb-1">
+                        Save Into Playlist
+                      </label>
+                      <select
+                        value={targetLocalPlaylistId}
+                        onChange={(e) => setTargetLocalPlaylistId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[var(--forge-input)] border border-[var(--forge-border)] text-white text-xs focus:border-[#FF6B00] outline-none"
+                      >
+                        <option value="auto">⭐ Local Music Library (Default)</option>
+                        {playlists.map((pl) => (
+                          <option key={pl.id} value={pl.id}>
+                            {pl.name} ({pl.tracks.length} tracks)
+                          </option>
+                        ))}
+                        <option value="new">➕ Create New Playlist...</option>
+                      </select>
+                    </div>
+
+                    {targetLocalPlaylistId === "new" && (
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-300 mb-1">
+                          New Playlist Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. My Offline Hits"
+                          value={newPlaylistName}
+                          onChange={(e) => setNewPlaylistName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-[var(--forge-input)] border border-[var(--forge-border)] text-white text-xs focus:border-[#FF6B00] outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scrollable list of pending tracks with editable title */}
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {pendingLocalFiles.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-black/40 border border-white/5 text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <Music size={14} className="text-emerald-400 shrink-0" />
+                          <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setPendingLocalFiles((prev) =>
+                                  prev.map((p, i) => (i === idx ? { ...p, title: val } : p))
+                                );
+                              }}
+                              placeholder="Track title"
+                              className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs truncate focus:border-emerald-500 outline-none"
+                            />
+                            <input
+                              type="text"
+                              value={item.artist}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setPendingLocalFiles((prev) =>
+                                  prev.map((p, i) => (i === idx ? { ...p, artist: val } : p))
+                                );
+                              }}
+                              placeholder="Artist name"
+                              className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-zinc-300 text-xs truncate focus:border-emerald-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-zinc-500 font-mono">
+                            {(item.size / (1024 * 1024)).toFixed(1)} MB
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPendingLocalFiles((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="text-zinc-500 hover:text-red-400 p-1 transition-colors cursor-pointer"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Save button */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={isSavingLocal}
+                      onClick={handleSavePendingLocalSongs}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isSavingLocal ? (
+                        <>
+                          <Disc3 size={15} className="animate-spin" />
+                          <span>Saving to Offline Database...</span>
+                        </>
+                      ) : (
+                        <>
+                          <HardDrive size={15} />
+                          <span>Save {pendingLocalFiles.length} Songs to Forge & Play Now</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("player")}
+                      className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs text-zinc-400">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                    <span>
+                      Forge uses persistent IndexedDB to store audio data locally.
+                      Once saved, your songs stay permanently available even when restarting or offline, just like web & Spotify streams.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

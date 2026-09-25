@@ -8,6 +8,8 @@ export interface Tab {
   isLoading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
+  history?: string[];
+  historyIndex?: number;
   isLazy?: boolean;
   isPlayingAudio?: boolean;
   isMuted?: boolean;
@@ -45,6 +47,10 @@ interface TabsState {
   prevTab: () => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<Tab>) => void;
+  navigateTab: (id: string, url: string, title?: string) => void;
+  goBackTab: (id: string) => string | null;
+  goForwardTab: (id: string) => string | null;
+  jumpTabHistory: (id: string, index: number) => string | null;
   moveTab: (fromIndex: number, toIndex: number) => void;
   moveTabLeft: () => void;
   moveTabRight: () => void;
@@ -122,14 +128,21 @@ function makeTab(url = "about:blank", sessionId = "default"): Tab {
       if (host) favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
     } catch {}
   }
+
+  // Any tab created with a destination URL can always go back to "about:blank" (New Tab Home)
+  const history = url && url !== "about:blank" ? ["about:blank", url] : ["about:blank"];
+  const historyIndex = history.length - 1;
+
   return {
     id: `tab-${nextId++}`,
     title,
     url,
     favicon,
     isLoading: false,
-    canGoBack: false,
+    canGoBack: historyIndex > 0,
     canGoForward: false,
+    history,
+    historyIndex,
     isLazy: false,
     isPlayingAudio: false,
     isMuted: false,
@@ -163,14 +176,27 @@ function loadSavedSession(): { tabs: Tab[]; activeTabId: string } | null {
           } catch {}
         }
         const isDormant = !isActive && url !== "about:blank";
+
+        const rawHistory: string[] = Array.isArray(t.history) && t.history.length > 0
+          ? t.history.map(String)
+          : (url && url !== "about:blank" ? ["about:blank", url] : ["about:blank"]);
+        const historyIndex = typeof t.historyIndex === "number" && t.historyIndex >= 0 && t.historyIndex < rawHistory.length
+          ? t.historyIndex
+          : rawHistory.length - 1;
+
+        const effectiveCanGoBack = historyIndex > 0 || Boolean(t.canGoBack) || (url && url !== "about:blank");
+        const effectiveCanGoForward = historyIndex < rawHistory.length - 1 || Boolean(t.canGoForward);
+
         return {
           id,
           title,
           url,
           favicon,
           isLoading: false,
-          canGoBack: Boolean(t.canGoBack),
-          canGoForward: Boolean(t.canGoForward),
+          canGoBack: effectiveCanGoBack,
+          canGoForward: effectiveCanGoForward,
+          history: rawHistory,
+          historyIndex,
           isLazy: isDormant,
           isPlayingAudio: false,
           isMuted: false,
@@ -190,7 +216,7 @@ export function saveSession(tabs: Tab[], activeTabId: string) {
   try {
     if (typeof window === "undefined" || !window.localStorage) return;
     const payload = {
-      tabs: tabs.map(({ id, title, url, favicon, canGoBack, canGoForward, sessionId }) => {
+      tabs: tabs.map(({ id, title, url, favicon, canGoBack, canGoForward, sessionId, history, historyIndex }) => {
         const cleanTitle = getCleanFallbackTitle(url, title);
         let cleanFavicon = favicon;
         if (!cleanFavicon && url && url !== "about:blank") {
@@ -207,6 +233,8 @@ export function saveSession(tabs: Tab[], activeTabId: string) {
           canGoBack,
           canGoForward,
           sessionId: sessionId || "default",
+          history: Array.isArray(history) ? history.slice(-50) : undefined, // Keep last 50 entries
+          historyIndex,
         };
       }),
       activeTabId,
@@ -376,6 +404,194 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       saveSession(nextTabs, s.activeTabId);
       return { tabs: nextTabs };
     });
+  },
+
+  navigateTab(id, url, title) {
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === id);
+      if (!target) return s;
+
+      const currentHistory = target.history && target.history.length > 0
+        ? [...target.history]
+        : (target.url && target.url !== "about:blank" ? ["about:blank", target.url] : ["about:blank"]);
+      const currentIdx = typeof target.historyIndex === "number" && target.historyIndex >= 0
+        ? target.historyIndex
+        : currentHistory.length - 1;
+
+      // Avoid adding duplicate identical URL if already current
+      if (currentHistory[currentIdx] === url) {
+        return s;
+      }
+
+      // Truncate forward history and push new URL
+      const newHistory = currentHistory.slice(0, currentIdx + 1);
+      newHistory.push(url);
+      const newIdx = newHistory.length - 1;
+
+      const cleanTitle = title || getCleanFallbackTitle(url);
+      let favicon = target.favicon;
+      if (url && url !== "about:blank") {
+        try {
+          const host = new URL(url).hostname;
+          if (host) favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+        } catch {}
+      }
+
+      const nextTabs = s.tabs.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              url,
+              title: cleanTitle,
+              favicon,
+              history: newHistory,
+              historyIndex: newIdx,
+              canGoBack: newIdx > 0,
+              canGoForward: false,
+              lastActiveAt: Date.now(),
+            }
+          : t
+      );
+      saveSession(nextTabs, s.activeTabId);
+      return { tabs: nextTabs };
+    });
+  },
+
+  goBackTab(id) {
+    const { tabs } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return null;
+
+    const history = target.history && target.history.length > 0
+      ? target.history
+      : (target.url && target.url !== "about:blank" ? ["about:blank", target.url] : ["about:blank"]);
+    const currentIdx = typeof target.historyIndex === "number" && target.historyIndex >= 0
+      ? target.historyIndex
+      : history.length - 1;
+
+    if (currentIdx <= 0) {
+      // If we are at index 0, but current URL is not about:blank, navigate to about:blank
+      if (target.url && target.url !== "about:blank") {
+        get().navigateTab(id, "about:blank");
+        return "about:blank";
+      }
+      return null;
+    }
+
+    const prevIdx = currentIdx - 1;
+    const prevUrl = history[prevIdx];
+    const cleanTitle = getCleanFallbackTitle(prevUrl);
+
+    let favicon = "";
+    if (prevUrl && prevUrl !== "about:blank") {
+      try {
+        const host = new URL(prevUrl).hostname;
+        if (host) favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+      } catch {}
+    }
+
+    const nextTabs = tabs.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            url: prevUrl,
+            title: cleanTitle,
+            favicon,
+            historyIndex: prevIdx,
+            canGoBack: prevIdx > 0,
+            canGoForward: true,
+            lastActiveAt: Date.now(),
+          }
+        : t
+    );
+    saveSession(nextTabs, get().activeTabId);
+    set({ tabs: nextTabs });
+    return prevUrl;
+  },
+
+  goForwardTab(id) {
+    const { tabs } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return null;
+
+    const history = target.history && target.history.length > 0
+      ? target.history
+      : (target.url && target.url !== "about:blank" ? ["about:blank", target.url] : ["about:blank"]);
+    const currentIdx = typeof target.historyIndex === "number" && target.historyIndex >= 0
+      ? target.historyIndex
+      : 0;
+
+    if (currentIdx >= history.length - 1) {
+      return null;
+    }
+
+    const nextIdx = currentIdx + 1;
+    const nextUrl = history[nextIdx];
+    const cleanTitle = getCleanFallbackTitle(nextUrl);
+
+    let favicon = "";
+    if (nextUrl && nextUrl !== "about:blank") {
+      try {
+        const host = new URL(nextUrl).hostname;
+        if (host) favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+      } catch {}
+    }
+
+    const nextTabs = tabs.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            url: nextUrl,
+            title: cleanTitle,
+            favicon,
+            historyIndex: nextIdx,
+            canGoBack: true,
+            canGoForward: nextIdx < history.length - 1,
+            lastActiveAt: Date.now(),
+          }
+        : t
+    );
+    saveSession(nextTabs, get().activeTabId);
+    set({ tabs: nextTabs });
+    return nextUrl;
+  },
+
+  jumpTabHistory(id, index) {
+    const { tabs } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return null;
+
+    const history = target.history && target.history.length > 0 ? target.history : ["about:blank"];
+    if (index < 0 || index >= history.length) return null;
+
+    const targetUrl = history[index];
+    const cleanTitle = getCleanFallbackTitle(targetUrl);
+
+    let favicon = "";
+    if (targetUrl && targetUrl !== "about:blank") {
+      try {
+        const host = new URL(targetUrl).hostname;
+        if (host) favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+      } catch {}
+    }
+
+    const nextTabs = tabs.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            url: targetUrl,
+            title: cleanTitle,
+            favicon,
+            historyIndex: index,
+            canGoBack: index > 0,
+            canGoForward: index < history.length - 1,
+            lastActiveAt: Date.now(),
+          }
+        : t
+    );
+    saveSession(nextTabs, get().activeTabId);
+    set({ tabs: nextTabs });
+    return targetUrl;
   },
 
   moveTab(fromIndex, toIndex) {

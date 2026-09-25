@@ -11,6 +11,10 @@ export interface FocusTrack {
   embedUrl?: string; // Generated iframe embed URL for YouTube, Spotify, SoundCloud
   coverArt?: string;
   category?: "lofi" | "classical" | "ambient" | "binaural" | "nature" | "custom" | "radio";
+  storageKey?: string; // Key in IndexedDB for permanent local audio storage
+  fileSize?: number; // Size in bytes
+  mimeType?: string;
+  isOfflineAvailable?: boolean;
 }
 
 export interface FocusPlaylist {

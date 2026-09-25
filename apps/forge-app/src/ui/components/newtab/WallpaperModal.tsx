@@ -71,7 +71,7 @@ export function WallpaperModal({ isOpen, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fade-in">
       {/* Modal Container */}
       <div
         className="w-full max-w-2xl rounded-2xl bg-[var(--forge-surface)] border border-[var(--forge-border)] shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-scale-up"

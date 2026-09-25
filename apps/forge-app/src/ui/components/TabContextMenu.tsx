@@ -191,6 +191,32 @@ export function TabContextMenu({ tab, x, y, onClose }: Props) {
         <span>Duplicate Tab</span>
       </button>
 
+      {/* Open in Private Tab */}
+      <button
+        type="button"
+        onClick={() => {
+          useTabsStore.getState().openPrivateTab(tab.url);
+          onClose();
+        }}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left"
+      >
+        <span className="text-[12px] shrink-0">🕶️</span>
+        <span>Open in Private Window</span>
+      </button>
+
+      {/* Open in Tor Tab */}
+      <button
+        type="button"
+        onClick={() => {
+          useTabsStore.getState().openTorTab(tab.url);
+          onClose();
+        }}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left"
+      >
+        <span className="text-[12px] shrink-0">🧅</span>
+        <span>Open in Tor Mode</span>
+      </button>
+
       {/* Audio Mute / Unmute */}
       <button
         type="button"

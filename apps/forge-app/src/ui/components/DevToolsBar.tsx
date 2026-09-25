@@ -38,7 +38,7 @@ export function DevToolsBar({ getActiveWebview }: DevToolsBarProps) {
 
   const networkEntries = useNetworkStore((s) => s.entries);
   const consoleLogs = useConsoleStore((s) => s.logs);
-  const errorCount = consoleLogs.filter((l) => l.level === "error").length;
+  const errorCount = consoleLogs.filter((l) => l.level === "error").reduce((sum, l) => sum + (l.count || 1), 0);
 
   const blockedCount = useAdBlockStore((s) => s.stats?.blockedCount ?? s.requests.filter((r) => r.status === "blocked").length);
 

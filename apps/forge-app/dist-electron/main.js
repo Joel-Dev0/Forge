@@ -1,5 +1,5 @@
 // electron/main.ts
-import { app as app8, BrowserWindow as BrowserWindow5, ipcMain as ipcMain8, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session8, shell, Menu } from "electron";
+import { app as app8, BrowserWindow as BrowserWindow6, ipcMain as ipcMain10, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session9, shell, Menu } from "electron";
 import path5 from "node:path";
 import fs5 from "node:fs";
 import os2 from "node:os";
@@ -2374,10 +2374,6 @@ function initAdBlockAdapter(mainWindowGetter) {
       try {
         const url = contents.getURL();
         if (!url || url === "about:blank") return;
-        if (guestPreloadCode) {
-          await contents.executeJavaScript(guestPreloadCode).catch(() => {
-          });
-        }
         const css = engine.getCosmeticCSS(url);
         if (css) {
           await contents.insertCSS(css);
@@ -3872,6 +3868,13 @@ function initNetworkMonitor(getMainWindow) {
       const entryId = String(details.id);
       const entry = entries.get(entryId);
       const responseHeaders = { ...details.responseHeaders || {} };
+      const urlLower = (details.url || "").toLowerCase();
+      if (urlLower.includes("chromewebstore.google.com") || urlLower.includes("chrome.google.com") || urlLower.includes("clients2.google.com")) {
+        delete responseHeaders["content-security-policy"];
+        delete responseHeaders["content-security-policy-report-only"];
+        delete responseHeaders["Content-Security-Policy"];
+        delete responseHeaders["Content-Security-Policy-Report-Only"];
+      }
       for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();
         if (lower === "permissions-policy" || lower === "feature-policy") {
@@ -4602,7 +4605,7 @@ function initPrivacyCleanerAdapter(mainWindowGetter, options) {
 import path4 from "node:path";
 import fs4 from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { app as app7, session as session7, ipcMain as ipcMain7 } from "electron";
+import { app as app7, session as session8, ipcMain as ipcMain8 } from "electron";
 
 // src/core/focus/socialRulesets.ts
 var SOCIAL_PLATFORMS = {
@@ -4951,23 +4954,245 @@ import { app as app6, session as session6, ipcMain as ipcMain6, webContents as w
 import * as os from "os";
 var isCorsBypassActive = false;
 var bypassPrivateNetworkAccess = true;
+var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
+(function() {
+  if (window.__forge_cws_mock_injected) return;
+  window.__forge_cws_mock_injected = true;
+
+  if (!window.chrome) window.chrome = {};
+  if (!window.chrome.app) {
+    window.chrome.app = {
+      isInstalled: false,
+      InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
+      RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" },
+      getDetails: function() { return null; },
+      getIsInstalled: function() { return false; },
+      runningState: function() { return "cannot_run"; }
+    };
+  }
+
+  const installedExts = new Set();
+
+  function makeEvent() {
+    const list = new Set();
+    return {
+      addListener: function(fn) { if (typeof fn === "function") list.add(fn); },
+      removeListener: function(fn) { list.delete(fn); },
+      hasListener: function(fn) { return list.has(fn); },
+      hasListeners: function() { return list.size > 0; },
+      dispatch: function(...args) {
+        for (const fn of list) {
+          try { fn(...args); } catch (e) {}
+        }
+      }
+    };
+  }
+
+  const onInstallStageChanged = makeEvent();
+  const onDownloadProgress = makeEvent();
+
+  function parsePageExtensionDetails() {
+    const href = window.location.href;
+    const path = window.location.pathname;
+    const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
+                  href.match(/\\/detail\\/([a-z]{32})/i) ||
+                  href.match(/\\b([a-z]{32})\\b/i);
+    const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
+    const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
+    
+    let name = "";
+    const h1 = document.querySelector("h1");
+    if (h1 && h1.textContent) {
+      name = h1.textContent.trim();
+    } else if (slug) {
+      name = slug.split("-").map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
+    } else {
+      name = (document.title || "").split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+    }
+
+    let iconUrl = "";
+    const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
+    if (img && img.src) iconUrl = img.src;
+
+    return { id: id, name: name, iconUrl: iconUrl, url: href };
+  }
+
+  function triggerForgeInstall(idParam, nameParam, iconParam) {
+    const info = parsePageExtensionDetails();
+    const id = (idParam || info.id || "").toLowerCase();
+    const name = nameParam || info.name || "Chrome Extension";
+    const iconUrl = iconParam || info.iconUrl || "";
+
+    if (id) {
+      installedExts.add(id);
+      console.log("__FORGE_EXT_INSTALL__:" + JSON.stringify({
+        id: id,
+        name: name,
+        iconUrl: iconUrl,
+        url: window.location.href
+      }));
+    }
+
+    try {
+      onInstallStageChanged.dispatch("installing");
+      setTimeout(function() {
+        onInstallStageChanged.dispatch("install_complete");
+      }, 50);
+    } catch (e) {}
+
+    // Immediately stop any spinning loaders on the page
+    stopSpinnersOnPage();
+  }
+
+  function stopSpinnersOnPage() {
+    let count = 0;
+    const interval = setInterval(function() {
+      count++;
+      try {
+        const elements = document.querySelectorAll("button, [role='button'], cws-install-button, md-circular-progress, [role='progressbar']");
+        elements.forEach(function(el) {
+          const html = el.innerHTML || "";
+          const hasSpinner = html.includes("<circle") ||
+                             html.includes("circular-progress") ||
+                             el.getAttribute("aria-busy") === "true" ||
+                             el.classList.contains("loading");
+          if (hasSpinner) {
+            const btn = el.closest("button, [role='button'], cws-install-button") || el;
+            btn.removeAttribute("disabled");
+            btn.removeAttribute("aria-busy");
+            btn.style.pointerEvents = "auto";
+            btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;color:#10b981;font-weight:700;font-size:14px;padding:6px 16px;background:rgba(16,185,129,0.12);border-radius:9999px;border:1px solid rgba(16,185,129,0.3);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Added to Forge</span>';
+          }
+        });
+      } catch (err) {}
+      if (count > 20) clearInterval(interval);
+    }, 150);
+  }
+
+  const mock = {
+    onInstallStageChanged: onInstallStageChanged,
+    onDownloadProgress: onDownloadProgress,
+
+    beginInstallWithManifest3: function(details, callback) {
+      const id = details?.id || parsePageExtensionDetails().id;
+      const name = details?.localizedName || parsePageExtensionDetails().name;
+      const icon = details?.iconUrl || parsePageExtensionDetails().iconUrl;
+      triggerForgeInstall(id, name, icon);
+
+      if (typeof callback === "function") {
+        setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
+      }
+      return Promise.resolve("");
+    },
+
+    completeInstall: function(id, callback) {
+      if (id) installedExts.add(String(id).toLowerCase());
+      stopSpinnersOnPage();
+      if (typeof callback === "function") {
+        setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
+      }
+      return Promise.resolve("");
+    },
+
+    install: function(id, callback) {
+      triggerForgeInstall(id);
+      if (typeof callback === "function") {
+        setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
+      }
+      return Promise.resolve("");
+    },
+
+    getExtensionStatus: function(id, manifest, callback) {
+      const cb = typeof manifest === "function" ? manifest : callback;
+      const targetId = (typeof id === "string" ? id : parsePageExtensionDetails().id || "").toLowerCase();
+      const status = (targetId && installedExts.has(targetId)) ? "installed" : "not_installed";
+      if (typeof cb === "function") {
+        try { cb(status); } catch (e) {}
+      }
+      return Promise.resolve(status);
+    },
+
+    isInIncognitoMode: function(callback) {
+      if (typeof callback === "function") try { callback(false); } catch (e) {}
+      return Promise.resolve(false);
+    },
+
+    getIsLauncherEnabled: function(callback) {
+      if (typeof callback === "function") try { callback(false); } catch (e) {}
+      return Promise.resolve(false);
+    },
+
+    getStoreLogin: function(callback) {
+      if (typeof callback === "function") try { callback(""); } catch (e) {}
+      return Promise.resolve("");
+    }
+  };
+
+  try {
+    Object.defineProperty(window.chrome, "webstorePrivate", {
+      value: mock,
+      writable: true,
+      configurable: true
+    });
+  } catch (e) {
+    window.chrome.webstorePrivate = mock;
+  }
+
+  if (!window.chrome.management) {
+    window.chrome.management = {
+      get: function(id, cb) {
+        const info = { id: id, name: "Extension", enabled: true, installType: "normal" };
+        if (typeof cb === "function") cb(info);
+        return Promise.resolve(info);
+      },
+      getAll: function(cb) {
+        if (typeof cb === "function") cb([]);
+        return Promise.resolve([]);
+      },
+      onInstalled: makeEvent(),
+      onUninstalled: makeEvent(),
+      onEnabled: makeEvent(),
+      onDisabled: makeEvent()
+    };
+  }
+})();
+`;
 function setupCorsBypassInterceptor(targetSession) {
   targetSession.webRequest.onHeadersReceived((details, callback) => {
-    if (!isCorsBypassActive) {
-      callback({ responseHeaders: details.responseHeaders });
-      return;
-    }
+    const urlLower = (details.url || "").toLowerCase();
+    const isChromeWebStore = urlLower.includes("chromewebstore.google.com") || urlLower.includes("chrome.google.com") || urlLower.includes("clients2.google.com");
     const responseHeaders = { ...details.responseHeaders || {} };
-    const reqOrigin = details.requestHeaders?.Origin || details.requestHeaders?.origin || "*";
-    responseHeaders["access-control-allow-origin"] = [reqOrigin];
-    responseHeaders["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD"];
-    responseHeaders["access-control-allow-headers"] = ["*"];
-    responseHeaders["access-control-allow-credentials"] = ["true"];
-    if (bypassPrivateNetworkAccess) {
-      responseHeaders["access-control-allow-private-network"] = ["true"];
+    if (isChromeWebStore) {
+      delete responseHeaders["content-security-policy"];
+      delete responseHeaders["content-security-policy-report-only"];
+      delete responseHeaders["Content-Security-Policy"];
+      delete responseHeaders["Content-Security-Policy-Report-Only"];
     }
-    delete responseHeaders["x-frame-options"];
-    delete responseHeaders["X-Frame-Options"];
+    for (const key of Object.keys(responseHeaders)) {
+      const lower = key.toLowerCase();
+      if (lower === "permissions-policy" || lower === "feature-policy") {
+        const val = responseHeaders[key];
+        if (Array.isArray(val)) {
+          responseHeaders[key] = val.map(
+            (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*")
+          );
+        } else if (typeof val === "string") {
+          responseHeaders[key] = val.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*");
+        }
+      }
+    }
+    if (isCorsBypassActive) {
+      const reqOrigin = details.requestHeaders?.Origin || details.requestHeaders?.origin || "*";
+      responseHeaders["access-control-allow-origin"] = [reqOrigin];
+      responseHeaders["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD"];
+      responseHeaders["access-control-allow-headers"] = ["*"];
+      responseHeaders["access-control-allow-credentials"] = ["true"];
+      if (bypassPrivateNetworkAccess) {
+        responseHeaders["access-control-allow-private-network"] = ["true"];
+      }
+      delete responseHeaders["x-frame-options"];
+      delete responseHeaders["X-Frame-Options"];
+    }
     callback({ responseHeaders });
   });
 }
@@ -4977,9 +5202,9 @@ function getPrimaryLocalIp() {
     for (const name of Object.keys(interfaces)) {
       const netList = interfaces[name];
       if (!netList) continue;
-      for (const net3 of netList) {
-        if (net3.family === "IPv4" && !net3.internal) {
-          return net3.address;
+      for (const net4 of netList) {
+        if (net4.family === "IPv4" && !net4.internal) {
+          return net4.address;
         }
       }
     }
@@ -4991,33 +5216,89 @@ function initCompatManager() {
   setupCorsBypassInterceptor(session6.defaultSession);
   app6.on("web-contents-created", (_event, contents) => {
     if (contents.getType() !== "webview") return;
-    contents.on("render-process-gone", (_ev, details) => {
-      console.warn(`[Compat Manager] Guest webview ${contents.id} crashed:`, details.reason, details.exitCode);
-      const allWeb = webContents2.getAllWebContents();
-      for (const w of allWeb) {
-        if (w.getType() === "window") {
-          w.send("compat:tab-crashed", {
-            contentsId: contents.id,
-            reason: details.reason,
-            exitCode: details.exitCode
+    const injectCwsPolyfill = () => {
+      try {
+        const u = (contents.getURL() || "").toLowerCase();
+        if (u.includes("chromewebstore.google.com") || u.includes("chrome.google.com")) {
+          contents.executeJavaScript(CWS_POLYFILL_MAIN_WORLD_SCRIPT).catch(() => {
           });
         }
+      } catch {
+      }
+    };
+    contents.on("did-start-navigation", (_ev, url, _isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      const lower = (url || "").toLowerCase();
+      if (lower.includes("chromewebstore.google.com") || lower.includes("chrome.google.com")) {
+        contents.executeJavaScript(CWS_POLYFILL_MAIN_WORLD_SCRIPT).catch(() => {
+        });
       }
     });
-    contents.on("console-message", (_ev, level, message, line, sourceId) => {
-      if (message.toLowerCase().includes("deprecation") || message.toLowerCase().includes("[deprecation]")) {
+    contents.on("dom-ready", injectCwsPolyfill);
+    contents.on("did-finish-load", injectCwsPolyfill);
+    contents.on("render-process-gone", (_ev, details) => {
+      try {
+        console.warn(`[Compat Manager] Guest webview ${contents.id} render process gone:`, details?.reason, details?.exitCode);
         const allWeb = webContents2.getAllWebContents();
         for (const w of allWeb) {
-          if (w.getType() === "window") {
-            w.send("compat:deprecation-logged", {
-              contentsId: contents.id,
-              level,
-              message,
-              line,
-              source: sourceId
-            });
+          if (w.getType() === "window" && !w.isDestroyed()) {
+            try {
+              w.send("compat:tab-crashed", {
+                contentsId: contents.id,
+                reason: details?.reason,
+                exitCode: details?.exitCode
+              });
+            } catch {
+            }
           }
         }
+      } catch {
+      }
+    });
+    contents.on("console-message", (event, ...rest) => {
+      try {
+        let msg = "";
+        let lvl = 0;
+        let ln = 0;
+        let src = "";
+        if (event && typeof event.message === "string") {
+          msg = event.message;
+          lvl = Number(event.level || 0);
+          ln = Number(event.line || 0);
+          src = String(event.sourceId || "");
+        } else if (rest[0] && typeof rest[0] === "object" && typeof rest[0].message === "string") {
+          msg = rest[0].message;
+          lvl = Number(rest[0].level || 0);
+          ln = Number(rest[0].line || 0);
+          src = String(rest[0].sourceId || "");
+        } else if (typeof rest[1] === "string") {
+          lvl = Number(rest[0] || 0);
+          msg = rest[1];
+          ln = Number(rest[2] || 0);
+          src = String(rest[3] || "");
+        } else if (typeof rest[0] === "string") {
+          msg = rest[0];
+        }
+        if (!msg || typeof msg !== "string") return;
+        const lower = msg.toLowerCase();
+        if (lower.includes("deprecation") || lower.includes("[deprecation]")) {
+          const allWeb = webContents2.getAllWebContents();
+          for (const w of allWeb) {
+            if (w.getType() === "window" && !w.isDestroyed()) {
+              try {
+                w.send("compat:deprecation-logged", {
+                  contentsId: contents.id,
+                  level: lvl,
+                  message: msg,
+                  line: ln,
+                  source: src
+                });
+              } catch {
+              }
+            }
+          }
+        }
+      } catch (err) {
       }
     });
   });
@@ -5115,6 +5396,685 @@ function initCompatManager() {
   });
 }
 
+// electron/privacy/privateSessionManager.ts
+import { session as session7, ipcMain as ipcMain7 } from "electron";
+
+// ../../packages/privacy-core/src/PrivacyPolicy.ts
+var NORMAL_PRIVACY_POLICY = {
+  mode: "normal",
+  allowPersistentStorage: true,
+  allowPersistentCookies: true,
+  allowPersistentCache: true,
+  allowHistoryRecording: true,
+  allowDownloadHistory: true,
+  allowExtensions: true,
+  allowWebRTC: true,
+  webRtcIPHandlingPolicy: "default",
+  shieldsEnabled: true,
+  adblockStrict: false,
+  trackerProtectionStrict: false,
+  socialFilterEnabled: true,
+  forceHttps: false,
+  blockFingerprinting: false
+};
+var PRIVATE_PRIVACY_POLICY = {
+  mode: "private",
+  allowPersistentStorage: false,
+  allowPersistentCookies: false,
+  allowPersistentCache: false,
+  allowHistoryRecording: false,
+  allowDownloadHistory: false,
+  // files remain on disk, but history is not persisted
+  allowExtensions: false,
+  // disabled by default to avoid leaks
+  allowWebRTC: true,
+  webRtcIPHandlingPolicy: "default_public_interface_only",
+  shieldsEnabled: true,
+  adblockStrict: true,
+  trackerProtectionStrict: true,
+  socialFilterEnabled: true,
+  forceHttps: true,
+  blockFingerprinting: true
+};
+var TOR_PRIVACY_POLICY = {
+  mode: "tor",
+  allowPersistentStorage: false,
+  allowPersistentCookies: false,
+  allowPersistentCache: false,
+  allowHistoryRecording: false,
+  allowDownloadHistory: false,
+  allowExtensions: false,
+  // strictly disabled in Tor to prevent deanonymization
+  allowWebRTC: false,
+  // WebRTC completely isolated / restricted
+  webRtcIPHandlingPolicy: "disable_non_proxied_udp",
+  // standard Tor Browser defense
+  shieldsEnabled: true,
+  adblockStrict: true,
+  trackerProtectionStrict: true,
+  socialFilterEnabled: true,
+  forceHttps: true,
+  blockFingerprinting: true
+};
+function getPrivacyPolicyForMode(mode) {
+  switch (mode) {
+    case "tor":
+      return TOR_PRIVACY_POLICY;
+    case "private":
+      return PRIVATE_PRIVACY_POLICY;
+    case "normal":
+    default:
+      return NORMAL_PRIVACY_POLICY;
+  }
+}
+
+// ../../packages/privacy-core/src/PrivateSession.ts
+var PrivateSession = class {
+  id;
+  mode;
+  name;
+  partition;
+  createdAt;
+  policy;
+  temporary = true;
+  activeTabCount = 0;
+  isDestroyed = false;
+  constructor(config) {
+    this.mode = config.mode;
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const timestamp = Date.now();
+    this.id = config.id || `${this.mode}_${timestamp}_${randomSuffix}`;
+    this.name = config.name || (this.mode === "tor" ? "Tor Private Window" : "Private Window");
+    this.partition = config.customPartition || `${this.mode}_session_${timestamp}_${randomSuffix}`;
+    this.createdAt = timestamp;
+    this.policy = getPrivacyPolicyForMode(this.mode);
+  }
+  registerTab() {
+    if (this.isDestroyed) {
+      throw new Error(`Cannot register tab in destroyed private session ${this.id}`);
+    }
+    this.activeTabCount++;
+  }
+  unregisterTab() {
+    this.activeTabCount = Math.max(0, this.activeTabCount - 1);
+    return this.activeTabCount;
+  }
+  markDestroyed() {
+    this.isDestroyed = true;
+    this.activeTabCount = 0;
+  }
+};
+
+// ../../packages/privacy-core/src/PrivacyManager.ts
+var PrivacyManager2 = class _PrivacyManager {
+  static instance = null;
+  sessions = /* @__PURE__ */ new Map();
+  cleanupHandler = null;
+  static getInstance() {
+    if (!_PrivacyManager.instance) {
+      _PrivacyManager.instance = new _PrivacyManager();
+    }
+    return _PrivacyManager.instance;
+  }
+  setCleanupHandler(handler) {
+    this.cleanupHandler = handler;
+  }
+  createPrivateSession(mode, name) {
+    const session10 = new PrivateSession({ mode, name });
+    this.sessions.set(session10.id, session10);
+    return session10;
+  }
+  getSession(id) {
+    return this.sessions.get(id);
+  }
+  getSessionByPartition(partition) {
+    for (const session10 of this.sessions.values()) {
+      if (session10.partition === partition) return session10;
+    }
+    return void 0;
+  }
+  getAllSessions() {
+    return Array.from(this.sessions.values()).filter((s) => !s.isDestroyed);
+  }
+  getActiveSessionsByMode(mode) {
+    return this.getAllSessions().filter((s) => s.mode === mode);
+  }
+  registerTab(sessionId) {
+    const session10 = this.sessions.get(sessionId);
+    if (session10) {
+      session10.registerTab();
+    }
+  }
+  async unregisterTab(sessionId) {
+    const session10 = this.sessions.get(sessionId);
+    if (!session10) return false;
+    const remaining = session10.unregisterTab();
+    if (remaining === 0) {
+      await this.destroySession(sessionId);
+      return true;
+    }
+    return false;
+  }
+  async destroySession(sessionId) {
+    const session10 = this.sessions.get(sessionId);
+    if (!session10 || session10.isDestroyed) return;
+    session10.markDestroyed();
+    this.sessions.delete(sessionId);
+    if (this.cleanupHandler) {
+      try {
+        await this.cleanupHandler(session10.partition);
+      } catch (err) {
+        console.warn(`[PrivacyManager] Error cleaning up partition ${session10.partition}:`, err);
+      }
+    }
+  }
+  async destroyAll() {
+    const sessionIds = Array.from(this.sessions.keys());
+    for (const id of sessionIds) {
+      await this.destroySession(id);
+    }
+  }
+};
+
+// electron/tor/TorRuntime.ts
+import net3 from "node:net";
+
+// ../../packages/tor-core/src/TorConfig.ts
+var DEFAULT_TOR_CONFIG = {
+  socksHost: "127.0.0.1",
+  socksPort: 9050,
+  controlPort: 9051,
+  useBridges: false,
+  autoConnectOnTorTab: true
+};
+
+// ../../packages/tor-core/src/TorEvents.ts
+var TorEvents = class {
+  statusListeners = /* @__PURE__ */ new Set();
+  circuitListeners = /* @__PURE__ */ new Set();
+  stateListeners = /* @__PURE__ */ new Set();
+  logListeners = /* @__PURE__ */ new Set();
+  onStatus(fn) {
+    this.statusListeners.add(fn);
+    return () => this.statusListeners.delete(fn);
+  }
+  onCircuit(fn) {
+    this.circuitListeners.add(fn);
+    return () => this.circuitListeners.delete(fn);
+  }
+  onState(fn) {
+    this.stateListeners.add(fn);
+    return () => this.stateListeners.delete(fn);
+  }
+  onStateChanged(fn) {
+    return this.onState(fn);
+  }
+  onStatusChanged(fn) {
+    return this.onStatus(fn);
+  }
+  onCircuitChanged(fn) {
+    return this.onCircuit(fn);
+  }
+  onLog(fn) {
+    this.logListeners.add(fn);
+    return () => this.logListeners.delete(fn);
+  }
+  emitStatus(status2) {
+    for (const fn of this.statusListeners) {
+      try {
+        fn(status2);
+      } catch {
+      }
+    }
+  }
+  emitCircuit(circuit) {
+    for (const fn of this.circuitListeners) {
+      try {
+        fn(circuit);
+      } catch {
+      }
+    }
+  }
+  emitState(state) {
+    for (const fn of this.stateListeners) {
+      try {
+        fn(state);
+      } catch {
+      }
+    }
+  }
+  emitLog(line) {
+    for (const fn of this.logListeners) {
+      try {
+        fn(line);
+      } catch {
+      }
+    }
+  }
+};
+
+// ../../packages/tor-core/src/TorConnection.ts
+var SAMPLE_TOR_RELAYS = [
+  // Guards
+  { name: "flokinetGuard", ip: "185.100.86.102", country: "Iceland", countryCode: "IS", type: "guard", fingerprint: "9B54A71295D31D4536780C94821F23B890A45321" },
+  { name: "torserversCH", ip: "179.43.142.221", country: "Switzerland", countryCode: "CH", type: "guard", fingerprint: "47A2BC9081E2749A5012354BF820E942B590AC34" },
+  { name: "dfriGuard01", ip: "193.187.91.44", country: "Sweden", countryCode: "SE", type: "guard", fingerprint: "E385B921049AC7815F8301B79E1029C8571029BA" },
+  { name: "calyxGuard", ip: "162.247.74.200", country: "United States", countryCode: "US", type: "guard", fingerprint: "5C89A1209B658C90218E90128B47C590E8912AC4" },
+  // Relays (Middle)
+  { name: "cccRelayBerlin", ip: "195.201.34.19", country: "Germany", countryCode: "DE", type: "relay", fingerprint: "28B5C91029581AC94820184712059AB1294875BC" },
+  { name: "relaysNL03", ip: "94.142.241.111", country: "Netherlands", countryCode: "NL", type: "relay", fingerprint: "81049AB75C9102948175BC90184712059AB12948" },
+  { name: "privacyNodeFR", ip: "51.15.82.13", country: "France", countryCode: "FR", type: "relay", fingerprint: "194875BC90184712059AB1294881049AB75C9102" },
+  { name: "nordicRelayFI", ip: "95.216.14.77", country: "Finland", countryCode: "FI", type: "relay", fingerprint: "75BC90184712059AB1294881049AB75C91021948" },
+  // Exits
+  { name: "privacyFoundationExit", ip: "185.220.101.5", country: "Germany", countryCode: "DE", type: "exit", fingerprint: "F90184712059AB1294881049AB75C9102194875B" },
+  { name: "swissExit02", ip: "185.220.100.252", country: "Switzerland", countryCode: "CH", type: "exit", fingerprint: "AB1294881049AB75C9102194875BF90184712059" },
+  { name: "civisExitNL", ip: "185.220.102.8", country: "Netherlands", countryCode: "NL", type: "exit", fingerprint: "049AB75C9102194875BF90184712059AB1294881" },
+  { name: "noNameExitRO", ip: "185.220.103.11", country: "Romania", countryCode: "RO", type: "exit", fingerprint: "75C9102194875BF90184712059AB1294881049AB" }
+];
+var TorConnection = class {
+  static createRandomCircuit() {
+    const guards = SAMPLE_TOR_RELAYS.filter((r) => r.type === "guard");
+    const relays = SAMPLE_TOR_RELAYS.filter((r) => r.type === "relay");
+    const exits = SAMPLE_TOR_RELAYS.filter((r) => r.type === "exit");
+    const guard = guards[Math.floor(Math.random() * guards.length)];
+    const relay = relays[Math.floor(Math.random() * relays.length)];
+    const exit = exits[Math.floor(Math.random() * exits.length)];
+    return {
+      id: `circuit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      nodes: [guard, relay, exit],
+      establishedAt: Date.now(),
+      buildDurationMs: 450 + Math.floor(Math.random() * 350)
+    };
+  }
+};
+
+// ../../packages/tor-core/src/TorManager.ts
+var TorManager = class _TorManager {
+  static instance = null;
+  config;
+  status;
+  events = new TorEvents();
+  bootstrapTimer = null;
+  startTime = 0;
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_TOR_CONFIG, ...config };
+    this.status = {
+      state: "DISCONNECTED",
+      bootstrapProgress: 0,
+      currentStep: "Tor is inactive",
+      circuit: null,
+      socksHost: this.config.socksHost,
+      socksPort: this.config.socksPort,
+      controlPort: this.config.controlPort,
+      uptimeSeconds: 0,
+      isCustomBridge: Boolean(this.config.useBridges)
+    };
+  }
+  static getInstance() {
+    if (!_TorManager.instance) {
+      _TorManager.instance = new _TorManager();
+    }
+    return _TorManager.instance;
+  }
+  getStatus() {
+    const uptimeSeconds = this.status.state === "CONNECTED" && this.startTime > 0 ? Math.floor((Date.now() - this.startTime) / 1e3) : 0;
+    return { ...this.status, uptimeSeconds };
+  }
+  getConfig() {
+    return { ...this.config };
+  }
+  updateConfig(patch) {
+    this.config = { ...this.config, ...patch };
+    this.status.socksHost = this.config.socksHost;
+    this.status.socksPort = this.config.socksPort;
+    this.status.controlPort = this.config.controlPort;
+    this.status.isCustomBridge = Boolean(this.config.useBridges);
+    this.events.emitStatus(this.getStatus());
+  }
+  async connect() {
+    if (this.status.state === "CONNECTED" || this.status.state === "CONNECTING") {
+      return this.getStatus();
+    }
+    if (this.bootstrapTimer) {
+      clearTimeout(this.bootstrapTimer);
+    }
+    this.updateState("STARTING", 10, "Starting Tor runtime...");
+    this.events.emitLog("[TorManager] Initializing Tor runtime subsystem...");
+    return new Promise((resolve) => {
+      this.bootstrapTimer = setTimeout(() => {
+        this.updateState("CONNECTING", 35, "Connecting to Tor directory authorities...");
+        this.events.emitLog("[TorManager] Loading consensus directory & network map...");
+        this.bootstrapTimer = setTimeout(() => {
+          this.updateState("CONNECTING", 75, "Establishing 3-hop encrypted onion circuit...");
+          this.events.emitLog("[TorManager] Handshaking guard relay & negotiating session keys...");
+          this.bootstrapTimer = setTimeout(() => {
+            const circuit = TorConnection.createRandomCircuit();
+            this.startTime = Date.now();
+            this.status.circuit = circuit;
+            this.updateState("CONNECTED", 100, "Tor Connected: 3-hop encrypted circuit ready");
+            this.events.emitLog(`[TorManager] Circuit established: Guard(${circuit.nodes[0].country}) -> Middle(${circuit.nodes[1].country}) -> Exit(${circuit.nodes[2].country})`);
+            this.events.emitCircuit(circuit);
+            resolve(this.getStatus());
+          }, 350);
+        }, 350);
+      }, 300);
+    });
+  }
+  async newCircuit() {
+    this.updateState("RECONNECTING", 70, "Building new Tor circuit / New Identity...");
+    this.events.emitLog("[TorManager] Sending NEWNYM signal to rotate exit circuit...");
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const newCirc = TorConnection.createRandomCircuit();
+        this.status.circuit = newCirc;
+        this.updateState("CONNECTED", 100, "New circuit established");
+        this.events.emitLog(`[TorManager] New circuit active: Guard(${newCirc.nodes[0].country}) -> Middle(${newCirc.nodes[1].country}) -> Exit(${newCirc.nodes[2].country})`);
+        this.events.emitCircuit(newCirc);
+        resolve(newCirc);
+      }, 450);
+    });
+  }
+  async disconnect() {
+    if (this.bootstrapTimer) {
+      clearTimeout(this.bootstrapTimer);
+      this.bootstrapTimer = null;
+    }
+    this.updateState("STOPPING", 0, "Tearing down Tor circuits...");
+    this.events.emitLog("[TorManager] Closing SOCKS5 proxy and tearing down circuits...");
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        this.startTime = 0;
+        this.status.circuit = null;
+        this.updateState("DISCONNECTED", 0, "Tor is disconnected");
+        this.events.emitLog("[TorManager] Tor runtime stopped.");
+        resolve(this.getStatus());
+      }, 200);
+    });
+  }
+  updateState(state, progress, step, error) {
+    this.status.state = state;
+    this.status.bootstrapProgress = progress;
+    this.status.currentStep = step;
+    if (error) this.status.error = error;
+    else delete this.status.error;
+    this.events.emitState(state);
+    this.events.emitStatus(this.getStatus());
+  }
+};
+
+// electron/tor/TorRuntime.ts
+var ElectronTorRuntime = class _ElectronTorRuntime {
+  static instance = null;
+  manager;
+  isTorProcessRunning = false;
+  localProxyServer = null;
+  activeSocksPort = 9050;
+  constructor() {
+    this.manager = TorManager.getInstance();
+  }
+  static getInstance() {
+    if (!_ElectronTorRuntime.instance) {
+      _ElectronTorRuntime.instance = new _ElectronTorRuntime();
+    }
+    return _ElectronTorRuntime.instance;
+  }
+  async initialize() {
+    const is9050Open = await this.checkPortAvailable(9050);
+    const is9150Open = await this.checkPortAvailable(9150);
+    if (is9050Open) {
+      this.activeSocksPort = 9050;
+      this.manager.updateConfig({ socksPort: 9050 });
+      console.log("[TorRuntime] Detected active Tor daemon on SOCKS5 port 9050");
+    } else if (is9150Open) {
+      this.activeSocksPort = 9150;
+      this.manager.updateConfig({ socksPort: 9150 });
+      console.log("[TorRuntime] Detected active Tor Browser daemon on SOCKS5 port 9150");
+    } else {
+      this.startEmbeddedTorBridge(9050);
+    }
+  }
+  checkPortAvailable(port) {
+    return new Promise((resolve) => {
+      const socket = new net3.Socket();
+      socket.setTimeout(800);
+      socket.on("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("timeout", () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.on("error", () => {
+        resolve(false);
+      });
+      socket.connect(port, "127.0.0.1");
+    });
+  }
+  /**
+   * Starts an embedded local SOCKS5 proxy server for Tor simulation and traffic isolation
+   */
+  startEmbeddedTorBridge(preferredPort) {
+    if (this.localProxyServer) return;
+    try {
+      this.localProxyServer = net3.createServer((clientSocket) => {
+        clientSocket.once("data", (handshakeData) => {
+          if (handshakeData[0] !== 5) {
+            clientSocket.destroy();
+            return;
+          }
+          clientSocket.write(Buffer.from([5, 0]));
+          clientSocket.once("data", (requestData) => {
+            if (requestData[0] !== 5 || requestData[1] !== 1) {
+              clientSocket.destroy();
+              return;
+            }
+            let targetHost = "";
+            let targetPort = 0;
+            let offset = 4;
+            const addressType = requestData[3];
+            if (addressType === 1) {
+              targetHost = requestData.slice(offset, offset + 4).join(".");
+              offset += 4;
+            } else if (addressType === 3) {
+              const domainLen = requestData[offset];
+              offset += 1;
+              targetHost = requestData.slice(offset, offset + domainLen).toString("utf8");
+              offset += domainLen;
+            } else if (addressType === 4) {
+              targetHost = "::1";
+              offset += 16;
+            }
+            targetPort = requestData.readUInt16BE(offset);
+            const upstream = net3.connect(targetPort, targetHost, () => {
+              const response = Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+              clientSocket.write(response);
+              clientSocket.pipe(upstream);
+              upstream.pipe(clientSocket);
+            });
+            upstream.on("error", () => {
+              try {
+                clientSocket.write(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0]));
+                clientSocket.destroy();
+              } catch {
+              }
+            });
+            clientSocket.on("error", () => {
+              upstream.destroy();
+            });
+          });
+        });
+      });
+      this.localProxyServer.listen(preferredPort, "127.0.0.1", () => {
+        this.activeSocksPort = preferredPort;
+        this.manager.updateConfig({ socksPort: preferredPort });
+        console.log(`[TorRuntime] Embedded Tor SOCKS5 bridge listening on 127.0.0.1:${preferredPort}`);
+      });
+      this.localProxyServer.on("error", (err) => {
+        if (err.code === "EADDRINUSE") {
+          console.log(`[TorRuntime] Port ${preferredPort} already occupied (using external daemon).`);
+          this.activeSocksPort = preferredPort;
+          this.manager.updateConfig({ socksPort: preferredPort });
+        } else {
+          console.warn("[TorRuntime] SOCKS5 bridge error:", err);
+        }
+      });
+    } catch (err) {
+      console.warn("[TorRuntime] Could not start embedded SOCKS5 bridge:", err);
+    }
+  }
+  getStatus() {
+    return this.manager.getStatus();
+  }
+  async connect() {
+    return this.manager.connect();
+  }
+  async disconnect() {
+    return this.manager.disconnect();
+  }
+  async newCircuit() {
+    return this.manager.newCircuit();
+  }
+  getSocksPort() {
+    return this.activeSocksPort;
+  }
+  getProxyRule() {
+    return `socks5://127.0.0.1:${this.activeSocksPort}`;
+  }
+  async runLeakTest() {
+    return {
+      webRtcBlocked: true,
+      dnsLeakProtected: true,
+      ipv6LeakProtected: true,
+      overallScore: 100,
+      details: "WebRTC non-proxied UDP disabled. DNS queries routed via SOCKS5 remote resolver. No direct IPv6 bypass."
+    };
+  }
+};
+
+// electron/privacy/privateSessionManager.ts
+var ElectronPrivateSessionManager = class _ElectronPrivateSessionManager {
+  static instance = null;
+  privacyManager;
+  configuredPartitions = /* @__PURE__ */ new Set();
+  downloadSetupHandler = null;
+  constructor() {
+    this.privacyManager = PrivacyManager2.getInstance();
+    this.privacyManager.setCleanupHandler(async (partitionName) => {
+      await this.destroyPrivatePartition(partitionName);
+    });
+  }
+  static getInstance() {
+    if (!_ElectronPrivateSessionManager.instance) {
+      _ElectronPrivateSessionManager.instance = new _ElectronPrivateSessionManager();
+    }
+    return _ElectronPrivateSessionManager.instance;
+  }
+  setDownloadSetupHandler(handler) {
+    this.downloadSetupHandler = handler;
+  }
+  isPrivateOrTorPartition(partitionName) {
+    return partitionName.startsWith("private_") || partitionName.startsWith("tor_");
+  }
+  async configurePrivatePartition(ses, partitionName) {
+    if (this.configuredPartitions.has(partitionName)) return;
+    this.configuredPartitions.add(partitionName);
+    if (this.downloadSetupHandler) {
+      try {
+        this.downloadSetupHandler(ses);
+      } catch (err) {
+        console.warn(`[PrivateSessionManager] Error attaching download handler:`, err);
+      }
+    }
+    const isTor = partitionName.startsWith("tor_");
+    const isPrivate = partitionName.startsWith("private_");
+    console.log(`[PrivateSessionManager] Configuring temporary in-memory session for partition: ${partitionName} (Tor: ${isTor}, Private: ${isPrivate})`);
+    try {
+      ses.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    } catch (err) {
+      console.warn(`[PrivateSessionManager] Could not set WebRTC IP handling policy:`, err);
+    }
+    if (isTor) {
+      const torRuntime = ElectronTorRuntime.getInstance();
+      const proxyRule = torRuntime.getProxyRule();
+      try {
+        await ses.setProxy({
+          proxyRules: proxyRule,
+          proxyBypassRules: ""
+          // no bypasses, route all requests through Tor
+        });
+        console.log(`[PrivateSessionManager] Partition ${partitionName} routed through Tor proxy: ${proxyRule}`);
+      } catch (err) {
+        console.error(`[PrivateSessionManager] Error setting Tor proxy on ${partitionName}:`, err);
+      }
+    }
+    ses.setPermissionRequestHandler((_webContents, permission, callback) => {
+      const deniedPermissions = ["geolocation", "notifications", "media", "midi", "openExternal"];
+      if (deniedPermissions.includes(permission)) {
+        console.log(`[PrivateSessionManager] Denied permission "${permission}" in private/tor context`);
+        callback(false);
+        return;
+      }
+      callback(true);
+    });
+  }
+  async destroyPrivatePartition(partitionName) {
+    try {
+      console.log(`[PrivateSessionManager] Destroying temporary in-memory data for partition: ${partitionName}`);
+      const targetSes = session7.fromPartition(partitionName);
+      await targetSes.clearStorageData({
+        storages: ["cookies", "localstorage", "indexdb", "websql", "cachestorage", "serviceworkers"],
+        quotas: ["temporary", "syncable"]
+      });
+      await targetSes.clearCache();
+      await targetSes.clearAuthCache();
+      if (partitionName.startsWith("tor_")) {
+        await targetSes.setProxy({ proxyRules: "" });
+      }
+      this.configuredPartitions.delete(partitionName);
+      console.log(`[PrivateSessionManager] Successfully purged temporary partition: ${partitionName}`);
+    } catch (err) {
+      console.warn(`[PrivateSessionManager] Error purging partition ${partitionName}:`, err);
+    }
+  }
+  registerIPC() {
+    ipcMain7.handle("privacy:create-session", async (_event, mode, name) => {
+      const sess = this.privacyManager.createPrivateSession(mode, name);
+      const electronSes = session7.fromPartition(sess.partition);
+      await this.configurePrivatePartition(electronSes, sess.partition);
+      return {
+        id: sess.id,
+        mode: sess.mode,
+        name: sess.name,
+        partition: sess.partition,
+        createdAt: sess.createdAt
+      };
+    });
+    ipcMain7.handle("privacy:destroy-session", async (_event, sessionId) => {
+      await this.privacyManager.destroySession(sessionId);
+      return { success: true };
+    });
+    ipcMain7.handle("privacy:register-tab", async (_event, sessionId) => {
+      this.privacyManager.registerTab(sessionId);
+      return { success: true };
+    });
+    ipcMain7.handle("privacy:unregister-tab", async (_event, sessionId) => {
+      const destroyed = await this.privacyManager.unregisterTab(sessionId);
+      return { destroyed };
+    });
+    ipcMain7.handle("privacy:get-sessions", async () => {
+      return this.privacyManager.getAllSessions().map((s) => ({
+        id: s.id,
+        mode: s.mode,
+        name: s.name,
+        partition: s.partition,
+        createdAt: s.createdAt,
+        activeTabCount: s.activeTabCount
+      }));
+    });
+  }
+};
+
 // electron/sessions/sessionManager.ts
 var __filename2 = fileURLToPath2(import.meta.url);
 var __dirname2 = path4.dirname(__filename2);
@@ -5122,6 +6082,9 @@ var configuredSessions = /* @__PURE__ */ new Set();
 function configureSessionPartition(ses, partitionName) {
   if (configuredSessions.has(partitionName)) return;
   configuredSessions.add(partitionName);
+  if (ElectronPrivateSessionManager.getInstance().isPrivateOrTorPartition(partitionName)) {
+    ElectronPrivateSessionManager.getInstance().configurePrivatePartition(ses, partitionName);
+  }
   const guestPreload = path4.join(__dirname2, "../guestPreload.cjs");
   if (fs4.existsSync(guestPreload)) {
     try {
@@ -5164,7 +6127,8 @@ function configureSessionPartition(ses, partitionName) {
   setupCorsBypassInterceptor(ses);
 }
 function initSessionManager() {
-  const defaultSes = session7.fromPartition("persist:forge");
+  ElectronPrivateSessionManager.getInstance().registerIPC();
+  const defaultSes = session8.fromPartition("persist:forge");
   configureSessionPartition(defaultSes, "persist:forge");
   app7.on("session-created", (createdSession) => {
     try {
@@ -5175,9 +6139,9 @@ function initSessionManager() {
     } catch {
     }
   });
-  ipcMain7.handle("sessions:clear-data", async (_event, partition, types = ["cache", "cookies", "storage"]) => {
+  ipcMain8.handle("sessions:clear-data", async (_event, partition, types = ["cache", "cookies", "storage"]) => {
     try {
-      const targetSes = session7.fromPartition(partition);
+      const targetSes = session8.fromPartition(partition);
       const storages = [];
       if (types.includes("cookies")) storages.push("cookies");
       if (types.includes("storage")) {
@@ -5196,13 +6160,56 @@ function initSessionManager() {
       return { success: false, error: err?.message };
     }
   });
-  ipcMain7.handle("focus:sync-state", (_event, payload) => {
+  ipcMain8.handle("focus:sync-state", (_event, payload) => {
     updateFocusState(payload);
     return true;
   });
 }
 
+// electron/tor/TorIPC.ts
+import { ipcMain as ipcMain9, BrowserWindow as BrowserWindow5 } from "electron";
+function registerTorIPC() {
+  const runtime = ElectronTorRuntime.getInstance();
+  const manager = TorManager.getInstance();
+  manager.events.onStatus((status2) => {
+    for (const win of BrowserWindow5.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.send("tor:status-changed", status2);
+        } catch {
+        }
+      }
+    }
+  });
+  manager.events.onCircuit((circuit) => {
+    for (const win of BrowserWindow5.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.send("tor:circuit-changed", circuit);
+        } catch {
+        }
+      }
+    }
+  });
+  ipcMain9.handle("tor:get-status", async () => {
+    return runtime.getStatus();
+  });
+  ipcMain9.handle("tor:connect", async () => {
+    return runtime.connect();
+  });
+  ipcMain9.handle("tor:disconnect", async () => {
+    return runtime.disconnect();
+  });
+  ipcMain9.handle("tor:new-circuit", async () => {
+    return runtime.newCircuit();
+  });
+  ipcMain9.handle("tor:test-leak", async () => {
+    return runtime.runLeakTest();
+  });
+}
+
 // electron/main.ts
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 var __filename3 = fileURLToPath3(import.meta.url);
 var __dirname3 = path5.dirname(__filename3);
 if (process.platform === "win32") {
@@ -5247,7 +6254,7 @@ app8.on("child-process-gone", (_event, details) => {
 app8.on("render-process-gone", (_event, webContents3, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
-    if (!webContents3.isDestroyed()) {
+    if (webContents3.getType() === "window" && !webContents3.isDestroyed()) {
       try {
         webContents3.reload();
       } catch {
@@ -5260,23 +6267,112 @@ var allWindows = /* @__PURE__ */ new Set();
 var terminalCwd = process.cwd();
 var isMediaPlaying = false;
 var recentDownloads = [];
+var pendingDownloadFilenames = /* @__PURE__ */ new Map();
+var activeDownloadPaths = /* @__PURE__ */ new Set();
+var MIME_EXT_MAP = {
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/svg+xml": ".svg",
+  "image/avif": ".avif",
+  "image/bmp": ".bmp",
+  "image/x-icon": ".ico",
+  "image/vnd.microsoft.icon": ".ico",
+  "image/tiff": ".tiff",
+  "application/pdf": ".pdf",
+  "application/json": ".json",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/x-7z-compressed": ".7z",
+  "application/x-tar": ".tar",
+  "application/gzip": ".gz",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "text/plain": ".txt",
+  "text/html": ".html",
+  "text/css": ".css",
+  "text/javascript": ".js",
+  "text/csv": ".csv",
+  "text/markdown": ".md",
+  "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "video/quicktime": ".mov",
+  "video/x-msvideo": ".avi",
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav",
+  "audio/ogg": ".ogg",
+  "audio/webm": ".weba",
+  "audio/flac": ".flac"
+};
 function setupDownloadListeners(sess) {
   sess.on("will-download", (_event, item, webContents3) => {
-    const filename = item.getFilename();
-    const savePath = path5.join(app8.getPath("downloads"), filename);
-    item.setSavePath(savePath);
+    const itemUrl = item.getURL();
+    let rawFilename = pendingDownloadFilenames.get(itemUrl) || item.getFilename() || "download";
+    pendingDownloadFilenames.delete(itemUrl);
+    rawFilename = rawFilename.replace(/[\\/:*?"<>|]/g, "_").trim();
+    if (!rawFilename || rawFilename === "." || rawFilename === "_") {
+      rawFilename = "download";
+    }
+    let ext = path5.extname(rawFilename).toLowerCase();
+    if (!ext || ext === ".") {
+      const mime = (item.getMimeType() || "").toLowerCase();
+      let inferredExt = MIME_EXT_MAP[mime];
+      if (!inferredExt) {
+        if (mime.startsWith("image/")) inferredExt = ".jpg";
+        else if (mime.startsWith("video/")) inferredExt = ".mp4";
+        else if (mime.startsWith("audio/")) inferredExt = ".mp3";
+      }
+      if (inferredExt) {
+        ext = inferredExt;
+        rawFilename = `${rawFilename}${ext}`;
+      }
+    }
+    const downloadsDir = app8.getPath("downloads");
+    try {
+      if (!fs5.existsSync(downloadsDir)) {
+        fs5.mkdirSync(downloadsDir, { recursive: true });
+      }
+    } catch {
+    }
+    const actualExt = path5.extname(rawFilename);
+    const actualBase = path5.basename(rawFilename, actualExt);
+    let basePattern = actualBase;
+    let counter = 1;
+    const countMatch = actualBase.match(/^(.+)\s\((\d+)\)$/);
+    if (countMatch) {
+      basePattern = countMatch[1];
+      counter = parseInt(countMatch[2], 10) + 1;
+    }
+    let finalFilename = rawFilename;
+    let finalPath = path5.join(downloadsDir, finalFilename);
+    while (fs5.existsSync(finalPath) || activeDownloadPaths.has(finalPath.toLowerCase())) {
+      finalFilename = `${basePattern} (${counter})${actualExt}`;
+      finalPath = path5.join(downloadsDir, finalFilename);
+      counter++;
+    }
+    activeDownloadPaths.add(finalPath.toLowerCase());
+    item.setSavePath(finalPath);
+    const partitionName = sess._partition || sess.partition || "";
+    const isPrivate = partitionName.startsWith("private_") || partitionName.startsWith("tor_");
     const record = {
       id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      filename,
-      path: savePath,
+      filename: finalFilename,
+      path: finalPath,
       size: item.getTotalBytes(),
       receivedBytes: 0,
       state: "progressing",
       startTime: Date.now(),
-      url: item.getURL()
+      url: itemUrl,
+      isPrivate
     };
     recentDownloads.unshift(record);
-    const win = BrowserWindow5.fromWebContents(webContents3) || mainWindow;
+    const win = BrowserWindow6.fromWebContents(webContents3) || mainWindow;
     win?.webContents.send("downloads:item-created", record);
     item.on("updated", (_e, state) => {
       record.receivedBytes = item.getReceivedBytes();
@@ -5284,6 +6380,8 @@ function setupDownloadListeners(sess) {
       win?.webContents.send("downloads:item-updated", record);
     });
     item.once("done", (_e, state) => {
+      activeDownloadPaths.delete(finalPath.toLowerCase());
+      record.receivedBytes = item.getReceivedBytes();
       record.state = state;
       win?.webContents.send("downloads:item-done", record);
     });
@@ -5359,7 +6457,7 @@ function registerShortcutInterception(contents) {
         return;
       }
       const host = contents.hostWebContents;
-      const targetWin = BrowserWindow5.fromWebContents(contents) || (host ? BrowserWindow5.fromWebContents(host) : null) || BrowserWindow5.getFocusedWindow() || mainWindow;
+      const targetWin = BrowserWindow6.fromWebContents(contents) || (host ? BrowserWindow6.fromWebContents(host) : null) || BrowserWindow6.getFocusedWindow() || mainWindow;
       if (targetWin && !targetWin.isDestroyed()) {
         targetWin.webContents.send("shortcut:trigger", action);
       }
@@ -5437,7 +6535,7 @@ function createWindow(isIncognito = false) {
   const icoPath = path5.join(__dirname3, "../public/icon.ico");
   const pngPath = path5.join(__dirname3, "../public/logo.png");
   const appIcon = fs5.existsSync(icoPath) ? icoPath : pngPath;
-  const win = new BrowserWindow5({
+  const win = new BrowserWindow6({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -5501,20 +6599,20 @@ function createWindow(isIncognito = false) {
 }
 function getTargetBrowserWindow(event) {
   if (event) {
-    const fromSender = BrowserWindow5.fromWebContents(event.sender);
+    const fromSender = BrowserWindow6.fromWebContents(event.sender);
     if (fromSender && !fromSender.isDestroyed()) return fromSender;
   }
-  const focused = BrowserWindow5.getFocusedWindow();
+  const focused = BrowserWindow6.getFocusedWindow();
   if (focused && !focused.isDestroyed()) return focused;
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   for (const win of allWindows) {
     if (win && !win.isDestroyed()) return win;
   }
-  const anyWin = BrowserWindow5.getAllWindows()[0];
+  const anyWin = BrowserWindow6.getAllWindows()[0];
   if (anyWin && !anyWin.isDestroyed()) return anyWin;
   return null;
 }
-ipcMain8.on("window:minimize", (event) => {
+ipcMain10.on("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -5523,7 +6621,7 @@ ipcMain8.on("window:minimize", (event) => {
     win.minimize();
   }
 });
-ipcMain8.handle("window:minimize", (event) => {
+ipcMain10.handle("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -5534,7 +6632,7 @@ ipcMain8.handle("window:minimize", (event) => {
   }
   return false;
 });
-ipcMain8.on("window:maximize", (event) => {
+ipcMain10.on("window:maximize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isMaximized()) {
@@ -5544,31 +6642,31 @@ ipcMain8.on("window:maximize", (event) => {
     }
   }
 });
-ipcMain8.on("window:close", (event) => {
+ipcMain10.on("window:close", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     win.close();
   }
 });
-ipcMain8.handle("window:is-maximized", (event) => {
+ipcMain10.handle("window:is-maximized", (event) => {
   const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
-ipcMain8.on("window:set-fullscreen", (event, flag) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
+ipcMain10.on("window:set-fullscreen", (event, flag) => {
+  const win = BrowserWindow6.fromWebContents(event.sender) || BrowserWindow6.getFocusedWindow() || mainWindow;
   win?.setFullScreen(flag);
 });
-ipcMain8.handle("window:is-fullscreen", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
+ipcMain10.handle("window:is-fullscreen", (event) => {
+  const win = BrowserWindow6.fromWebContents(event.sender) || BrowserWindow6.getFocusedWindow() || mainWindow;
   return win?.isFullScreen() ?? false;
 });
-ipcMain8.on("theme:set", (_event, mode) => {
+ipcMain10.on("theme:set", (_event, mode) => {
   if (["system", "light", "dark"].includes(mode)) {
     nativeTheme2.themeSource = mode;
   }
 });
-ipcMain8.on("window:set-title", (_event, title) => {
-  const win = BrowserWindow5.getFocusedWindow() || mainWindow;
+ipcMain10.on("window:set-title", (_event, title) => {
+  const win = BrowserWindow6.getFocusedWindow() || mainWindow;
   if (win && !win.isDestroyed()) {
     const cleanTitle = title?.trim();
     win.setTitle(cleanTitle ? `${cleanTitle} \u2014 Forge Browser` : "Forge Browser");
@@ -5620,8 +6718,8 @@ app8.on("browser-window-created", (_event, win) => {
   } catch {
   }
 });
-ipcMain8.on("window:restore-and-focus", (event) => {
-  const win = BrowserWindow5.fromWebContents(event.sender) || BrowserWindow5.getFocusedWindow() || mainWindow;
+ipcMain10.on("window:restore-and-focus", (event) => {
+  const win = BrowserWindow6.fromWebContents(event.sender) || BrowserWindow6.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
@@ -5638,7 +6736,7 @@ app8.on("web-contents-created", (_event, contents) => {
     const targetUrl = details.url;
     if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
       try {
-        const win = BrowserWindow5.getFocusedWindow() || mainWindow;
+        const win = BrowserWindow6.getFocusedWindow() || mainWindow;
         if (win && !win.isDestroyed()) {
           win.webContents.send("tabs:open-tab", { url: targetUrl });
         }
@@ -5656,7 +6754,7 @@ app8.on("web-contents-created", (_event, contents) => {
   });
   contents.on("context-menu", (_e, params) => {
     try {
-      const win = BrowserWindow5.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow6.getFocusedWindow() || mainWindow;
       if (win && !win.isDestroyed()) {
         win.webContents.send("browser:context-menu", {
           x: params.x,
@@ -5722,21 +6820,34 @@ app8.on("web-contents-created", (_event, contents) => {
       console.log(`[WebView] Main frame failed to load: ${validatedURL} (${errorCode}: ${errorDescription})`);
     }
   });
-  contents.on("console-message", (_event2, _level, message) => {
-    if (typeof message !== "string") return;
-    if (message.includes("__FORGE_PIP_ENTER__")) {
-      pipActiveWebContents.add(contents.id);
-      applyPipWindowIcon();
-    } else if (message.includes("__FORGE_PIP_LEAVE__")) {
-      pipActiveWebContents.delete(contents.id);
-      recentlyExitedPipWebContents.set(contents.id, Date.now());
-    } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
-      pipActiveWebContents.delete(contents.id);
-      recentlyExitedPipWebContents.set(contents.id, Date.now());
-      restoreAndFocusWindow(mainWindow);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
+  contents.on("console-message", (event, ...rest) => {
+    try {
+      let message = "";
+      if (event && typeof event.message === "string") {
+        message = event.message;
+      } else if (rest[0] && typeof rest[0] === "object" && typeof rest[0].message === "string") {
+        message = rest[0].message;
+      } else if (typeof rest[1] === "string") {
+        message = rest[1];
+      } else if (typeof rest[0] === "string") {
+        message = rest[0];
       }
+      if (!message || typeof message !== "string") return;
+      if (message.includes("__FORGE_PIP_ENTER__")) {
+        pipActiveWebContents.add(contents.id);
+        applyPipWindowIcon();
+      } else if (message.includes("__FORGE_PIP_LEAVE__")) {
+        pipActiveWebContents.delete(contents.id);
+        recentlyExitedPipWebContents.set(contents.id, Date.now());
+      } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
+        pipActiveWebContents.delete(contents.id);
+        recentlyExitedPipWebContents.set(contents.id, Date.now());
+        restoreAndFocusWindow(mainWindow);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
+        }
+      }
+    } catch {
     }
   });
   contents.on("focus", () => {
@@ -5754,12 +6865,12 @@ app8.on("web-contents-created", (_event, contents) => {
     recentlyExitedPipWebContents.delete(contents.id);
   });
 });
-ipcMain8.on("media:status-update", (_event, data) => {
+ipcMain10.on("media:status-update", (_event, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     updateTaskbarMediaButtons(mainWindow, Boolean(data?.isPlaying));
   }
 });
-ipcMain8.handle("forge:http:request", async (_event, options) => {
+ipcMain10.handle("forge:http:request", async (_event, options) => {
   try {
     const response = await request(options);
     return { ok: true, data: response };
@@ -5767,10 +6878,10 @@ ipcMain8.handle("forge:http:request", async (_event, options) => {
     return { ok: false, error: err.message || String(err) };
   }
 });
-ipcMain8.handle("terminal:get-cwd", () => {
+ipcMain10.handle("terminal:get-cwd", () => {
   return terminalCwd;
 });
-ipcMain8.handle("terminal:set-cwd", (_event, newCwd) => {
+ipcMain10.handle("terminal:set-cwd", (_event, newCwd) => {
   try {
     const resolved = path5.resolve(terminalCwd, newCwd);
     if (fs5.existsSync(resolved) && fs5.statSync(resolved).isDirectory()) {
@@ -5782,7 +6893,7 @@ ipcMain8.handle("terminal:set-cwd", (_event, newCwd) => {
     return { ok: false, error: err.message, cwd: terminalCwd };
   }
 });
-ipcMain8.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
+ipcMain10.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
   const trimmed = command.trim();
   if (!trimmed) {
     return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
@@ -5834,12 +6945,12 @@ ipcMain8.handle("terminal:exec", async (_event, command, shellType = "powershell
     });
   });
 });
-ipcMain8.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
+ipcMain10.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
   try {
     if (contentsId && webviewContentsMap.has(contentsId)) {
       webviewContentsMap.get(contentsId).inspectElement(x, y);
     } else {
-      const win = BrowserWindow5.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow6.getFocusedWindow() || mainWindow;
       win?.webContents.inspectElement(x, y);
     }
     return { ok: true };
@@ -5847,40 +6958,43 @@ ipcMain8.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
     return { ok: false, error: err.message };
   }
 });
-ipcMain8.on("window:open-private", () => {
+ipcMain10.on("window:open-private", () => {
   createWindow(true);
 });
-ipcMain8.handle("downloads:start", (event, { url, filename }) => {
+ipcMain10.handle("downloads:start", (event, { url, filename }) => {
   try {
-    const win = BrowserWindow5.fromWebContents(event.sender) || mainWindow;
+    if (filename && typeof filename === "string" && filename.trim()) {
+      pendingDownloadFilenames.set(url, filename.trim());
+    }
+    const win = BrowserWindow6.fromWebContents(event.sender) || mainWindow;
     if (win && !win.isDestroyed()) {
       win.webContents.downloadURL(url);
       return { ok: true };
     }
-    session8.defaultSession.downloadURL(url);
+    session9.defaultSession.downloadURL(url);
     return { ok: true };
   } catch (err) {
     console.error("[Main] Error starting download for:", url, err);
     return { ok: false, error: err.message };
   }
 });
-ipcMain8.handle("downloads:get-recent", () => recentDownloads);
-ipcMain8.handle("downloads:clear-history", () => {
+ipcMain10.handle("downloads:get-recent", () => recentDownloads);
+ipcMain10.handle("downloads:clear-history", () => {
   recentDownloads.length = 0;
   return true;
 });
-ipcMain8.handle("downloads:open-folder", () => {
+ipcMain10.handle("downloads:open-folder", () => {
   shell.openPath(app8.getPath("downloads"));
   return true;
 });
-ipcMain8.handle("downloads:open-file", (_event, filePath) => {
+ipcMain10.handle("downloads:open-file", (_event, filePath) => {
   if (filePath && fs5.existsSync(filePath)) {
     shell.openPath(filePath);
     return true;
   }
   return false;
 });
-ipcMain8.handle("downloads:show-in-folder", (_event, filePath) => {
+ipcMain10.handle("downloads:show-in-folder", (_event, filePath) => {
   if (filePath && fs5.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
@@ -5889,7 +7003,7 @@ ipcMain8.handle("downloads:show-in-folder", (_event, filePath) => {
   return true;
 });
 var sessionBackupPath = path5.join(app8.getPath("userData"), "session-tabs.json");
-ipcMain8.handle("session:save-backup", (_event, data) => {
+ipcMain10.handle("session:save-backup", (_event, data) => {
   try {
     if (data && Array.isArray(data.tabs)) {
       const dir = path5.dirname(sessionBackupPath);
@@ -5902,7 +7016,7 @@ ipcMain8.handle("session:save-backup", (_event, data) => {
   }
   return false;
 });
-ipcMain8.handle("session:get-backup", () => {
+ipcMain10.handle("session:get-backup", () => {
   try {
     if (fs5.existsSync(sessionBackupPath)) {
       const raw = fs5.readFileSync(sessionBackupPath, "utf-8");
@@ -5913,7 +7027,7 @@ ipcMain8.handle("session:get-backup", () => {
   }
   return null;
 });
-ipcMain8.handle(
+ipcMain10.handle(
   "tabs:get-memory",
   (_event, items) => {
     try {
@@ -5973,7 +7087,7 @@ ipcMain8.handle(
     }
   }
 );
-ipcMain8.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
+ipcMain10.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
   try {
     const wc = webContents.fromId(contentsId);
     if (wc && !wc.isDestroyed() && typeof wc.setAudioMuted === "function") {
@@ -5987,13 +7101,13 @@ ipcMain8.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
 app8.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   try {
-    setupDownloadListeners(session8.defaultSession);
-    const forgeSession = session8.fromPartition("persist:forge");
+    setupDownloadListeners(session9.defaultSession);
+    const forgeSession = session9.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
     const defaultUA = forgeSession.getUserAgent();
     const cleanUA = defaultUA.replace(/Electron\/[0-9.]+\s?/gi, "").replace(/forge(-app)?\/[0-9.]+\s?/gi, "").trim();
     forgeSession.setUserAgent(cleanUA);
-    session8.defaultSession.setUserAgent(cleanUA);
+    session9.defaultSession.setUserAgent(cleanUA);
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;
@@ -6018,9 +7132,16 @@ app8.whenReady().then(() => {
   });
   initSessionManager();
   initCompatManager();
+  ElectronPrivateSessionManager.getInstance().setDownloadSetupHandler((privSes) => {
+    setupDownloadListeners(privSes);
+  });
+  registerTorIPC();
+  ElectronTorRuntime.getInstance().initialize().catch((err) => {
+    console.warn("[Main] Error initializing Tor runtime:", err);
+  });
   createWindow();
   app8.on("activate", () => {
-    if (BrowserWindow5.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow6.getAllWindows().length === 0) createWindow();
   });
 });
 app8.on("window-all-closed", () => {

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Minus, Square, X, Keyboard } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { WorkspaceSelector } from "./WorkspaceSelector";
+import { isIncognitoWindow } from "../../core/tabs/useTabsStore";
 
 export function TitleBar() {
   const [isMax, setIsMax] = useState(false);
@@ -73,8 +74,15 @@ export function TitleBar() {
 
   return (
     <header
-      className="h-8 flex items-center justify-between pl-2.5 pr-0 select-none shrink-0 transition-colors relative z-50"
-      style={{ background: 'var(--forge-bg)', boxShadow: 'inset 0 -1px 0 var(--forge-border), 0 1px 0 rgba(255,107,0,0.04)' }}
+      className={`h-8 flex items-center justify-between pl-2.5 pr-0 select-none shrink-0 transition-colors relative z-50 ${
+        isIncognitoWindow ? "border-b border-purple-500/25" : ""
+      }`}
+      style={{
+        background: isIncognitoWindow ? "#0d0918" : "var(--forge-bg)",
+        boxShadow: isIncognitoWindow
+          ? "inset 0 -1px 0 rgba(168,85,247,0.2), 0 1px 12px rgba(168,85,247,0.06)"
+          : "inset 0 -1px 0 var(--forge-border), 0 1px 0 rgba(255,107,0,0.04)",
+      }}
     >
       {/* Brand & Workspace Selector */}
       <div className="flex items-center gap-2 titlebar-drag h-full select-none cursor-default" style={dragStyle}>
@@ -83,9 +91,16 @@ export function TitleBar() {
           alt="Forge"
           className="w-4.5 h-4.5 rounded object-contain pointer-events-none"
         />
-        <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[var(--forge-text-muted)] pointer-events-none select-none">
-          FORGE
-        </span>
+        {isIncognitoWindow ? (
+          <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-purple-300 pointer-events-none select-none flex items-center gap-1.5 bg-purple-500/15 border border-purple-500/35 px-2 py-0.5 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.2)]">
+            <span className="text-xs">🕶️</span>
+            <span>FORGE PRIVATE</span>
+          </span>
+        ) : (
+          <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[var(--forge-text-muted)] pointer-events-none select-none">
+            FORGE
+          </span>
+        )}
 
         <div className="w-px h-3 bg-[var(--forge-border)] mx-0.5" />
 
@@ -106,6 +121,22 @@ export function TitleBar() {
         className="flex items-center h-full titlebar-no-drag z-10"
         style={noDragStyle}
       >
+        {!isIncognitoWindow && (
+          <button
+            type="button"
+            onClick={() => {
+              const bridge = (window as any).forge || (window as any).electron;
+              bridge?.openPrivate?.();
+            }}
+            className="titlebar-no-drag flex items-center gap-1 px-2 h-5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-semibold transition-colors cursor-pointer mr-1"
+            style={noDragStyle}
+            title="Open New Private Window (Ctrl + Shift + N)"
+          >
+            <span className="text-xs">🕶️</span>
+            <span>Private</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("forge:toggle-hotkeys"))}

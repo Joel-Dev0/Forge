@@ -27,6 +27,7 @@ import {
 interface Props {
   onOpenModal?: () => void;
   onSelectExtension?: (ext: IdeExtension) => void;
+  selectedExtensionId?: string | null;
   compact?: boolean;
 }
 
@@ -62,7 +63,12 @@ function renderExtensionIcon(iconSvg: string, name: string) {
   );
 }
 
-export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compact = false }: Props) {
+export function IdeExtensionsSidebarView({
+  onOpenModal,
+  onSelectExtension,
+  selectedExtensionId: propSelectedId,
+  compact = false,
+}: Props) {
   const {
     extensions,
     installExtension,
@@ -70,7 +76,11 @@ export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compa
     toggleExtension,
     installFromUrlOrId,
     searchOnlineMarketplace,
+    selectedExtensionId: storeSelectedId,
+    setSelectedExtension,
   } = useIdeExtensionsStore();
+
+  const activeSelectedId = propSelectedId !== undefined ? propSelectedId : storeSelectedId;
 
   const [search, setSearch] = useState("");
   const [isInstalledOpen, setIsInstalledOpen] = useState(true);
@@ -162,10 +172,15 @@ export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compa
     setShowDirectInstall(false);
   };
 
+  const handleItemClick = (ext: IdeExtension) => {
+    setSelectedExtension(ext);
+    if (onSelectExtension) onSelectExtension(ext);
+  };
+
   const handleInstallExtension = async (ext: IdeExtension) => {
     setInstallingId(ext.id);
-    const res = installFromUrlOrId(ext.id);
-    setFeedback(res.message);
+    installExtension(ext);
+    setFeedback(`Successfully installed "${ext.name}"!`);
     setTimeout(() => {
       setInstallingId(null);
       setTimeout(() => setFeedback(null), 3000);
@@ -322,15 +337,17 @@ export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compa
               ) : (
                 installedList.map((ext) => {
                   const isMenuOpen = activeGearMenuId === ext.id;
+                  const isSelected = activeSelectedId?.toLowerCase() === ext.id.toLowerCase();
 
                   return (
                     <div
                       key={ext.id}
-                      className="group relative flex items-start gap-2.5 px-3 py-2 hover:bg-[#2a2d2e] transition-colors cursor-pointer"
-                      onClick={() => {
-                        if (onSelectExtension) onSelectExtension(ext);
-                        else if (ext.marketplaceUrl) window.open(ext.marketplaceUrl, "_blank");
-                      }}
+                      className={`group relative flex items-start gap-2.5 px-3 py-2 transition-colors cursor-pointer ${
+                        isSelected
+                          ? "bg-[#37373d] text-white border-l-2 border-[#0078d4]"
+                          : "hover:bg-[#2a2d2e] border-l-2 border-transparent"
+                      }`}
+                      onClick={() => handleItemClick(ext)}
                     >
                       {/* Extension Icon (36x36) */}
                       <div className="mt-0.5 shrink-0">
@@ -475,15 +492,17 @@ export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compa
                 ) : (
                   marketplaceResults.map((ext) => {
                     const isInstalling = installingId === ext.id;
+                    const isSelected = activeSelectedId?.toLowerCase() === ext.id.toLowerCase();
 
                     return (
                       <div
                         key={ext.id}
-                        className="group relative flex items-start gap-2.5 px-3 py-2 hover:bg-[#2a2d2e] transition-colors cursor-pointer"
-                        onClick={() => {
-                          if (onSelectExtension) onSelectExtension(ext);
-                          else if (ext.marketplaceUrl) window.open(ext.marketplaceUrl, "_blank");
-                        }}
+                        className={`group relative flex items-start gap-2.5 px-3 py-2 transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-[#37373d] text-white border-l-2 border-[#0078d4]"
+                            : "hover:bg-[#2a2d2e] border-l-2 border-transparent"
+                        }`}
+                        onClick={() => handleItemClick(ext)}
                       >
                         {/* Icon */}
                         <div className="mt-0.5 shrink-0">
@@ -574,15 +593,17 @@ export function IdeExtensionsSidebarView({ onOpenModal, onSelectExtension, compa
                 ) : (
                   recommendedList.map((ext) => {
                     const isInstalling = installingId === ext.id;
+                    const isSelected = activeSelectedId?.toLowerCase() === ext.id.toLowerCase();
 
                     return (
                       <div
                         key={ext.id}
-                        className="group relative flex items-start gap-2.5 px-3 py-2 hover:bg-[#2a2d2e] transition-colors cursor-pointer"
-                        onClick={() => {
-                          if (onSelectExtension) onSelectExtension(ext);
-                          else if (ext.marketplaceUrl) window.open(ext.marketplaceUrl, "_blank");
-                        }}
+                        className={`group relative flex items-start gap-2.5 px-3 py-2 transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-[#37373d] text-white border-l-2 border-[#0078d4]"
+                            : "hover:bg-[#2a2d2e] border-l-2 border-transparent"
+                        }`}
+                        onClick={() => handleItemClick(ext)}
                       >
                         {/* Icon Container with VS Code Ribbon Star Bookmark */}
                         <div className="relative shrink-0 mt-0.5">

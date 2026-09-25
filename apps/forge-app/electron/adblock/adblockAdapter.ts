@@ -331,11 +331,6 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
         const url = contents.getURL();
         if (!url || url === "about:blank") return;
 
-        // Double guarantee: Inject guest preload script directly into the page if not already active!
-        if (guestPreloadCode) {
-          await contents.executeJavaScript(guestPreloadCode).catch(() => {});
-        }
-
         const css = engine.getCosmeticCSS(url);
         if (css) {
           await contents.insertCSS(css);

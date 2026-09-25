@@ -329,8 +329,9 @@ export function ConsoleIA({ getActiveWebview }: Props) {
     return true;
   });
 
-  const errorCount = logs.filter((l) => l.level === "error").length;
-  const warnCount = logs.filter((l) => l.level === "warn").length;
+  const errorCount = logs.filter((l) => l.level === "error").reduce((sum, l) => sum + (l.count || 1), 0);
+  const warnCount = logs.filter((l) => l.level === "warn").reduce((sum, l) => sum + (l.count || 1), 0);
+  const totalLogCount = logs.reduce((sum, l) => sum + (l.count || 1), 0);
 
   const getPromptPrefix = () => {
     if (shellMode === "powershell") {
@@ -472,7 +473,7 @@ export function ConsoleIA({ getActiveWebview }: Props) {
                     logFilter === "all" ? "bg-[var(--forge-surface)] text-[var(--forge-text)] font-bold" : "text-[var(--forge-text-muted)]"
                   }`}
                 >
-                  All ({logs.length})
+                  All ({totalLogCount})
                 </button>
                 <button
                   onClick={() => setLogFilter("error")}
@@ -683,6 +684,11 @@ export function ConsoleIA({ getActiveWebview }: Props) {
                           <span className={`flex-1 break-all ${log.level === "error" ? "text-red-400" : isOutput ? "text-emerald-400" : "text-zinc-300"}`}>
                             {log.message}
                           </span>
+                          {log.count && log.count > 1 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-zinc-700/80 text-zinc-200 text-[9px] font-semibold font-mono shrink-0 shadow-xs border border-zinc-600/50">
+                              x{log.count}
+                            </span>
+                          )}
                         </div>
                       );
                     })}
@@ -820,6 +826,12 @@ export function ConsoleIA({ getActiveWebview }: Props) {
                             {log.message}
                           </span>
                         </div>
+
+                        {log.count && log.count > 1 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-zinc-700/80 text-zinc-200 text-[9px] font-semibold font-mono shrink-0 shadow-xs border border-zinc-600/50">
+                            x{log.count}
+                          </span>
+                        )}
 
                         {log.source && (
                           <span className="text-[9px] text-[var(--forge-text-muted)] shrink-0 opacity-70">

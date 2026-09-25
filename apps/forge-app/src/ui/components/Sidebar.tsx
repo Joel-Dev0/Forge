@@ -22,6 +22,7 @@ import { useFavoritesStore } from "../../core/favorites/useFavoritesStore";
 import { useProjectsStore } from "../../core/projects/useProjectsStore";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
+import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useIdeExtensionsStore } from "../../core/extensions/useIdeExtensionsStore";
 import { useBlockNotesStore } from "../../core/notes/useBlockNotesStore";
 import { FavoritesView } from "./FavoritesView";
@@ -43,6 +44,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const { setDashboardOpen, runningProcesses } = useProjectsStore();
   const { setManagerOpen, extensions } = useExtensionsStore();
   const { setPlayerModalOpen, isPlaying, currentTrack } = useFocusPlayerStore();
+  const { tabs } = useTabsStore();
+  const activeAudioTab = tabs.find((t) => t.isPlayingAudio);
+  const isAudioPlaying = isPlaying || Boolean(activeAudioTab);
   const { setIdeModalOpen, extensions: ideExtensions } = useIdeExtensionsStore();
   const activeProcessesCount = Object.keys(runningProcesses).length;
   const enabledExtensionsCount = extensions.filter((e) => e.enabled).length;
@@ -214,14 +218,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
         <button
           onClick={() => setPlayerModalOpen(true)}
-          title={isPlaying && currentTrack ? `Focus Player: ${currentTrack.title}` : "Focus Sound Player"}
+          title={isAudioPlaying ? `Playing: ${isPlaying ? (currentTrack?.title || "Focus Sound") : (activeAudioTab?.title || "Browser Audio")}` : "Focus Sound Player"}
           className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
-            isPlaying
+            isAudioPlaying
               ? "text-[#FF6B00] bg-[#FF6B00]/10"
               : "text-[var(--forge-text-muted)] hover:text-[#FF6B00] hover:bg-[var(--forge-hover)]"
           }`}
         >
-          <Disc3 size={15} className={isPlaying ? "animate-spin" : ""} />
+          <Disc3 size={15} className={isAudioPlaying ? "animate-spin" : ""} />
         </button>
 
         {/* Theme at bottom */}
@@ -328,7 +332,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         {activeSidebarTab === "explorer" ? (
           <IdeExplorerSidebarView onNavigate={handleClick} onOpenModal={() => setDashboardOpen(true)} />
         ) : activeSidebarTab === "extensions" ? (
-          <IdeExtensionsSidebarView onOpenModal={() => setIdeModalOpen(true)} />
+          <IdeExtensionsSidebarView
+            onOpenModal={() => setIdeModalOpen(true)}
+            onSelectExtension={(ext) => {
+              useIdeExtensionsStore.getState().setSelectedExtension(ext);
+              setIdeModalOpen(true);
+            }}
+          />
         ) : activeSidebarTab === "notes" ? (
           <BlockNotesSidebarView onOpenFullModal={() => setBlockNotesModalOpen(true)} />
         ) : activeSidebarTab === "favorites" ? (
@@ -488,14 +498,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
           <button
             onClick={() => setPlayerModalOpen(true)}
-            title="Focus Sound Player"
+            title={isAudioPlaying ? `Playing: ${isPlaying ? (currentTrack?.title || "Focus Sound") : (activeAudioTab?.title || "Browser Audio")}` : "Focus Sound Player"}
             className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all cursor-pointer shadow-sm ${
-              isPlaying
+              isAudioPlaying
                 ? "bg-[#FF6B00]/15 text-[#FF6B00]"
                 : "bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-[#FF6B00]"
             }`}
           >
-            <Disc3 size={13} className={isPlaying ? "animate-spin" : ""} />
+            <Disc3 size={13} className={isAudioPlaying ? "animate-spin" : ""} />
             <span className="text-[9px] font-medium">Audio</span>
           </button>
         </div>

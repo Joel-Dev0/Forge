@@ -41,6 +41,8 @@ interface TabsState {
   setFocusedSplitPane: (pane: "primary" | "secondary") => void;
   setTabSession: (tabId: string, sessionId: string) => void;
   openTab: (url?: string, sessionId?: string) => string;
+  openPrivateTab: (url?: string) => string;
+  openTorTab: (url?: string) => string;
   closeTab: (id: string) => void;
   reopenClosedTab: () => void;
   nextTab: () => void;
@@ -214,9 +216,19 @@ function loadSavedSession(): { tabs: Tab[]; activeTabId: string } | null {
 
 export function saveSession(tabs: Tab[], activeTabId: string) {
   try {
-    if (typeof window === "undefined" || !window.localStorage) return;
+    if (typeof window === "undefined" || !window.localStorage || isIncognitoWindow) return;
+    // Exclude temporary private and tor tabs so private browsing is never written to disk
+    const persistentTabs = tabs.filter(
+      (t) =>
+        t.sessionId !== "private" &&
+        !t.sessionId?.startsWith("private_") &&
+        t.sessionId !== "tor" &&
+        !t.sessionId?.startsWith("tor_")
+    );
+    if (persistentTabs.length === 0) return;
+
     const payload = {
-      tabs: tabs.map(({ id, title, url, favicon, canGoBack, canGoForward, sessionId, history, historyIndex }) => {
+      tabs: persistentTabs.map(({ id, title, url, favicon, canGoBack, canGoForward, sessionId, history, historyIndex }) => {
         const cleanTitle = getCleanFallbackTitle(url, title);
         let cleanFavicon = favicon;
         if (!cleanFavicon && url && url !== "about:blank") {
@@ -244,8 +256,15 @@ export function saveSession(tabs: Tab[], activeTabId: string) {
   } catch {}
 }
 
-const saved = loadSavedSession();
-const initialTab = saved ? null : makeTab();
+export const isIncognitoWindow =
+  typeof window !== "undefined" &&
+  Boolean(
+    window.location.search.includes("incognito") ||
+    window.location.search.includes("private")
+  );
+
+const saved = isIncognitoWindow ? null : loadSavedSession();
+const initialTab = saved ? null : makeTab("about:blank", isIncognitoWindow ? "private" : "default");
 const initialTabs = saved ? saved.tabs : [initialTab!];
 const initialActiveId = saved ? saved.activeTabId : initialTab!.id;
 
@@ -295,6 +314,18 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   openTab(url, sessionId) {
     const tab = makeTab(url, sessionId);
+    const isPrivateOrTor =
+      tab.sessionId === "private" ||
+      tab.sessionId?.startsWith("private_") ||
+      tab.sessionId === "tor" ||
+      tab.sessionId?.startsWith("tor_");
+
+    if (isPrivateOrTor) {
+      try {
+        (window as any).forge?.privacy?.registerTab?.(tab.sessionId);
+      } catch {}
+    }
+
     set((s) => {
       const nextTabs = [...s.tabs, tab];
       saveSession(nextTabs, tab.id);
@@ -303,12 +334,30 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return tab.id;
   },
 
+  openPrivateTab(url) {
+    return get().openTab(url || "about:blank", "private");
+  },
+
+  openTorTab(url) {
+    try {
+      (window as any).forge?.tor?.connect?.();
+    } catch {}
+    return get().openTab(url || "about:blank", "tor");
+  },
+
   closeTab(id) {
     const { tabs, activeTabId, recentlyClosedTabs, splitTabId } = get();
     if (tabs.length === 1) return; // never close last tab
     const closingTab = tabs.find((t) => t.id === id);
+    const isPrivateOrTor =
+      closingTab?.sessionId === "private" ||
+      closingTab?.sessionId?.startsWith("private_") ||
+      closingTab?.sessionId === "tor" ||
+      closingTab?.sessionId?.startsWith("tor_");
+
+    // Do NOT store private or tor tabs in recently closed tabs (History -> temporary)
     const updatedClosed =
-      closingTab && closingTab.url && closingTab.url !== "about:blank"
+      closingTab && closingTab.url && closingTab.url !== "about:blank" && !isPrivateOrTor
         ? [
             ...recentlyClosedTabs.slice(-19), // keep last 20 closed tabs
             {
@@ -319,6 +368,34 @@ export const useTabsStore = create<TabsState>((set, get) => ({
             },
           ]
         : recentlyClosedTabs;
+
+    // Check if this was the last tab using this private/tor session
+    if (closingTab?.sessionId && isPrivateOrTor) {
+      const remainingPrivateTabs = tabs.filter(
+        (t) => t.id !== id && t.sessionId === closingTab.sessionId
+      );
+      if (remainingPrivateTabs.length === 0) {
+        try {
+          (window as any).forge?.privacy?.unregisterTab?.(closingTab.sessionId);
+        } catch {}
+
+        const anyPrivateLeft = tabs.some(
+          (t) =>
+            t.id !== id &&
+            (t.sessionId === "private" ||
+              t.sessionId?.startsWith("private_") ||
+              t.sessionId === "tor" ||
+              t.sessionId?.startsWith("tor_"))
+        );
+        if (!anyPrivateLeft) {
+          try {
+            import("../downloads/useDownloadsStore").then((m) => {
+              m.useDownloadsStore.getState().clearPrivateDownloads();
+            });
+          } catch {}
+        }
+      }
+    }
 
     const idx = tabs.findIndex((t) => t.id === id);
     const next = tabs[idx === 0 ? 1 : idx - 1];

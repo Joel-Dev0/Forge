@@ -45,7 +45,9 @@ const FloatingMemoryCard: React.FC<FloatingCardProps> = ({ card }) => {
   });
 
   const cardRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
+  const currentPosRef = useRef(localPos);
+  currentPosRef.current = localPos;
+  const rafIdRef = useRef<number | null>(null);
 
   // Sync position if external update occurs and not currently dragging
   useEffect(() => {
@@ -54,127 +56,175 @@ const FloatingMemoryCard: React.FC<FloatingCardProps> = ({ card }) => {
     }
   }, [card.pinnedPosition, isDragging]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Only drag from header handle
-    bringCardToFront(card.id);
-    setIsDragging(true);
-    dragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      startX: localPos.x,
-      startY: localPos.y,
-    };
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      const deltaX = moveEvent.clientX - dragStartRef.current.mouseX;
-      const deltaY = moveEvent.clientY - dragStartRef.current.mouseY;
-
-      const maxX = Math.max(0, window.innerWidth - 80);
-      const maxY = Math.max(0, window.innerHeight - 50);
-
-      const nextX = Math.min(Math.max(10, dragStartRef.current.startX + deltaX), maxX);
-      const nextY = Math.min(Math.max(10, dragStartRef.current.startY + deltaY), maxY);
-
-      setLocalPos({ x: nextX, y: nextY });
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      if (dragStartRef.current) {
-        setLocalPos((current) => {
-          updatePinnedPosition(card.id, current);
-          return current;
-        });
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
       }
-      dragStartRef.current = null;
+    };
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Only drag with primary mouse button
+    if (e.button !== 0) return;
+
+    bringCardToFront(card.id);
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const target = e.currentTarget;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {}
+
+    setIsDragging(true);
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startPosX = currentPosRef.current.x;
+    const startPosY = currentPosRef.current.y;
+    let latestX = startPosX;
+    let latestY = startPosY;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startMouseX;
+      const deltaY = moveEvent.clientY - startMouseY;
+
+      const cardWidth = cardRef.current?.offsetWidth || 280;
+      const minX = -(cardWidth - 80);
+      const maxX = Math.max(10, window.innerWidth - 80);
+      const minY = 10;
+      const maxY = Math.max(10, window.innerHeight - 50);
+
+      latestX = Math.min(Math.max(minX, startPosX + deltaX), maxX);
+      latestY = Math.min(Math.max(minY, startPosY + deltaY), maxY);
+
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = requestAnimationFrame(() => {
+        if (cardRef.current) {
+          cardRef.current.style.transform = `translate3d(${latestX}px, ${latestY}px, 0)`;
+        }
+      });
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    const cleanup = () => {
+      setIsDragging(false);
+      try {
+        if (target.hasPointerCapture(e.pointerId)) {
+          target.releasePointerCapture(e.pointerId);
+        }
+      } catch {}
+
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      window.removeEventListener("blur", cleanup);
+
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+
+      setLocalPos({ x: latestX, y: latestY });
+      updatePinnedPosition(card.id, { x: latestX, y: latestY });
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+    window.addEventListener("blur", cleanup);
   };
 
   return (
-    <div
-      ref={cardRef}
-      onMouseDown={() => bringCardToFront(card.id)}
-      style={{
-        transform: `translate3d(${localPos.x}px, ${localPos.y}px, 0)`,
-        zIndex: card.zIndex || 9999,
-        backgroundColor: card.color,
-      }}
-      className={`fixed top-0 left-0 pointer-events-auto rounded-3xl transition-shadow select-none ${
-        isDragging
-          ? "cursor-grabbing shadow-[0_24px_50px_rgba(0,0,0,0.55)] scale-[1.02] ring-2 ring-[#FF6B00]"
-          : "shadow-[0_16px_36px_rgba(0,0,0,0.38)] hover:shadow-[0_20px_45px_rgba(0,0,0,0.48)]"
-      } border-4 border-white/90 dark:border-[#222]/90 text-zinc-900 transition-[transform,shadow] duration-75`}
-    >
-      {/* Decorative Tactile Pushpin Header */}
-      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
-        <div
-          title="Pinned to Screen"
-          className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-rose-700 shadow-[0_4px_10px_rgba(239,68,68,0.5)] border-2 border-white flex items-center justify-center text-white text-[11px]"
-        >
-          📌
-        </div>
-      </div>
+    <>
+      {/* Mouse interceptor overlay while dragging to shield against webviews eating events */}
+      {isDragging && (
+        <div className="fixed inset-0 z-[999998] cursor-grabbing select-none pointer-events-auto" />
+      )}
 
-      {/* Drag Handle Bar */}
       <div
-        onMouseDown={handleMouseDown}
-        className="px-4 pt-3.5 pb-2 flex items-center justify-between cursor-grab border-b border-black/10 active:cursor-grabbing"
+        ref={cardRef}
+        onMouseDown={() => bringCardToFront(card.id)}
+        style={{
+          transform: `translate3d(${localPos.x}px, ${localPos.y}px, 0)`,
+          zIndex: isDragging ? 999999 : (card.zIndex || 9999),
+          backgroundColor: card.color,
+        }}
+        className={`fixed top-0 left-0 pointer-events-auto rounded-3xl select-none will-change-transform ${
+          isDragging
+            ? "cursor-grabbing shadow-[0_28px_60px_rgba(0,0,0,0.6)] scale-[1.02] ring-2 ring-[#FF6B00] transition-none"
+            : "shadow-[0_16px_36px_rgba(0,0,0,0.38)] hover:shadow-[0_20px_45px_rgba(0,0,0,0.48)] transition-shadow duration-150"
+        } border-4 border-white/90 dark:border-[#222]/90 text-zinc-900`}
       >
-        <div className="flex items-center gap-1.5 overflow-hidden">
-          <Move size={11} className="text-zinc-600 opacity-60 shrink-0" />
-          <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/10 truncate max-w-[120px]">
-            {card.category || "Screen Note"}
-          </span>
+        {/* Decorative Tactile Pushpin Header */}
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center pointer-events-none">
+          <div
+            title="Pinned to Screen"
+            className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-rose-700 shadow-[0_4px_10px_rgba(239,68,68,0.5)] border-2 border-white flex items-center justify-center text-white text-[11px]"
+          >
+            📌
+          </div>
         </div>
 
-        {/* Card Controls */}
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {/* Palette button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowColorPicker((v) => !v);
-            }}
-            className="w-5 h-5 rounded-md hover:bg-black/15 flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
-            title="Change Card Color"
-          >
-            <Palette size={12} />
-          </button>
+        {/* Drag Handle Bar */}
+        <div
+          onPointerDown={handlePointerDown}
+          className="px-4 pt-3.5 pb-2 flex items-center justify-between cursor-grab border-b border-black/10 active:cursor-grabbing select-none touch-none"
+        >
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <Move size={11} className="text-zinc-600 opacity-60 shrink-0" />
+            <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/10 truncate max-w-[120px]">
+              {card.category || "Screen Note"}
+            </span>
+          </div>
 
-          {/* Minimize / Expand */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleCollapsePinnedCard(card.id);
-            }}
-            className="w-5 h-5 rounded-md hover:bg-black/15 flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
-            title={card.isCollapsed ? "Expand Note" : "Collapse Note"}
-          >
-            {card.isCollapsed ? <Maximize2 size={11} /> : <Minus size={12} />}
-          </button>
+          {/* Card Controls */}
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {/* Palette button */}
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowColorPicker((v) => !v);
+              }}
+              className="w-5 h-5 rounded-md hover:bg-black/15 flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
+              title="Change Card Color"
+            >
+              <Palette size={12} />
+            </button>
 
-          {/* Unpin from screen */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              togglePinMemoryCard(card.id);
-            }}
-            className="w-5 h-5 rounded-md hover:bg-red-500 hover:text-white flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
-            title="Unpin from Screen"
-          >
-            <X size={12} />
-          </button>
+            {/* Minimize / Expand */}
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsePinnedCard(card.id);
+              }}
+              className="w-5 h-5 rounded-md hover:bg-black/15 flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
+              title={card.isCollapsed ? "Expand Note" : "Collapse Note"}
+            >
+              {card.isCollapsed ? <Maximize2 size={11} /> : <Minus size={12} />}
+            </button>
+
+            {/* Unpin from screen */}
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePinMemoryCard(card.id);
+              }}
+              className="w-5 h-5 rounded-md hover:bg-red-500 hover:text-white flex items-center justify-center text-zinc-700 transition-colors cursor-pointer"
+              title="Unpin from Screen"
+            >
+              <X size={12} />
+            </button>
+          </div>
         </div>
-      </div>
 
       {/* Color Picker Drawer */}
       {showColorPicker && (
@@ -264,7 +314,8 @@ const FloatingMemoryCard: React.FC<FloatingCardProps> = ({ card }) => {
         </div>
       )}
     </div>
-  );
+  </>
+);
 };
 
 export const PinnedMemoryCardsOverlay: React.FC = () => {

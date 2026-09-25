@@ -7,7 +7,7 @@ import { TabHoverCard } from "./TabHoverCard";
 import { TabContextMenu } from "./TabContextMenu";
 
 export function TabBar() {
-  const { tabs, activeTabId, openTab, closeTab, setActiveTab, moveTab, toggleMuteTab } =
+  const { tabs, activeTabId, openTab, openPrivateTab, openTorTab, closeTab, setActiveTab, moveTab, toggleMuteTab } =
     useTabsStore();
   const splitTabId = useTabsStore((s) => s.splitTabId);
   const { sessions, getSession } = useSessionsStore();
@@ -174,6 +174,8 @@ export function TabBar() {
         const hasDropIndicator = dropTarget?.index === index;
         const isSleeping = tab.isSleeping || tab.isLazy;
         const session = getSession(tab.sessionId);
+        const isPrivate = session.mode === "private" || tab.sessionId === "private" || tab.sessionId?.startsWith("private_");
+        const isTor = session.mode === "tor" || tab.sessionId === "tor" || tab.sessionId?.startsWith("tor_");
 
         return (
           <div
@@ -208,7 +210,11 @@ export function TabBar() {
                 : "cursor-default"
             } ${
               isActive && !isBeingDragged
-                ? "bg-[var(--forge-surface)] text-[var(--forge-text)] font-medium"
+                ? isTor
+                  ? "bg-[#1f1a10] text-[var(--forge-text)] font-medium"
+                  : isPrivate
+                  ? "bg-[#191424] text-[var(--forge-text)] font-medium"
+                  : "bg-[var(--forge-surface)] text-[var(--forge-text)] font-medium"
                 : !isBeingDragged
                 ? `bg-transparent text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)]/60 hover:text-[var(--forge-text-secondary)] ${
                     isSleeping ? "opacity-70" : ""
@@ -218,11 +224,19 @@ export function TabBar() {
           >
             {/* Active tab top accent bar */}
             {isActive && !isBeingDragged && (
-              <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#FF6B00] pointer-events-none z-30" />
+              <div
+                className={`absolute top-0 left-0 right-0 h-[2px] pointer-events-none z-30 ${
+                  isTor
+                    ? "bg-[#EAB308] shadow-[0_0_8px_rgba(234,179,8,0.6)]"
+                    : isPrivate
+                    ? "bg-[#A855F7] shadow-[0_0_8px_rgba(168,85,247,0.6)]"
+                    : "bg-[#FF6B00]"
+                }`}
+              />
             )}
 
             {/* Session container colored top border line (overrides accent when non-default session) */}
-            {session.id !== "default" && (
+            {session.id !== "default" && !isTor && !isPrivate && (
               <div
                 className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none z-31"
                 style={{ backgroundColor: session.color }}
@@ -245,8 +259,16 @@ export function TabBar() {
               </div>
             )}
 
-            {/* Favicon or Globe */}
-            {tab.favicon ? (
+            {/* Mode badge: Private or Tor */}
+            {isTor ? (
+              <span title="Tor Mode (Onion Routed)" className="text-[11px] shrink-0 select-none">
+                🧅
+              </span>
+            ) : isPrivate ? (
+              <span title="Private Window (Temporary RAM-only storage)" className="text-[11px] shrink-0 select-none">
+                🕶️
+              </span>
+            ) : tab.favicon ? (
               <img
                 src={tab.favicon}
                 alt=""
@@ -329,7 +351,7 @@ export function TabBar() {
 
             {/* Loading indicator */}
             {tab.isLoading && (
-              <span className="w-2 h-2 rounded-full bg-[#FF6B00] animate-pulse shrink-0" />
+              <span className={`w-2 h-2 rounded-full animate-pulse shrink-0 ${isTor ? "bg-[#EAB308]" : isPrivate ? "bg-[#A855F7]" : "bg-[#FF6B00]"}`} />
             )}
 
             {/* Close Button */}
@@ -359,14 +381,14 @@ export function TabBar() {
 
             {/* Bottom edge fill for active tab to merge with content below */}
             {isActive && !isBeingDragged && (
-              <div className="absolute bottom-0 left-0 right-0 h-px bg-[var(--forge-surface)]" />
+              <div className={`absolute bottom-0 left-0 right-0 h-px ${isTor ? "bg-[#1f1a10]" : isPrivate ? "bg-[#191424]" : "bg-[var(--forge-surface)]"}`} />
             )}
           </div>
         );
       })}
 
-      {/* New tab button and container quick opener */}
-      <div ref={newTabDropdownRef} className="relative flex items-center mx-1 shrink-0">
+      {/* New tab button and browsing mode quick opener */}
+      <div ref={newTabDropdownRef} className="relative flex items-center mx-1 shrink-0 gap-0.5">
         <button
           type="button"
           onClick={() => openTab()}
@@ -380,35 +402,114 @@ export function TabBar() {
 
         <button
           type="button"
-          onClick={() => setIsNewTabDropdownOpen(!isNewTabDropdownOpen)}
-          title="Open new tab in specific container"
-          className="w-3.5 h-5 flex items-center justify-center rounded text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)] transition-colors cursor-pointer -ml-0.5"
+          onClick={() => openPrivateTab()}
+          title="New Private Tab (Ctrl + Shift + N)"
+          className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all cursor-pointer text-xs select-none"
         >
-          <ChevronDown size={10} />
+          🕶️
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsNewTabDropdownOpen(!isNewTabDropdownOpen)}
+          title="Browsing Modes & Containers (Normal, Private, Tor)"
+          className="w-4 h-6 flex items-center justify-center rounded-md text-[var(--forge-text-muted)] hover:bg-[var(--forge-hover)] hover:text-[var(--forge-text)] transition-colors cursor-pointer"
+        >
+          <ChevronDown size={11} />
         </button>
 
         {isNewTabDropdownOpen && (
-          <div className="absolute left-0 top-full mt-1 w-48 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl p-1.5 z-50 text-xs font-sans animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute left-0 top-full mt-1 w-64 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl p-1.5 z-50 text-xs font-sans animate-in fade-in zoom-in-95 duration-100">
             <div className="px-2 py-1 text-[9px] font-mono text-[var(--forge-text-muted)] border-b border-[var(--forge-border)] mb-1 uppercase tracking-wider">
-              Open In Container
+              New Browsing Mode
             </div>
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  openTab("about:blank", s.id);
-                  setIsNewTabDropdownOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left"
-              >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: s.color }}
-                />
-                <span className="truncate text-xs">{s.name}</span>
-              </button>
-            ))}
+
+            {/* Normal Tab */}
+            <button
+              type="button"
+              onClick={() => {
+                openTab("about:blank", "default");
+                setIsNewTabDropdownOpen(false);
+              }}
+              className="w-full flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left group"
+            >
+              <div className="w-6 h-6 rounded-md bg-[#FF6B00]/15 text-[#FF6B00] flex items-center justify-center shrink-0 mt-0.5">
+                <Globe size={13} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-white group-hover:text-[#FF6B00] transition-colors flex items-center justify-between">
+                  <span>Normal Tab</span>
+                  <span className="text-[10px] text-zinc-500 font-mono font-normal">Ctrl+T</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 leading-tight">Persistent browsing & history</div>
+              </div>
+            </button>
+
+            {/* Private Window */}
+            <button
+              type="button"
+              onClick={() => {
+                openPrivateTab("about:blank");
+                setIsNewTabDropdownOpen(false);
+              }}
+              className="w-full flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left group"
+            >
+              <div className="w-6 h-6 rounded-md bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0 mt-0.5 text-xs">
+                🕶️
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-white group-hover:text-purple-400 transition-colors flex items-center justify-between">
+                  <span>Private Window</span>
+                  <span className="text-[10px] text-zinc-500 font-mono font-normal">Ctrl+Shift+N</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 leading-tight">Temporary local data (RAM only)</div>
+              </div>
+            </button>
+
+            {/* Tor Mode */}
+            <button
+              type="button"
+              onClick={() => {
+                openTorTab("about:blank");
+                setIsNewTabDropdownOpen(false);
+              }}
+              className="w-full flex items-start gap-2.5 px-2 py-2 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left group"
+            >
+              <div className="w-6 h-6 rounded-md bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 text-xs">
+                🧅
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-white group-hover:text-amber-400 transition-colors flex items-center justify-between">
+                  <span>Tor Mode</span>
+                  <span className="text-[10px] text-zinc-500 font-mono font-normal">SOCKS5</span>
+                </div>
+                <div className="text-[11px] text-zinc-400 leading-tight">Private browsing through Tor network</div>
+              </div>
+            </button>
+
+            {/* Separator for Containers */}
+            <div className="px-2 pt-2 pb-1 text-[9px] font-mono text-[var(--forge-text-muted)] border-t border-[var(--forge-border)] mt-1.5 mb-0.5 uppercase tracking-wider">
+              Containers
+            </div>
+            {sessions
+              .filter((s) => s.id !== "private" && s.id !== "tor" && !s.temporary)
+              .map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    openTab("about:blank", s.id);
+                    setIsNewTabDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white transition-colors cursor-pointer text-left"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span className="truncate text-xs">{s.name}</span>
+                </button>
+              ))}
           </div>
         )}
       </div>

@@ -115,36 +115,50 @@ export function WorkspaceSelector() {
           </div>
 
           {/* Sub Navigation */}
-          <div className="flex items-center px-2 border-b border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]/20">
+          <div className="flex items-center gap-2 px-3 border-b border-[var(--forge-border)] bg-[var(--forge-surface-elevated)]/20">
             <button
               onClick={() => setActiveTab("projects")}
-              className={`px-2.5 py-1 text-[10px] font-semibold border-b-2 transition-colors cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[10.5px] border-b-2 transition-all cursor-pointer -mb-px ${
                 activeTab === "projects"
-                  ? "border-[#FF6B00] text-[#FF6B00]"
-                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
+                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:border-[var(--forge-border)] font-medium"
               }`}
             >
-              Projects ({workspaces.length})
+              <span>Projects</span>
+              <span className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono ${
+                activeTab === "projects"
+                  ? "bg-[#FF6B00]/15 text-[#FF6B00]"
+                  : "bg-[var(--forge-hover)] text-[var(--forge-text-muted)]"
+              }`}>
+                {workspaces.length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab("env")}
-              className={`px-2.5 py-1 text-[10px] font-semibold border-b-2 transition-colors cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[10.5px] border-b-2 transition-all cursor-pointer -mb-px ${
                 activeTab === "env"
-                  ? "border-[#FF6B00] text-[#FF6B00]"
-                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
+                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:border-[var(--forge-border)] font-medium"
               }`}
             >
-              Env Vars ({Object.keys(activeWs.envVars || {}).length})
+              <span>Env Vars</span>
+              <span className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono ${
+                activeTab === "env"
+                  ? "bg-[#FF6B00]/15 text-[#FF6B00]"
+                  : "bg-[var(--forge-hover)] text-[var(--forge-text-muted)]"
+              }`}>
+                {Object.keys(activeWs.envVars || {}).length}
+              </span>
             </button>
             <button
               onClick={() => setActiveTab("notes")}
-              className={`px-2.5 py-1 text-[10px] font-semibold border-b-2 transition-colors cursor-pointer ${
+              className={`flex items-center px-2.5 py-1.5 text-[10.5px] border-b-2 transition-all cursor-pointer -mb-px ${
                 activeTab === "notes"
-                  ? "border-[#FF6B00] text-[#FF6B00]"
-                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)]"
+                  ? "border-[#FF6B00] text-[#FF6B00] font-semibold"
+                  : "border-transparent text-[var(--forge-text-muted)] hover:text-[var(--forge-text)] hover:border-[var(--forge-border)] font-medium"
               }`}
             >
-              Notes
+              <span>Notes</span>
             </button>
           </div>
 

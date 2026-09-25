@@ -18,8 +18,11 @@ import {
   Layers,
   Code2,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
+import { useTabsStore } from "../../core/tabs/useTabsStore";
+import { useSessionsStore } from "../../core/sessions/useSessionsStore";
 import type { ForgeExtension } from "../../core/extensions/extensionTypes";
 
 interface Props {
@@ -57,6 +60,13 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+
+  const { tabs, activeTabId } = useTabsStore();
+  const { getSession } = useSessionsStore();
+  const activeTabObj = tabs.find((t) => t.id === activeTabId);
+  const currentSession = getSession(activeTabObj?.sessionId);
+  const isTor = currentSession.mode === "tor" || activeTabObj?.sessionId === "tor" || activeTabObj?.sessionId?.startsWith("tor_");
+  const isPrivate = currentSession.mode === "private" || activeTabObj?.sessionId === "private" || activeTabObj?.sessionId?.startsWith("private_");
 
   const {
     extensions,
@@ -521,6 +531,32 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
               <ExternalLink size={10} />
             </button>
           </div>
+
+          {/* Tor Mode Policy Alert */}
+          {isTor && (
+            <div className="mx-3 mt-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+              <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[11px] text-amber-200">Extensions Disabled in Tor Mode</div>
+                <div className="text-[10px] text-amber-300/80 leading-tight">
+                  Third-party extensions are locked down to prevent external network requests, fingerprinting, and IP leaks.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Private Window Policy Notice */}
+          {isPrivate && !isTor && (
+            <div className="mx-3 mt-2.5 p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs flex items-start gap-2">
+              <Shield size={14} className="text-purple-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[11px] text-purple-200">Private Window Extension Policy</div>
+                <div className="text-[10px] text-purple-300/80 leading-tight">
+                  Extensions do not run automatically in private sessions to ensure local RAM isolation.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Direct Install Input Box */}
           <form

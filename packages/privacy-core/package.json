@@ -1,0 +1,23 @@
+{
+  "name": "@forge/privacy-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "privacy",
+    "private-session",
+    "isolation",
+    "forge",
+    "security"
+  ],
+  "author": "Forge Team",
+  "license": "ISC"
+}

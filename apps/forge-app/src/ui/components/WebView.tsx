@@ -8,6 +8,8 @@ import { useFullscreenStore } from "../../core/fullscreen/useFullscreenStore";
 import { useInspectorStore } from "../../core/inspector/useInspectorStore";
 import { DEVICE_PRESETS, getPresetById } from "../../core/inspector/devicePresets.ts";
 import { useCompatStore } from "../../core/compat/useCompatStore";
+import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
+import { useSessionsStore } from "../../core/sessions/useSessionsStore";
 import { NewTabHome } from "./NewTabHome";
 
 const getInitialGuestPreload = (): string | undefined => {
@@ -62,7 +64,16 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
   const updateTab = useTabsStore((s) => s.updateTab);
   const tab = useTabsStore((s) => s.tabs.find((t) => t.id === tabId));
   const sessionId = tab?.sessionId || "default";
-  const partition = sessionId !== "default" ? `persist:session_${sessionId}` : "persist:forge";
+  const currentSession = useSessionsStore((s) => s.getSession(sessionId));
+  const partition =
+    currentSession?.partition ||
+    (sessionId === "private" || sessionId.startsWith("private_")
+      ? "private_session_default"
+      : sessionId === "tor" || sessionId.startsWith("tor_")
+      ? "tor_session_default"
+      : sessionId !== "default"
+      ? `persist:session_${sessionId}`
+      : "persist:forge");
 
   // Synchronize mount URL if tab goes to sleep so when waking up it loads the latest URL
   useEffect(() => {
@@ -467,6 +478,29 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       if (typeof msg === "string" && (msg.includes("__FORGE_PIP_ENTER__") || msg.includes("__FORGE_PIP_LEAVE__"))) {
         return;
       }
+      if (typeof msg === "string" && msg.includes("__FORGE_EXT_INSTALL__:")) {
+        try {
+          const raw = msg.split("__FORGE_EXT_INSTALL__:")[1]?.trim();
+          if (raw) {
+            const extData = JSON.parse(raw);
+            if (extData?.id) {
+              const res = useExtensionsStore.getState().installFromWebStoreUrl(extData.url || extData.id, {
+                name: extData.name,
+                iconUrl: extData.iconUrl,
+              });
+              window.dispatchEvent(
+                new CustomEvent("forge:toast", {
+                  detail: res.message || `✓ Installed extension into Forge!`,
+                })
+              );
+            }
+          }
+        } catch (err) {
+          console.warn("[Forge Extension Install Error]", err);
+        }
+        return;
+      }
+
       if (typeof msg === "string" && msg.includes("__FORGE_MEDIA_STATUS__:")) {
         try {
           const raw = msg.split("__FORGE_MEDIA_STATUS__:")[1]?.trim();
@@ -482,10 +516,21 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
         return;
       }
 
+      if (typeof msg === "string") {
+        if (
+          msg.includes("was preloaded using link preload but not used within a few seconds") ||
+          msg.includes("ResizeObserver loop completed with undelivered notifications") ||
+          msg.includes("ResizeObserver loop limit exceeded")
+        ) {
+          return;
+        }
+      }
+
       let level: "log" | "info" | "warn" | "error" = "log";
-      if (e.level === 1) level = "warn";
-      else if (e.level === 2) level = "error";
-      else if (e.level === 0) level = "info";
+      if (e.level === 3) level = "error";
+      else if (e.level === 2) level = "warn";
+      else if (e.level === 1) level = "info";
+      else level = "log";
 
       useConsoleStore.getState().addLog({
         level,

@@ -277,6 +277,28 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       const listener = () => callback();
       import_electron.ipcRenderer.on("privacy:clear-downloads-requested", listener);
       return () => import_electron.ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
+    },
+    createSession: (mode, name) => import_electron.ipcRenderer.invoke("privacy:create-session", mode, name),
+    destroySession: (sessionId) => import_electron.ipcRenderer.invoke("privacy:destroy-session", sessionId),
+    registerTab: (sessionId) => import_electron.ipcRenderer.invoke("privacy:register-tab", sessionId),
+    unregisterTab: (sessionId) => import_electron.ipcRenderer.invoke("privacy:unregister-tab", sessionId),
+    getSessions: () => import_electron.ipcRenderer.invoke("privacy:get-sessions")
+  },
+  tor: {
+    getStatus: () => import_electron.ipcRenderer.invoke("tor:get-status"),
+    connect: () => import_electron.ipcRenderer.invoke("tor:connect"),
+    disconnect: () => import_electron.ipcRenderer.invoke("tor:disconnect"),
+    newCircuit: () => import_electron.ipcRenderer.invoke("tor:new-circuit"),
+    testLeak: () => import_electron.ipcRenderer.invoke("tor:test-leak"),
+    onStatusChanged: (callback) => {
+      const listener = (_event, status) => callback(status);
+      import_electron.ipcRenderer.on("tor:status-changed", listener);
+      return () => import_electron.ipcRenderer.removeListener("tor:status-changed", listener);
+    },
+    onCircuitChanged: (callback) => {
+      const listener = (_event, circuit) => callback(circuit);
+      import_electron.ipcRenderer.on("tor:circuit-changed", listener);
+      return () => import_electron.ipcRenderer.removeListener("tor:circuit-changed", listener);
     }
   },
   session: {

@@ -24,6 +24,10 @@ import { useWallpaperStore } from "../../core/wallpaper/useWallpaperStore";
 import { WallpaperModal } from "./newtab/WallpaperModal";
 import { DevNewsFeed } from "./newtab/DevNewsFeed";
 import { DevIdeExtensionsFeed } from "./newtab/DevIdeExtensionsFeed";
+import { PrivateNewTabHome } from "./newtab/PrivateNewTabHome";
+import { TorNewTabHome } from "./newtab/TorNewTabHome";
+import { useTabsStore } from "../../core/tabs/useTabsStore";
+import { useSessionsStore } from "../../core/sessions/useSessionsStore";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -52,6 +56,25 @@ const DEFAULT_DEV_SHORTCUTS: ShortcutItem[] = [
 ];
 
 export function NewTabHome({ onNavigate }: Props) {
+  const { tabs, activeTabId } = useTabsStore();
+  const { getSession } = useSessionsStore();
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const session = getSession(activeTab?.sessionId);
+  const isPrivate = session.mode === "private" || activeTab?.sessionId === "private" || activeTab?.sessionId?.startsWith("private_");
+  const isTor = session.mode === "tor" || activeTab?.sessionId === "tor" || activeTab?.sessionId?.startsWith("tor_");
+
+  if (isTor) {
+    return <TorNewTabHome onNavigate={onNavigate} />;
+  }
+
+  if (isPrivate) {
+    return <PrivateNewTabHome onNavigate={onNavigate} />;
+  }
+
+  return <StandardNewTabHome onNavigate={onNavigate} />;
+}
+
+function StandardNewTabHome({ onNavigate }: Props) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
@@ -196,12 +219,10 @@ export function NewTabHome({ onNavigate }: Props) {
           </div>
 
           {/* Search Bar */}
-          <form onSubmit={handleSearch} className="w-full">
+          <form onSubmit={handleSearch} className="w-full relative z-30">
             <div
-              className="flex items-center h-11 rounded-xl backdrop-blur-md transition-all duration-200"
+              className="flex items-center h-11 rounded-xl bg-[var(--forge-surface)] backdrop-blur-md transition-all duration-200"
               style={{
-                background: "var(--forge-surface)",
-                opacity: 0.95,
                 border: focused
                   ? "1px solid #FF6B00"
                   : "1px solid var(--forge-border)",
@@ -256,7 +277,7 @@ export function NewTabHome({ onNavigate }: Props) {
           </form>
 
           {/* Quick Shortcuts */}
-          <div className="w-full">
+          <div className="w-full relative z-10">
             <div className="flex flex-wrap items-center justify-center gap-2">
               {DEFAULT_DEV_SHORTCUTS.map((sc) => (
                 <button

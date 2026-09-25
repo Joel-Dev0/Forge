@@ -9,6 +9,7 @@ export interface DownloadItem {
   state: "progressing" | "completed" | "cancelled" | "interrupted";
   startTime: number;
   url: string;
+  isPrivate?: boolean;
 }
 
 interface DownloadsState {
@@ -23,6 +24,7 @@ interface DownloadsState {
   addItem: (item: DownloadItem) => void;
   updateItem: (item: DownloadItem) => void;
   clearAll: () => void;
+  clearPrivateDownloads: () => void;
   openFolder: () => void;
   openFile: (path: string) => void;
   showInFolder: (path: string) => void;
@@ -82,6 +84,11 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     (window as any).forge?.downloads?.clearHistory?.();
     set({ items: [], activeDownload: null, showFlyout: false });
   },
+  clearPrivateDownloads: () => {
+    set((s) => ({
+      items: s.items.filter((i) => !i.isPrivate),
+    }));
+  },
   openFolder: () => {
     (window as any).forge?.downloads?.openFolder?.();
   },
@@ -96,14 +103,34 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     if (!url || url === "about:blank") return;
 
     const forge = (window as any).forge;
-    const derivedFilename =
-      preferredFilename ||
-      url.split("/").pop()?.split("?")[0]?.replace(/[^a-zA-Z0-9._-]/g, "_") ||
-      "download.png";
+    let derivedFilename = preferredFilename;
+    if (!derivedFilename) {
+      const pathname = url.split("?")[0] || "";
+      let base = pathname.split("/").pop()?.replace(/[^a-zA-Z0-9._-]/g, "_") || "";
+      if (!base || base === "_" || base === ".") base = "download";
+      if (!base.includes(".")) {
+        if (url.includes("format=png") || url.includes(".png")) base += ".png";
+        else if (url.includes("format=webp") || url.includes(".webp")) base += ".webp";
+        else if (url.includes("format=gif") || url.includes(".gif")) base += ".gif";
+        else if (url.includes("format=svg") || url.includes(".svg")) base += ".svg";
+        else base += ".jpg";
+      }
+      derivedFilename = base;
+    }
+
+    // 1. Electron Native Background Downloader (never navigates page, handles unique names & events)
+    if (forge?.downloads?.start) {
+      try {
+        const res = await forge.downloads.start(url, derivedFilename);
+        if (res?.ok) return;
+      } catch (err) {
+        console.warn("[Forge Downloads] Electron download error, trying web fallback:", err);
+      }
+    }
 
     const downloadId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    // Immediate optimistic download item in "progressing" state with animated progress
+    // 2. Web Mode: Only add optimistic placeholder if running in web fallback without Electron
     get().addItem({
       id: downloadId,
       filename: derivedFilename,
@@ -114,16 +141,6 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
       startTime: Date.now(),
       url,
     });
-
-    // 1. Electron Native Background Downloader (never navigates page)
-    if (forge?.downloads?.start) {
-      try {
-        const res = await forge.downloads.start(url, derivedFilename);
-        if (res?.ok) return;
-      } catch (err) {
-        console.warn("[Forge Downloads] Electron download error, trying web fallback:", err);
-      }
-    }
 
     // 2. Web Mode: Fetch as Blob and trigger blob: download
     try {

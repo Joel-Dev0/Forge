@@ -122,7 +122,7 @@ export function SearchEngineDropdown({ variant = "compact" }: Props) {
   const isCompact = variant === "compact";
 
   return (
-    <div ref={dropdownRef} className="relative inline-flex items-center select-none">
+    <div ref={dropdownRef} className={`relative inline-flex items-center select-none ${isOpen ? "z-50" : ""}`}>
       {/* Trigger Button */}
       <button
         type="button"
@@ -151,9 +151,7 @@ export function SearchEngineDropdown({ variant = "compact" }: Props) {
       {/* Popover Menu */}
       {isOpen && (
         <div
-          className={`absolute z-50 mt-1 min-w-[240px] p-1.5 rounded-xl bg-[var(--forge-surface)] border border-[var(--forge-border)] shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-100 ${
-            isCompact ? "top-full left-0" : "top-full left-0"
-          }`}
+          className="absolute z-50 mt-1 min-w-[250px] p-1.5 rounded-xl bg-[var(--forge-surface)] border border-[var(--forge-border)] shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 top-full left-0"
           role="listbox"
         >
           <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--forge-text-muted)] border-b border-[var(--forge-border)] mb-1">

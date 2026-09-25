@@ -16,6 +16,12 @@ importers:
       '@forge/network-core':
         specifier: workspace:*
         version: link:../../packages/network-core
+      '@forge/privacy-core':
+        specifier: workspace:*
+        version: link:../../packages/privacy-core
+      '@forge/tor-core':
+        specifier: workspace:*
+        version: link:../../packages/tor-core
       lucide-react:
         specifier: ^1.18.0
         version: 1.18.0(react@19.2.7)
@@ -136,6 +142,10 @@ importers:
   packages/adblock-engine: {}
 
   packages/network-core: {}
+
+  packages/privacy-core: {}
+
+  packages/tor-core: {}
 
 packages:
 

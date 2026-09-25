@@ -284,6 +284,33 @@ contextBridge.exposeInMainWorld("forge", {
       ipcRenderer.on("privacy:clear-downloads-requested", listener);
       return () => ipcRenderer.removeListener("privacy:clear-downloads-requested", listener);
     },
+    createSession: (mode: "private" | "tor", name?: string) =>
+      ipcRenderer.invoke("privacy:create-session", mode, name),
+    destroySession: (sessionId: string) =>
+      ipcRenderer.invoke("privacy:destroy-session", sessionId),
+    registerTab: (sessionId: string) =>
+      ipcRenderer.invoke("privacy:register-tab", sessionId),
+    unregisterTab: (sessionId: string) =>
+      ipcRenderer.invoke("privacy:unregister-tab", sessionId),
+    getSessions: () =>
+      ipcRenderer.invoke("privacy:get-sessions"),
+  },
+  tor: {
+    getStatus: () => ipcRenderer.invoke("tor:get-status"),
+    connect: () => ipcRenderer.invoke("tor:connect"),
+    disconnect: () => ipcRenderer.invoke("tor:disconnect"),
+    newCircuit: () => ipcRenderer.invoke("tor:new-circuit"),
+    testLeak: () => ipcRenderer.invoke("tor:test-leak"),
+    onStatusChanged: (callback: (status: any) => void) => {
+      const listener = (_event: any, status: any) => callback(status);
+      ipcRenderer.on("tor:status-changed", listener);
+      return () => ipcRenderer.removeListener("tor:status-changed", listener);
+    },
+    onCircuitChanged: (callback: (circuit: any) => void) => {
+      const listener = (_event: any, circuit: any) => callback(circuit);
+      ipcRenderer.on("tor:circuit-changed", listener);
+      return () => ipcRenderer.removeListener("tor:circuit-changed", listener);
+    },
   },
   session: {
     saveBackup: (data: any) => ipcRenderer.invoke("session:save-backup", data),

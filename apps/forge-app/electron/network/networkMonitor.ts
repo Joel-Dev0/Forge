@@ -299,6 +299,18 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
       const entry = entries.get(entryId);
       const responseHeaders = { ...(details.responseHeaders || {}) };
 
+      const urlLower = (details.url || "").toLowerCase();
+      if (
+        urlLower.includes("chromewebstore.google.com") ||
+        urlLower.includes("chrome.google.com") ||
+        urlLower.includes("clients2.google.com")
+      ) {
+        delete responseHeaders["content-security-policy"];
+        delete responseHeaders["content-security-policy-report-only"];
+        delete responseHeaders["Content-Security-Policy"];
+        delete responseHeaders["Content-Security-Policy-Report-Only"];
+      }
+
       // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen on any page
       for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();

@@ -12,6 +12,7 @@ import { FocusModeButton } from "./FocusModeButton";
 import { FocusPlayerMiniWidget } from "./FocusPlayerMiniWidget";
 import { SplitViewButton } from "./SplitViewButton";
 import { SessionBadgeButton } from "./SessionBadgeButton";
+import { TorStatusButton } from "./tor/TorStatusButton";
 import { WebStoreExtensionsButton } from "./WebStoreExtensionsButton";
 import { DownloadsToolbarButton } from "./DownloadsToolbarButton";
 
@@ -240,6 +241,9 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
 
       {/* Focus Mode & Social Shield */}
       <FocusModeButton />
+
+      {/* Tor Circuit & Private Mode Status Button */}
+      <TorStatusButton />
 
       {/* Active Session Container Badge & Switcher */}
       <SessionBadgeButton />

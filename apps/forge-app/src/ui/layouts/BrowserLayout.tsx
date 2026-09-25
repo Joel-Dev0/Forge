@@ -246,6 +246,15 @@ export function BrowserLayout() {
     toastTimer.current = setTimeout(() => setToastMessage(null), 2000);
   }, []);
 
+  useEffect(() => {
+    const handleToastEvent = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      if (custom.detail) triggerToast(custom.detail);
+    };
+    window.addEventListener("forge:toast", handleToastEvent);
+    return () => window.removeEventListener("forge:toast", handleToastEvent);
+  }, [triggerToast]);
+
   const activeWebview = useCallback(() => webviewRefs.current.get(activeTabId) ?? null, [activeTabId]);
 
   // Global Browser-wide Right-Click Context Menu Listener
@@ -943,212 +952,256 @@ export function BrowserLayout() {
     return activeWv;
   }, [activeWebview]);
 
-  // Hook up native Windows Taskbar thumbnail media controls (Prev, Play/Pause, Next) for ANY platform
+  // Universal media controls (Taskbar, Focus Player, Keyboard) across ANY webview/tab
   useEffect(() => {
     const forge = (window as any).forge;
-    if (!forge?.media) return;
-
     const unsubs: (() => void)[] = [];
 
-    // Previous track / Rewind 10s (Universal: YouTube, Spotify, SoundCloud, Deezer, HTML5 video/audio)
-    unsubs.push(
-      forge.media.onTaskbarMediaPrev(async () => {
-        const wv = await getMediaTargetWebview();
-        if (!wv) return;
-        wv.executeJavaScript(`
-          (function() {
-            // 1. YouTube
-            const yt = document.getElementById('movie_player');
-            const prevBtn = document.querySelector('.ytp-prev-button');
-            if (prevBtn && !prevBtn.hasAttribute('aria-disabled') && prevBtn.style.display !== 'none') {
-              prevBtn.click();
-              return;
+    const triggerMediaPrev = async () => {
+      const wv = await getMediaTargetWebview();
+      if (!wv) return;
+      wv.executeJavaScript(`
+        (function() {
+          const yt = document.getElementById('movie_player');
+          const prevBtn = document.querySelector('.ytp-prev-button');
+          if (prevBtn && !prevBtn.hasAttribute('aria-disabled') && prevBtn.style.display !== 'none') {
+            prevBtn.click();
+            return;
+          }
+          if (yt && typeof yt.previousVideo === 'function' && yt.getPlaylistIndex && yt.getPlaylistIndex() > 0) {
+            yt.previousVideo();
+            return;
+          }
+          const spPrev = document.querySelector('[data-testid="control-button-skip-back"], button[aria-label="Previous"], button[aria-label="Anterior"]');
+          if (spPrev) {
+            spPrev.click();
+            return;
+          }
+          const scPrev = document.querySelector('.skipControl__previous');
+          if (scPrev) {
+            scPrev.click();
+            return;
+          }
+          const deezerPrev = document.querySelector('[data-testid="previous_track_button"]');
+          if (deezerPrev) {
+            deezerPrev.click();
+            return;
+          }
+          const allMedia = Array.from(document.querySelectorAll('video, audio'));
+          const media = allMedia.find(m => !m.paused) || allMedia[0];
+          if (media) {
+            if (media.currentTime > 3) {
+              media.currentTime = Math.max(0, media.currentTime - 10);
+            } else {
+              media.currentTime = 0;
             }
-            if (yt && typeof yt.previousVideo === 'function' && yt.getPlaylistIndex && yt.getPlaylistIndex() > 0) {
-              yt.previousVideo();
-              return;
-            }
+            return;
+          }
+          try {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaTrackPrevious', code: 'MediaTrackPrevious', bubbles: true }));
+          } catch {}
+        })()
+      `).catch(() => {});
+    };
 
-            // 2. Spotify Web Player
-            const spPrev = document.querySelector('[data-testid="control-button-skip-back"], button[aria-label="Previous"], button[aria-label="Anterior"]');
-            if (spPrev) {
-              spPrev.click();
-              return;
-            }
+    const triggerMediaNext = async () => {
+      const wv = await getMediaTargetWebview();
+      if (!wv) return;
+      wv.executeJavaScript(`
+        (function() {
+          const yt = document.getElementById('movie_player');
+          const nextBtn = document.querySelector('.ytp-next-button');
+          if (nextBtn && !nextBtn.hasAttribute('aria-disabled') && nextBtn.style.display !== 'none') {
+            nextBtn.click();
+            return;
+          }
+          if (yt && typeof yt.nextVideo === 'function') {
+            yt.nextVideo();
+            return;
+          }
+          const spNext = document.querySelector('[data-testid="control-button-skip-forward"], button[aria-label="Next"], button[aria-label="Siguiente"]');
+          if (spNext) {
+            spNext.click();
+            return;
+          }
+          const scNext = document.querySelector('.skipControl__next');
+          if (scNext) {
+            scNext.click();
+            return;
+          }
+          const deezerNext = document.querySelector('[data-testid="next_track_button"]');
+          if (deezerNext) {
+            deezerNext.click();
+            return;
+          }
+          const allMedia = Array.from(document.querySelectorAll('video, audio'));
+          const media = allMedia.find(m => !m.paused) || allMedia[0];
+          if (media) {
+            media.currentTime = Math.min(media.duration || 999999, media.currentTime + 10);
+            return;
+          }
+          try {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaTrackNext', code: 'MediaTrackNext', bubbles: true }));
+          } catch {}
+        })()
+      `).catch(() => {});
+    };
 
-            // 3. SoundCloud
-            const scPrev = document.querySelector('.skipControl__previous');
-            if (scPrev) {
-              scPrev.click();
-              return;
-            }
-
-            // 4. Deezer
-            const deezerPrev = document.querySelector('[data-testid="previous_track_button"]');
-            if (deezerPrev) {
-              deezerPrev.click();
-              return;
-            }
-
-            // 5. Standard HTML5 <video> / <audio>
-            const allMedia = Array.from(document.querySelectorAll('video, audio'));
-            const media = allMedia.find(m => !m.paused) || allMedia[0];
-            if (media) {
-              if (media.currentTime > 3) {
-                media.currentTime = Math.max(0, media.currentTime - 10);
-              } else {
-                media.currentTime = 0;
-              }
-              return;
-            }
-
-            // 6. Synthetic MediaTrackPrevious fallback
-            try {
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaTrackPrevious', code: 'MediaTrackPrevious', bubbles: true }));
-            } catch {}
-          })()
-        `).catch(() => {});
-      })
-    );
-
-    // Play / Pause toggle (Universal: YouTube, Spotify, SoundCloud, Netflix, Twitch, Deezer, HTML5)
-    unsubs.push(
-      forge.media.onTaskbarMediaTogglePlay(async () => {
-        const wv = await getMediaTargetWebview();
-        if (!wv) return;
-        wv.executeJavaScript(`
-          (function() {
-            // 1. YouTube
-            const yt = document.getElementById('movie_player');
-            if (yt && typeof yt.getPlayerState === 'function') {
-              const state = yt.getPlayerState();
-              if (state === 1) {
+    const triggerMediaPause = async () => {
+      for (const [_, wv] of webviewRefs.current.entries()) {
+        try {
+          wv.executeJavaScript(`
+            (function() {
+              const yt = document.getElementById('movie_player');
+              if (yt && typeof yt.pauseVideo === 'function') {
                 yt.pauseVideo();
-                return false;
-              } else {
-                yt.playVideo();
-                return true;
               }
-            }
+              const sp = document.querySelector('[data-testid="control-button-playpause"]');
+              if (sp && (sp.getAttribute('aria-label') || '').toLowerCase().includes('pause')) {
+                sp.click();
+              }
+              const sc = document.querySelector('.playControl.playing, button.playControl.playing');
+              if (sc) {
+                sc.click();
+              }
+              const allMedia = Array.from(document.querySelectorAll('video, audio'));
+              allMedia.forEach(m => { try { m.pause(); } catch {} });
+            })()
+          `).catch(() => {});
+        } catch {}
+      }
+      forge?.media?.updateStatus?.({ isPlaying: false });
+    };
 
-            // 2. Spotify Web Player
-            const spotifyPlayBtn = document.querySelector(
-              '[data-testid="control-button-playpause"], button[aria-label="Play"], button[aria-label="Pause"], button[aria-label="Reproducir"], button[aria-label="Pausa"]'
-            );
-            if (spotifyPlayBtn) {
-              spotifyPlayBtn.click();
-              return true;
-            }
+    const triggerMediaPlay = async () => {
+      const wv = await getMediaTargetWebview();
+      if (!wv) return;
+      wv.executeJavaScript(`
+        (function() {
+          const yt = document.getElementById('movie_player');
+          if (yt && typeof yt.playVideo === 'function') {
+            yt.playVideo();
+            return true;
+          }
+          const sp = document.querySelector('[data-testid="control-button-playpause"]');
+          if (sp && (sp.getAttribute('aria-label') || '').toLowerCase().includes('play')) {
+            sp.click();
+            return true;
+          }
+          const sc = document.querySelector('.playControl:not(.playing)');
+          if (sc) {
+            sc.click();
+            return true;
+          }
+          const allMedia = Array.from(document.querySelectorAll('video, audio'));
+          if (allMedia.length > 0) {
+            allMedia[0].play().catch(() => {});
+            return true;
+          }
+          return false;
+        })()
+      `).then((playing: any) => {
+        forge?.media?.updateStatus?.({ isPlaying: Boolean(playing) });
+      }).catch(() => {});
+    };
 
-            // 3. SoundCloud
-            const soundcloudBtn = document.querySelector('.playControl, button.playControl');
-            if (soundcloudBtn) {
-              soundcloudBtn.click();
-              return true;
-            }
-
-            // 4. Netflix
-            const netflixBtn = document.querySelector('.button-nfplayerPlay, .button-nfplayerPause');
-            if (netflixBtn) {
-              netflixBtn.click();
-              return true;
-            }
-
-            // 5. Twitch
-            const twitchBtn = document.querySelector('button[data-a-target="player-play-pause-button"]');
-            if (twitchBtn) {
-              twitchBtn.click();
-              return true;
-            }
-
-            // 6. Deezer
-            const deezerBtn = document.querySelector('[data-testid="play_button_play"], [data-testid="play_button_pause"]');
-            if (deezerBtn) {
-              deezerBtn.click();
-              return true;
-            }
-
-            // 7. Standard HTML5 <video> / <audio> across ANY platform
-            const allMedia = Array.from(document.querySelectorAll('video, audio'));
-            const playing = allMedia.find(m => !m.paused && m.currentTime > 0 && !m.ended);
-            if (playing) {
-              playing.pause();
+    const triggerMediaTogglePlay = async () => {
+      const wv = await getMediaTargetWebview();
+      if (!wv) return;
+      wv.executeJavaScript(`
+        (function() {
+          // 1. YouTube
+          const yt = document.getElementById('movie_player');
+          if (yt && typeof yt.getPlayerState === 'function') {
+            const state = yt.getPlayerState();
+            if (state === 1) {
+              yt.pauseVideo();
               return false;
-            } else if (allMedia.length > 0) {
-              allMedia[0].play().catch(() => {});
+            } else {
+              yt.playVideo();
               return true;
             }
+          }
 
-            // 8. Synthetic Media key fallback
-            try {
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaPlayPause', code: 'MediaPlayPause', bubbles: true }));
-            } catch {}
+          // 2. Spotify Web Player
+          const spotifyPlayBtn = document.querySelector(
+            '[data-testid="control-button-playpause"], button[aria-label="Play"], button[aria-label="Pause"], button[aria-label="Reproducir"], button[aria-label="Pausa"]'
+          );
+          if (spotifyPlayBtn) {
+            spotifyPlayBtn.click();
+            return true;
+          }
+
+          // 3. SoundCloud
+          const soundcloudBtn = document.querySelector('.playControl, button.playControl');
+          if (soundcloudBtn) {
+            soundcloudBtn.click();
+            return true;
+          }
+
+          // 4. Netflix
+          const netflixBtn = document.querySelector('.button-nfplayerPlay, .button-nfplayerPause');
+          if (netflixBtn) {
+            netflixBtn.click();
+            return true;
+          }
+
+          // 5. Twitch
+          const twitchBtn = document.querySelector('button[data-a-target="player-play-pause-button"]');
+          if (twitchBtn) {
+            twitchBtn.click();
+            return true;
+          }
+
+          // 6. Deezer
+          const deezerBtn = document.querySelector('[data-testid="play_button_play"], [data-testid="play_button_pause"]');
+          if (deezerBtn) {
+            deezerBtn.click();
+            return true;
+          }
+
+          // 7. Standard HTML5 <video> / <audio> across ANY platform
+          const allMedia = Array.from(document.querySelectorAll('video, audio'));
+          const playing = allMedia.find(m => !m.paused && m.currentTime > 0 && !m.ended);
+          if (playing) {
+            allMedia.forEach(m => { try { m.pause(); } catch {} });
             return false;
-          })()
-        `).then((isPlaying: any) => {
-          forge.media?.updateStatus({ isPlaying: Boolean(isPlaying) });
-        }).catch(() => {});
-      })
-    );
+          } else if (allMedia.length > 0) {
+            allMedia[0].play().catch(() => {});
+            return true;
+          }
 
-    // Next track / Skip 10s (Universal: YouTube, Spotify, SoundCloud, Deezer, HTML5 video/audio)
-    unsubs.push(
-      forge.media.onTaskbarMediaNext(async () => {
-        const wv = await getMediaTargetWebview();
-        if (!wv) return;
-        wv.executeJavaScript(`
-          (function() {
-            // 1. YouTube
-            const yt = document.getElementById('movie_player');
-            const nextBtn = document.querySelector('.ytp-next-button');
-            if (nextBtn && !nextBtn.hasAttribute('aria-disabled') && nextBtn.style.display !== 'none') {
-              nextBtn.click();
-              return;
-            }
-            if (yt && typeof yt.nextVideo === 'function') {
-              yt.nextVideo();
-              return;
-            }
+          // 8. Synthetic Media key fallback
+          try {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaPlayPause', code: 'MediaPlayPause', bubbles: true }));
+          } catch {}
+          return false;
+        })()
+      `).then((isPlaying: any) => {
+        forge?.media?.updateStatus?.({ isPlaying: Boolean(isPlaying) });
+      }).catch(() => {});
+    };
 
-            // 2. Spotify
-            const spNext = document.querySelector('[data-testid="control-button-skip-forward"], button[aria-label="Next"], button[aria-label="Siguiente"]');
-            if (spNext) {
-              spNext.click();
-              return;
-            }
+    // Attach to internal window custom events
+    window.addEventListener("forge:media-toggle-play", triggerMediaTogglePlay);
+    window.addEventListener("forge:media-pause", triggerMediaPause);
+    window.addEventListener("forge:media-play", triggerMediaPlay);
+    window.addEventListener("forge:media-next", triggerMediaNext);
+    window.addEventListener("forge:media-prev", triggerMediaPrev);
 
-            // 3. SoundCloud
-            const scNext = document.querySelector('.skipControl__next');
-            if (scNext) {
-              scNext.click();
-              return;
-            }
-
-            // 4. Deezer
-            const deezerNext = document.querySelector('[data-testid="next_track_button"]');
-            if (deezerNext) {
-              deezerNext.click();
-              return;
-            }
-
-            // 5. Standard HTML5 <video> / <audio>
-            const allMedia = Array.from(document.querySelectorAll('video, audio'));
-            const media = allMedia.find(m => !m.paused) || allMedia[0];
-            if (media) {
-              media.currentTime = Math.min(media.duration || 999999, media.currentTime + 10);
-              return;
-            }
-
-            // 6. Synthetic MediaTrackNext fallback
-            try {
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'MediaTrackNext', code: 'MediaTrackNext', bubbles: true }));
-            } catch {}
-          })()
-        `).catch(() => {});
-      })
-    );
+    // Attach to native Windows taskbar controls if available
+    if (forge?.media) {
+      unsubs.push(forge.media.onTaskbarMediaPrev(triggerMediaPrev));
+      unsubs.push(forge.media.onTaskbarMediaTogglePlay(triggerMediaTogglePlay));
+      unsubs.push(forge.media.onTaskbarMediaNext(triggerMediaNext));
+    }
 
     return () => {
+      window.removeEventListener("forge:media-toggle-play", triggerMediaTogglePlay);
+      window.removeEventListener("forge:media-pause", triggerMediaPause);
+      window.removeEventListener("forge:media-play", triggerMediaPlay);
+      window.removeEventListener("forge:media-next", triggerMediaNext);
+      window.removeEventListener("forge:media-prev", triggerMediaPrev);
       unsubs.forEach((u) => u());
     };
   }, [getMediaTargetWebview]);

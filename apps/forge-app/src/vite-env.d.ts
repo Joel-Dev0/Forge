@@ -319,6 +319,20 @@ declare global {
         onPolicyChanged: (callback: (policy: any) => void) => () => void;
         onClearHistoryRequested: (callback: () => void) => () => void;
         onClearDownloadsRequested: (callback: () => void) => () => void;
+        createSession?: (mode: "private" | "tor", name?: string) => Promise<{ id: string; mode: "private" | "tor"; name: string; partition: string; createdAt: number }>;
+        destroySession?: (sessionId: string) => Promise<{ success: boolean }>;
+        registerTab?: (sessionId: string) => Promise<{ success: boolean }>;
+        unregisterTab?: (sessionId: string) => Promise<{ destroyed: boolean }>;
+        getSessions?: () => Promise<any[]>;
+      };
+      tor?: {
+        getStatus: () => Promise<any>;
+        connect: () => Promise<any>;
+        disconnect: () => Promise<any>;
+        newCircuit: () => Promise<any>;
+        testLeak: () => Promise<any>;
+        onStatusChanged: (callback: (status: any) => void) => () => void;
+        onCircuitChanged: (callback: (circuit: any) => void) => () => void;
       };
       session?: {
         saveBackup: (data: any) => Promise<boolean>;

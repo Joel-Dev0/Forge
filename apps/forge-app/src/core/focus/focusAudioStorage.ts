@@ -12,9 +12,14 @@ const STORE_NAME = "audio_blobs";
 // In-memory cache of generated object URLs to avoid recreating them and to allow revoking
 const objectUrlCache = new Map<string, string>();
 
-function openAudioDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function getAudioDB(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined" || !window.indexedDB) {
+      dbPromise = null;
       return reject(new Error("IndexedDB is not supported in this environment"));
     }
 
@@ -27,9 +32,44 @@ function openAudioDB(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      db.onclose = () => {
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
   });
+
+  return dbPromise;
+}
+
+/**
+ * Returns a slice-detached Blob from a File or Blob, guaranteeing
+ * that Chromium will store the raw bytes directly in IndexedDB blob storage
+ * independent of any ephemeral file input handles that expire on refresh.
+ */
+function toPersistentBlob(blobOrFile: Blob | File): Blob {
+  if (blobOrFile instanceof File) {
+    return blobOrFile.slice(0, blobOrFile.size, blobOrFile.type || "audio/mpeg");
+  }
+  return blobOrFile;
+}
+
+/**
+ * Synchronously returns an active object URL if already cached in memory.
+ */
+export function getCachedAudioUrl(storageKey: string): string | null {
+  return objectUrlCache.get(storageKey) || null;
 }
 
 /**
@@ -41,24 +81,25 @@ export async function saveLocalAudioBlob(
   blobOrFile: Blob | File
 ): Promise<string> {
   try {
-    const db = await openAudioDB();
+    const db = await getAudioDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
+    const pureBlob = toPersistentBlob(blobOrFile);
 
-    store.put(blobOrFile, storageKey);
+    store.put(pureBlob, storageKey);
 
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
 
-    // Also update/populate the object URL cache
     if (objectUrlCache.has(storageKey)) {
       try {
         URL.revokeObjectURL(objectUrlCache.get(storageKey)!);
       } catch {}
     }
-    const freshUrl = URL.createObjectURL(blobOrFile);
+    const freshUrl = URL.createObjectURL(pureBlob);
     objectUrlCache.set(storageKey, freshUrl);
 
     return storageKey;
@@ -69,17 +110,64 @@ export async function saveLocalAudioBlob(
 }
 
 /**
+ * Saves multiple local audio files into IndexedDB in a single readwrite transaction.
+ * Far faster and more reliable than executing dozens of separate transactions.
+ */
+export async function saveMultipleAudioBlobs(
+  items: Array<{ key: string; blobOrFile: Blob | File }>
+): Promise<string[]> {
+  try {
+    const db = await getAudioDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const savedKeys: string[] = [];
+
+    for (const item of items) {
+      const pureBlob = toPersistentBlob(item.blobOrFile);
+      store.put(pureBlob, item.key);
+      savedKeys.push(item.key);
+
+      if (objectUrlCache.has(item.key)) {
+        try {
+          URL.revokeObjectURL(objectUrlCache.get(item.key)!);
+        } catch {}
+      }
+      const freshUrl = URL.createObjectURL(pureBlob);
+      objectUrlCache.set(item.key, freshUrl);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    return savedKeys;
+  } catch (err) {
+    console.error("[focusAudioStorage] Batch save failed:", err);
+    throw err;
+  }
+}
+
+/**
  * Retrieves the raw audio Blob from IndexedDB.
  */
 export async function getLocalAudioBlob(storageKey: string): Promise<Blob | null> {
   try {
-    const db = await openAudioDB();
+    const db = await getAudioDB();
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const request = store.get(storageKey);
 
     return await new Promise<Blob | null>((resolve) => {
-      request.onsuccess = () => resolve((request.result as Blob) || null);
+      request.onsuccess = () => {
+        const result = request.result;
+        if (result && (result instanceof Blob || result instanceof File)) {
+          resolve(result);
+        } else {
+          resolve(null);
+        }
+      };
       request.onerror = () => resolve(null);
     });
   } catch (err) {
@@ -93,17 +181,21 @@ export async function getLocalAudioBlob(storageKey: string): Promise<Blob | null
  * Reuses active in-memory object URL or creates a fresh one from IndexedDB.
  */
 export async function getLocalAudioUrl(storageKey: string): Promise<string | null> {
-  // If we already have a live object URL in memory, return it
   if (objectUrlCache.has(storageKey)) {
     return objectUrlCache.get(storageKey)!;
   }
 
   const blob = await getLocalAudioBlob(storageKey);
-  if (!blob) return null;
+  if (!blob || blob.size === 0) return null;
 
-  const url = URL.createObjectURL(blob);
-  objectUrlCache.set(storageKey, url);
-  return url;
+  try {
+    const url = URL.createObjectURL(blob);
+    objectUrlCache.set(storageKey, url);
+    return url;
+  } catch (err) {
+    console.warn(`[focusAudioStorage] Error creating object URL for "${storageKey}":`, err);
+    return null;
+  }
 }
 
 /**
@@ -118,7 +210,7 @@ export async function deleteLocalAudioBlob(storageKey: string): Promise<void> {
       objectUrlCache.delete(storageKey);
     }
 
-    const db = await openAudioDB();
+    const db = await getAudioDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     store.delete(storageKey);
@@ -126,6 +218,7 @@ export async function deleteLocalAudioBlob(storageKey: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
     });
   } catch (err) {
     console.warn(`[focusAudioStorage] Error deleting audio blob "${storageKey}":`, err);
@@ -137,7 +230,7 @@ export async function deleteLocalAudioBlob(storageKey: string): Promise<void> {
  */
 export async function hasLocalAudioBlob(storageKey: string): Promise<boolean> {
   try {
-    const db = await openAudioDB();
+    const db = await getAudioDB();
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const countReq = store.count(storageKey);

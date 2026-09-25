@@ -18,7 +18,8 @@ export interface IdeExtension {
   installed: boolean;
   enabled: boolean;
   installedAt?: number;
-  projectScoped?: boolean;
+  readmeUrl?: string;
+  changelogUrl?: string;
 }
 
 interface IdeExtensionsState {
@@ -27,13 +28,15 @@ interface IdeExtensionsState {
   searchQuery: string;
   activeCategory: "all" | IdeExtension["category"] | "installed";
   selectedExtensionId: string | null;
+  selectedExtension: IdeExtension | null;
 
   setIdeModalOpen: (open: boolean) => void;
   setSearchQuery: (query: string) => void;
   setActiveCategory: (cat: "all" | IdeExtension["category"] | "installed") => void;
   setSelectedExtensionId: (id: string | null) => void;
+  setSelectedExtension: (ext: IdeExtension | null) => void;
 
-  installExtension: (id: string) => void;
+  installExtension: (extOrId: string | IdeExtension) => void;
   uninstallExtension: (id: string) => void;
   toggleExtension: (id: string) => void;
   installFromUrlOrId: (urlOrId: string) => { success: boolean; message: string };
@@ -471,21 +474,47 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
   searchQuery: "",
   activeCategory: "all",
   selectedExtensionId: DEFAULT_IDE_EXTENSIONS[0].id,
+  selectedExtension: DEFAULT_IDE_EXTENSIONS[0],
 
   setIdeModalOpen: (open) => set({ isIdeModalOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setActiveCategory: (cat) => set({ activeCategory: cat }),
-  setSelectedExtensionId: (id) => set({ selectedExtensionId: id }),
+  setSelectedExtensionId: (id) =>
+    set((s) => ({
+      selectedExtensionId: id,
+      selectedExtension: id ? s.extensions.find((e) => e.id === id) || s.selectedExtension : null,
+    })),
+  setSelectedExtension: (ext) =>
+    set({ selectedExtension: ext, selectedExtensionId: ext ? ext.id : null }),
 
-  installExtension: (id) => {
+  installExtension: (extOrId) => {
+    const id = typeof extOrId === "string" ? extOrId : extOrId.id;
     set((s) => {
-      const updated = s.extensions.map((e) =>
-        e.id === id ? { ...e, installed: true, enabled: true, installedAt: Date.now() } : e
-      );
+      const exists = s.extensions.some((e) => e.id === id);
+      let updated: IdeExtension[];
+      if (exists) {
+        updated = s.extensions.map((e) =>
+          e.id === id ? { ...e, installed: true, enabled: true, installedAt: Date.now() } : e
+        );
+      } else if (typeof extOrId === "object") {
+        const newExt: IdeExtension = {
+          ...extOrId,
+          installed: true,
+          enabled: true,
+          installedAt: Date.now(),
+        };
+        updated = [newExt, ...s.extensions];
+      } else {
+        return s;
+      }
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch {}
-      return { extensions: updated };
+      const updatedSelected =
+        s.selectedExtension && s.selectedExtension.id === id
+          ? { ...s.selectedExtension, installed: true, enabled: true }
+          : s.selectedExtension;
+      return { extensions: updated, selectedExtension: updatedSelected };
     });
   },
 
@@ -497,7 +526,11 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch {}
-      return { extensions: updated };
+      const updatedSelected =
+        s.selectedExtension && s.selectedExtension.id === id
+          ? { ...s.selectedExtension, installed: false, enabled: false }
+          : s.selectedExtension;
+      return { extensions: updated, selectedExtension: updatedSelected };
     });
   },
 
@@ -509,7 +542,11 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch {}
-      return { extensions: updated };
+      const updatedSelected =
+        s.selectedExtension && s.selectedExtension.id === id
+          ? { ...s.selectedExtension, enabled: !s.selectedExtension.enabled }
+          : s.selectedExtension;
+      return { extensions: updated, selectedExtension: updatedSelected };
     });
   },
 
@@ -622,6 +659,8 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
               rating: item.averageRating ? Math.round(item.averageRating * 10) / 10 : 4.8,
               downloads: dlCount,
               marketplaceUrl: item.url || `https://open-vsx.org/extension/${item.namespace}/${item.name}`,
+              readmeUrl: item.files?.readme,
+              changelogUrl: item.files?.changelog,
               iconSvg: iconUrl
                 ? `<img src="${iconUrl}" alt="${item.displayName || item.name}" class="w-full h-full object-contain" />`
                 : `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M12 4L19 8V16L12 20L5 16V8L12 4Z" fill="#FFFFFF"/></svg>`,

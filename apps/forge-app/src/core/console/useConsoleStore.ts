@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 
 export interface ConsoleLogEntry {
   id: string;
@@ -7,6 +7,7 @@ export interface ConsoleLogEntry {
   source?: string;
   line?: number;
   timestamp: number;
+  count?: number;
 }
 
 export interface AiMessage {
@@ -114,18 +115,49 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
   selectedModel: "forge-intelligent",
 
   addLog(entry) {
-    const log: ConsoleLogEntry = {
-      id: `log-${logIdCounter++}`,
-      level: entry.level,
-      message: entry.message,
-      source: entry.source,
-      line: entry.line,
-      timestamp: Date.now(),
-    };
+    const msg = entry.message || "";
+    // Filter out known noisy Chromium/engine telemetry and benign layout warnings
+    if (
+      msg.includes("was preloaded using link preload but not used within a few seconds") ||
+      msg.includes("ResizeObserver loop completed with undelivered notifications") ||
+      msg.includes("ResizeObserver loop limit exceeded")
+    ) {
+      return;
+    }
 
-    set((s) => ({
-      logs: [...s.logs.slice(-300), log],
-    }));
+    set((s) => {
+      const last = s.logs[s.logs.length - 1];
+      // Collapse consecutive identical logs with a counter badge
+      if (
+        last &&
+        last.message === msg &&
+        last.level === entry.level &&
+        last.source === entry.source
+      ) {
+        const updatedLast: ConsoleLogEntry = {
+          ...last,
+          count: (last.count || 1) + 1,
+          timestamp: Date.now(),
+        };
+        return {
+          logs: [...s.logs.slice(0, -1), updatedLast],
+        };
+      }
+
+      const log: ConsoleLogEntry = {
+        id: `log-${logIdCounter++}`,
+        level: entry.level,
+        message: msg,
+        source: entry.source,
+        line: entry.line,
+        timestamp: Date.now(),
+        count: 1,
+      };
+
+      return {
+        logs: [...s.logs.slice(-300), log],
+      };
+    });
   },
 
   clearLogs() {

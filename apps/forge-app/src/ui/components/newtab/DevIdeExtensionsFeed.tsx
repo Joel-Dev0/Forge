@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Boxes,
   ExternalLink,
@@ -15,6 +15,7 @@ import {
   Settings,
   X,
   Share2,
+  Loader2,
 } from "lucide-react";
 import {
   useIdeExtensionsStore,
@@ -29,11 +30,51 @@ interface Props {
 }
 
 export function DevIdeExtensionsFeed({ onNavigate, onOpenModal, onSwitchToNews }: Props) {
-  const { extensions, installExtension, uninstallExtension, toggleExtension } = useIdeExtensionsStore();
-  const [selectedExtId, setSelectedExtId] = useState<string>("christian-kohler.npm-intellisense");
-  const [activeTab, setActiveTab] = useState<"details" | "features" | "changelog">("details");
+  const {
+    extensions,
+    installExtension,
+    uninstallExtension,
+    toggleExtension,
+    selectedExtension,
+    setSelectedExtension,
+    selectedExtensionId,
+  } = useIdeExtensionsStore();
 
-  const selectedExt = extensions.find((e) => e.id === selectedExtId) || extensions[0];
+  const [activeTab, setActiveTab] = useState<"details" | "features" | "changelog">("details");
+  const [readmeContent, setReadmeContent] = useState<string | null>(null);
+  const [loadingReadme, setLoadingReadme] = useState(false);
+
+  const selectedExt =
+    (selectedExtension &&
+      (extensions.find((e) => e.id.toLowerCase() === selectedExtension.id.toLowerCase()) || selectedExtension)) ||
+    (selectedExtensionId && extensions.find((e) => e.id.toLowerCase() === selectedExtensionId.toLowerCase())) ||
+    extensions[0];
+
+  useEffect(() => {
+    if (!selectedExt?.readmeUrl) {
+      setReadmeContent(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingReadme(true);
+    fetch(selectedExt.readmeUrl)
+      .then((r) => (r.ok ? r.text() : null))
+      .then((text) => {
+        if (!cancelled) {
+          setReadmeContent(text);
+          setLoadingReadme(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReadmeContent(null);
+          setLoadingReadme(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedExt?.id, selectedExt?.readmeUrl]);
 
   const handleOpenMarketplace = (url: string) => {
     if (onNavigate) {
@@ -93,7 +134,8 @@ export function DevIdeExtensionsFeed({ onNavigate, onOpenModal, onSwitchToNews }
         <div className="w-full md:w-[320px] h-full shrink-0 flex flex-col">
           <IdeExtensionsSidebarView
             onOpenModal={onOpenModal}
-            onSelectExtension={(ext) => setSelectedExtId(ext.id)}
+            selectedExtensionId={selectedExt?.id}
+            onSelectExtension={(ext) => setSelectedExtension(ext)}
           />
         </div>
 
@@ -191,7 +233,10 @@ export function DevIdeExtensionsFeed({ onNavigate, onOpenModal, onSwitchToNews }
                   ) : (
                     <button
                       type="button"
-                      onClick={() => installExtension(selectedExt.id)}
+                      onClick={() => {
+                        installExtension(selectedExt);
+                        setSelectedExtension({ ...selectedExt, installed: true, enabled: true });
+                      }}
                       className="px-5 py-1.5 rounded bg-[#0078d4] hover:bg-[#006cbd] text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition-colors cursor-pointer"
                     >
                       <Download size={13} />
@@ -252,46 +297,72 @@ export function DevIdeExtensionsFeed({ onNavigate, onOpenModal, onSwitchToNews }
             <div className="p-6 space-y-6 flex-1 text-sm text-zinc-300 leading-relaxed font-sans">
               {activeTab === "details" && (
                 <div className="space-y-4 max-w-3xl">
-                  <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">
-                      Overview
-                    </h4>
-                    <p className="text-xs text-zinc-300">
-                      {selectedExt.description}
-                    </p>
-                  </div>
+                  {loadingReadme ? (
+                    <div className="py-8 flex items-center justify-center gap-2 text-zinc-400 text-xs">
+                      <Loader2 size={14} className="animate-spin text-[#0078d4]" />
+                      <span>Loading documentation from Open VSX...</span>
+                    </div>
+                  ) : readmeContent ? (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-xs leading-relaxed overflow-x-auto whitespace-pre-wrap font-sans text-zinc-200 max-h-[420px] overflow-y-auto">
+                        {readmeContent}
+                      </div>
+                      <div className="pt-1 flex flex-wrap gap-2 text-xs text-zinc-400">
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Identifier: <code className="text-blue-400">{selectedExt.id}</code>
+                        </span>
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Version: <span className="font-mono text-zinc-300">v{selectedExt.version}</span>
+                        </span>
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Publisher: <span className="text-zinc-300">{selectedExt.publisher}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">
+                          Overview
+                        </h4>
+                        <p className="text-xs text-zinc-300">
+                          {selectedExt.description}
+                        </p>
+                      </div>
 
-                  <div className="space-y-3">
-                    <h3 className="text-base font-bold text-white border-b border-[#2d2d2d] pb-2">
-                      Key Capabilities & Commands
-                    </h3>
-                    <ul className="space-y-2 text-xs text-zinc-300">
-                      <li className="flex items-start gap-2">
-                        <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                        <span>Seamless workspace integration with automatic LSP language server diagnostics.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                        <span>Zero configuration setup for modern TypeScript, JavaScript, Rust, Go, Python, and C/C++ projects.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                        <span>Instant hover documentation, go-to-definition, and intelligent completion provider.</span>
-                      </li>
-                    </ul>
-                  </div>
+                      <div className="space-y-3">
+                        <h3 className="text-base font-bold text-white border-b border-[#2d2d2d] pb-2">
+                          Key Capabilities & Commands
+                        </h3>
+                        <ul className="space-y-2 text-xs text-zinc-300">
+                          <li className="flex items-start gap-2">
+                            <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                            <span>Seamless workspace integration with automatic LSP language server diagnostics.</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                            <span>Zero configuration setup for modern TypeScript, JavaScript, Rust, Go, Python, and C/C++ projects.</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <Check size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                            <span>Instant hover documentation, go-to-definition, and intelligent completion provider.</span>
+                          </li>
+                        </ul>
+                      </div>
 
-                  <div className="pt-2 flex flex-wrap gap-2 text-xs text-zinc-400">
-                    <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
-                      Identifier: <code className="text-blue-400">{selectedExt.id}</code>
-                    </span>
-                    <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
-                      Category: <span className="capitalize">{selectedExt.category}</span>
-                    </span>
-                    <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
-                      Registry: Open VSX / VS Code Marketplace
-                    </span>
-                  </div>
+                      <div className="pt-2 flex flex-wrap gap-2 text-xs text-zinc-400">
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Identifier: <code className="text-blue-400">{selectedExt.id}</code>
+                        </span>
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Category: <span className="capitalize">{selectedExt.category}</span>
+                        </span>
+                        <span className="px-2.5 py-1 rounded bg-[#252526] border border-[#333]">
+                          Registry: Open VSX / VS Code Marketplace
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

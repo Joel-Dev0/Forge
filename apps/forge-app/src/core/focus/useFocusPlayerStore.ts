@@ -3,7 +3,9 @@ import type { FocusPlaylist, FocusTrack, SoundProviderType } from "./focusPlayer
 import { type CuratedOnlineStation, stationToFocusTrack } from "./focusPresets";
 import {
   saveLocalAudioBlob,
+  saveMultipleAudioBlobs,
   getLocalAudioUrl,
+  getCachedAudioUrl,
   deleteLocalAudioBlob,
   cacheOnlineAudioToLocal,
 } from "./focusAudioStorage";
@@ -213,8 +215,36 @@ let synthGain: GainNode | null = null;
 function getOrCreateAudio(): HTMLAudioElement {
   if (!globalAudio && typeof Audio !== "undefined") {
     globalAudio = new Audio();
-    globalAudio.crossOrigin = "anonymous";
+    // Do NOT set crossOrigin = "anonymous": causes CORS failures for blob: URLs and HTTP Icecast/Shoutcast streams in Chromium
     globalAudio.preload = "auto";
+
+    globalAudio.onloadedmetadata = () => {
+      if (globalAudio && globalAudio.duration && !isNaN(globalAudio.duration) && isFinite(globalAudio.duration)) {
+        useFocusPlayerStore.setState({ duration: Math.floor(globalAudio.duration) });
+      }
+    };
+
+    globalAudio.ontimeupdate = () => {
+      if (globalAudio && globalAudio.currentTime !== undefined) {
+        useFocusPlayerStore.setState({ currentTime: Math.floor(globalAudio.currentTime) });
+      }
+    };
+
+    globalAudio.onended = () => {
+      const state = useFocusPlayerStore.getState();
+      if (state.isRepeat === "one") {
+        if (globalAudio) {
+          globalAudio.currentTime = 0;
+          globalAudio.play().catch(() => {});
+        }
+      } else {
+        state.nextTrack();
+      }
+    };
+
+    globalAudio.onerror = () => {
+      console.warn("[FocusPlayer] HTMLAudioElement error event:", globalAudio?.error);
+    };
   }
   return globalAudio!;
 }
@@ -371,34 +401,51 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       stopAmbientSynth();
       const audio = getOrCreateAudio();
 
-      const prepareAndPlay = async () => {
-        let playSrc = target.sourceUrl;
-        if (target.storageKey) {
-          const fresh = await getLocalAudioUrl(target.storageKey);
-          if (fresh) {
-            playSrc = fresh;
-            if (target.sourceUrl !== fresh) {
-              set((s) => ({
-                currentTrack: { ...target, sourceUrl: fresh },
-                playlists: s.playlists.map((pl) => ({
-                  ...pl,
-                  tracks: pl.tracks.map((t) => (t.id === target.id ? { ...t, sourceUrl: fresh } : t)),
-                })),
-              }));
-            }
-          }
-        }
+      const key = target.storageKey || (target.id.startsWith("local-") ? target.id : undefined);
+      const cached = key ? getCachedAudioUrl(key) : null;
+      let playSrc = cached || target.sourceUrl;
 
+      // Start playing synchronously (preserves user activation click)
+      if (playSrc && !playSrc.startsWith("synth://")) {
         if (audio.src !== playSrc) {
           audio.src = playSrc;
         }
         audio.volume = effectiveVol;
         audio.play().catch((err) => {
-          console.warn("[FocusPlayer] HTML5 audio playback notification:", err);
+          console.warn("[FocusPlayer] Initial audio play caught:", err);
         });
-      };
+      }
 
-      prepareAndPlay();
+      // Rehydrate fresh blob URL from IndexedDB if not cached or if current is an expired blob
+      if (key) {
+        getLocalAudioUrl(key)
+          .then((fresh) => {
+            if (fresh) {
+              if (audio.src !== fresh) {
+                audio.src = fresh;
+                audio.volume = effectiveVol;
+                audio.play().catch((err) => {
+                  console.warn("[FocusPlayer] HTML5 audio playback with rehydrated URL:", err);
+                });
+              }
+
+              if (target.sourceUrl !== fresh) {
+                set((s) => ({
+                  currentTrack: { ...target, storageKey: key, sourceUrl: fresh, isOfflineAvailable: true },
+                  playlists: s.playlists.map((pl) => ({
+                    ...pl,
+                    tracks: pl.tracks.map((t) =>
+                      t.id === target.id ? { ...t, storageKey: key, sourceUrl: fresh, isOfflineAvailable: true } : t
+                    ),
+                  })),
+                }));
+              }
+            }
+          })
+          .catch((err) => {
+            console.warn("[FocusPlayer] Error rehydrating audio blob:", err);
+          });
+      }
     } else if (target.sourceUrl.startsWith("synth://") || target.sourceUrl.startsWith("ambient://")) {
       if (globalAudio) globalAudio.pause();
       startAmbientSynth(target.sourceUrl, effectiveVol);
@@ -406,6 +453,15 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       // YouTube, Spotify, SoundCloud iframe providers
       stopAmbientSynth();
       if (globalAudio) globalAudio.pause();
+      if (typeof window !== "undefined") {
+        try {
+          const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+          if (iframe?.contentWindow) {
+            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+            iframe.contentWindow.postMessage('{"method":"play"}', '*');
+          }
+        } catch {}
+      }
     }
 
     // Interval for progress tracking
@@ -433,8 +489,18 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     set({ isPlaying: false });
     stopAmbientSynth();
     if (globalAudio) globalAudio.pause();
-    if (typeof window !== "undefined" && (window as any).__forgeFocusPlayerInterval) {
-      clearInterval((window as any).__forgeFocusPlayerInterval);
+    if (typeof window !== "undefined") {
+      if ((window as any).__forgeFocusPlayerInterval) {
+        clearInterval((window as any).__forgeFocusPlayerInterval);
+      }
+      try {
+        const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+          iframe.contentWindow.postMessage('{"method":"pause"}', '*');
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent("forge:media-pause"));
     }
   },
 
@@ -485,6 +551,14 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     if (globalAudio && globalAudio.duration) {
       globalAudio.currentTime = timeSeconds;
     }
+    if (typeof window !== "undefined") {
+      try {
+        const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [timeSeconds, true] }), '*');
+        }
+      } catch {}
+    }
   },
 
   setVolume: (volume) => {
@@ -492,6 +566,14 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     set({ volume: vol, isMuted: false });
     if (globalAudio) globalAudio.volume = vol;
     if (synthGain && audioCtx) synthGain.gain.setValueAtTime(vol * 0.15, audioCtx.currentTime);
+    if (typeof window !== "undefined") {
+      try {
+        const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [vol * 100] }), '*');
+        }
+      } catch {}
+    }
 
     const s = get();
     persistStore(vol, false, s.isShuffle, s.isRepeat, s.profileBindings, s.playlists);
@@ -503,6 +585,14 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     const effective = nextMuted ? 0 : get().volume;
     if (globalAudio) globalAudio.volume = effective;
     if (synthGain && audioCtx) synthGain.gain.setValueAtTime(effective * 0.15, audioCtx.currentTime);
+    if (typeof window !== "undefined") {
+      try {
+        const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+        if (iframe?.contentWindow) {
+          iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: nextMuted ? 'mute' : 'unMute', args: '' }), '*');
+        }
+      } catch {}
+    }
   },
 
   toggleShuffle: () => {
@@ -725,12 +815,13 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   },
 
   addMultipleLocalTracks: async (files, targetPlaylistId, playlistName) => {
+    const itemsToSave: Array<{ key: string; blobOrFile: Blob | File }> = [];
     const tracks: FocusTrack[] = [];
+
     for (let i = 0; i < files.length; i++) {
       const item = files[i];
       const trackId = `local-track-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
-      await saveLocalAudioBlob(trackId, item.file);
-      const freshUrl = (await getLocalAudioUrl(trackId)) || URL.createObjectURL(item.file);
+      itemsToSave.push({ key: trackId, blobOrFile: item.file });
       const name = item.name || item.file.name;
       tracks.push({
         id: trackId,
@@ -738,13 +829,25 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
         artist: "Local Storage",
         durationSeconds: 180,
         provider: "local",
-        sourceUrl: freshUrl,
+        sourceUrl: URL.createObjectURL(item.file),
         category: "custom",
         storageKey: trackId,
         fileSize: item.file.size,
         mimeType: item.file.type || "audio/mpeg",
         isOfflineAvailable: true,
       });
+    }
+
+    if (itemsToSave.length > 0) {
+      await saveMultipleAudioBlobs(itemsToSave).catch((err) => {
+        console.warn("[FocusPlayer] Batch save local tracks error:", err);
+      });
+      for (const t of tracks) {
+        if (t.storageKey) {
+          const fresh = getCachedAudioUrl(t.storageKey);
+          if (fresh) t.sourceUrl = fresh;
+        }
+      }
     }
 
     set((s) => {
@@ -786,15 +889,14 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   },
 
   addFolderPlaylist: async (name, folderPath, files) => {
+    const itemsToSave: Array<{ key: string; blobOrFile: Blob | File }> = [];
     const tracks: FocusTrack[] = [];
+
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const trackId = `local-folder-${Date.now()}-${i}`;
-      let liveUrl = f.url;
-
       if (f.rawFile) {
-        await saveLocalAudioBlob(trackId, f.rawFile).catch(() => {});
-        liveUrl = (await getLocalAudioUrl(trackId)) || f.url;
+        itemsToSave.push({ key: trackId, blobOrFile: f.rawFile });
       }
 
       tracks.push({
@@ -803,12 +905,24 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
         artist: "Local Storage",
         durationSeconds: 180,
         provider: "local",
-        sourceUrl: liveUrl,
+        sourceUrl: f.url,
         category: "custom",
         storageKey: f.rawFile ? trackId : undefined,
         fileSize: f.size,
         isOfflineAvailable: !!f.rawFile,
       });
+    }
+
+    if (itemsToSave.length > 0) {
+      await saveMultipleAudioBlobs(itemsToSave).catch((err) => {
+        console.warn("[FocusPlayer] Batch save folder tracks error:", err);
+      });
+      for (const t of tracks) {
+        if (t.storageKey) {
+          const fresh = getCachedAudioUrl(t.storageKey);
+          if (fresh) t.sourceUrl = fresh;
+        }
+      }
     }
 
     const newPl: FocusPlaylist = {
@@ -864,17 +978,26 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   },
 
   hydrateLocalTracks: async () => {
-    const { playlists } = get();
+    const { playlists, currentTrack } = get();
     let hasChanges = false;
+    let updatedCurrentTrack = currentTrack;
+
     const updatedPlaylists = await Promise.all(
       playlists.map(async (pl) => {
         const updatedTracks = await Promise.all(
           pl.tracks.map(async (t) => {
-            if (t.storageKey) {
-              const freshUrl = await getLocalAudioUrl(t.storageKey);
-              if (freshUrl && freshUrl !== t.sourceUrl) {
-                hasChanges = true;
-                return { ...t, sourceUrl: freshUrl, isOfflineAvailable: true };
+            const key = t.storageKey || (t.id.startsWith("local-") ? t.id : undefined);
+            if (key) {
+              const freshUrl = await getLocalAudioUrl(key);
+              if (freshUrl) {
+                if (freshUrl !== t.sourceUrl || !t.storageKey || !t.isOfflineAvailable) {
+                  hasChanges = true;
+                }
+                const updatedT = { ...t, storageKey: key, sourceUrl: freshUrl, isOfflineAvailable: true };
+                if (currentTrack && currentTrack.id === t.id) {
+                  updatedCurrentTrack = updatedT;
+                }
+                return updatedT;
               }
             }
             return t;
@@ -884,15 +1007,16 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       })
     );
 
-    if (hasChanges) {
-      set({ playlists: updatedPlaylists });
+    if (hasChanges || updatedCurrentTrack !== currentTrack) {
+      set({ playlists: updatedPlaylists, currentTrack: updatedCurrentTrack });
     }
   },
 }));
 
-// Automatically hydrate local tracks from IndexedDB
+// Automatically hydrate local tracks from IndexedDB immediately and on idle
 if (typeof window !== "undefined") {
+  useFocusPlayerStore.getState().hydrateLocalTracks().catch(() => {});
   setTimeout(() => {
     useFocusPlayerStore.getState().hydrateLocalTracks().catch(() => {});
-  }, 200);
+  }, 100);
 }

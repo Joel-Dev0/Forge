@@ -1,3 +1,6 @@
+// Suppress Electron development security advisory console banner
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
+
 import { app, BrowserWindow, ipcMain, nativeTheme, nativeImage, powerMonitor, session, shell, Menu } from "electron";
 import path from "node:path";
 import fs from "node:fs";
@@ -13,6 +16,9 @@ import { initVpnAdapter } from "./network/vpnAdapter.js";
 import { initPrivacyCleanerAdapter } from "./privacy/privacyCleanerAdapter.js";
 import { initSessionManager } from "./sessions/sessionManager.js";
 import { initCompatManager } from "./compat/compatManager.js";
+import { registerTorIPC } from "./tor/TorIPC.js";
+import { ElectronTorRuntime } from "./tor/TorRuntime.js";
+import { ElectronPrivateSessionManager } from "./privacy/privateSessionManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +86,10 @@ app.on("child-process-gone", (_event, details) => {
 app.on("render-process-gone", (_event, webContents, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
-    if (!webContents.isDestroyed()) {
+    // CRITICAL: Only reload top-level BrowserWindow instances, never guest webviews.
+    // Calling webContents.reload() on a destroyed/crashed guest webview triggers an access violation
+    // (0xC0000005) in Electron's GuestViewManager, which abruptly kills the entire application.
+    if (webContents.getType() === "window" && !webContents.isDestroyed()) {
       try {
         webContents.reload();
       } catch {}
@@ -102,25 +111,128 @@ interface DownloadRecord {
   state: "progressing" | "completed" | "cancelled" | "interrupted";
   startTime: number;
   url: string;
+  isPrivate?: boolean;
 }
 
 const recentDownloads: DownloadRecord[] = [];
+const pendingDownloadFilenames = new Map<string, string>();
+const activeDownloadPaths = new Set<string>();
+
+const MIME_EXT_MAP: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/svg+xml": ".svg",
+  "image/avif": ".avif",
+  "image/bmp": ".bmp",
+  "image/x-icon": ".ico",
+  "image/vnd.microsoft.icon": ".ico",
+  "image/tiff": ".tiff",
+  "application/pdf": ".pdf",
+  "application/json": ".json",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/x-7z-compressed": ".7z",
+  "application/x-tar": ".tar",
+  "application/gzip": ".gz",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "text/plain": ".txt",
+  "text/html": ".html",
+  "text/css": ".css",
+  "text/javascript": ".js",
+  "text/csv": ".csv",
+  "text/markdown": ".md",
+  "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "video/quicktime": ".mov",
+  "video/x-msvideo": ".avi",
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav",
+  "audio/ogg": ".ogg",
+  "audio/webm": ".weba",
+  "audio/flac": ".flac",
+};
 
 function setupDownloadListeners(sess: Electron.Session) {
   sess.on("will-download", (_event, item, webContents) => {
-    const filename = item.getFilename();
-    const savePath = path.join(app.getPath("downloads"), filename);
-    item.setSavePath(savePath);
+    const itemUrl = item.getURL();
+    let rawFilename = pendingDownloadFilenames.get(itemUrl) || item.getFilename() || "download";
+    pendingDownloadFilenames.delete(itemUrl);
+
+    // Sanitize illegal filesystem characters on Windows and other OSes: \ / : * ? " < > |
+    rawFilename = rawFilename.replace(/[\\/:*?"<>|]/g, "_").trim();
+    if (!rawFilename || rawFilename === "." || rawFilename === "_") {
+      rawFilename = "download";
+    }
+
+    // Ensure valid extension if missing or generic
+    let ext = path.extname(rawFilename).toLowerCase();
+    if (!ext || ext === ".") {
+      const mime = (item.getMimeType() || "").toLowerCase();
+      let inferredExt = MIME_EXT_MAP[mime];
+      if (!inferredExt) {
+        if (mime.startsWith("image/")) inferredExt = ".jpg";
+        else if (mime.startsWith("video/")) inferredExt = ".mp4";
+        else if (mime.startsWith("audio/")) inferredExt = ".mp3";
+      }
+      if (inferredExt) {
+        ext = inferredExt;
+        rawFilename = `${rawFilename}${ext}`;
+      }
+    }
+
+    const downloadsDir = app.getPath("downloads");
+    try {
+      if (!fs.existsSync(downloadsDir)) {
+        fs.mkdirSync(downloadsDir, { recursive: true });
+      }
+    } catch {}
+
+    const actualExt = path.extname(rawFilename);
+    const actualBase = path.basename(rawFilename, actualExt);
+
+    let basePattern = actualBase;
+    let counter = 1;
+    const countMatch = actualBase.match(/^(.+)\s\((\d+)\)$/);
+    if (countMatch) {
+      basePattern = countMatch[1];
+      counter = parseInt(countMatch[2], 10) + 1;
+    }
+
+    let finalFilename = rawFilename;
+    let finalPath = path.join(downloadsDir, finalFilename);
+
+    // Auto-rename conflict resolution: Never overwrite or delete existing downloads!
+    // Produces: images.jpg, images (1).jpg, images (2).jpg, etc.
+    while (fs.existsSync(finalPath) || activeDownloadPaths.has(finalPath.toLowerCase())) {
+      finalFilename = `${basePattern} (${counter})${actualExt}`;
+      finalPath = path.join(downloadsDir, finalFilename);
+      counter++;
+    }
+
+    activeDownloadPaths.add(finalPath.toLowerCase());
+    item.setSavePath(finalPath);
+
+    const partitionName = (sess as any)._partition || (sess as any).partition || "";
+    const isPrivate = partitionName.startsWith("private_") || partitionName.startsWith("tor_");
 
     const record: DownloadRecord = {
       id: `dl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      filename,
-      path: savePath,
+      filename: finalFilename,
+      path: finalPath,
       size: item.getTotalBytes(),
       receivedBytes: 0,
       state: "progressing",
       startTime: Date.now(),
-      url: item.getURL(),
+      url: itemUrl,
+      isPrivate,
     };
     recentDownloads.unshift(record);
 
@@ -134,6 +246,8 @@ function setupDownloadListeners(sess: Electron.Session) {
     });
 
     item.once("done", (_e, state) => {
+      activeDownloadPaths.delete(finalPath.toLowerCase());
+      record.receivedBytes = item.getReceivedBytes();
       record.state = state as any;
       win?.webContents.send("downloads:item-done", record);
     });
@@ -646,23 +760,36 @@ app.on("web-contents-created", (_event, contents) => {
   });
 
   // Track PiP lifecycle and handle "Return to page" / "Back to tab"
-  contents.on("console-message", (_event, _level, message) => {
-    if (typeof message !== "string") return;
-
-    if (message.includes("__FORGE_PIP_ENTER__")) {
-      pipActiveWebContents.add(contents.id);
-      applyPipWindowIcon();
-    } else if (message.includes("__FORGE_PIP_LEAVE__")) {
-      pipActiveWebContents.delete(contents.id);
-      recentlyExitedPipWebContents.set(contents.id, Date.now());
-    } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
-      pipActiveWebContents.delete(contents.id);
-      recentlyExitedPipWebContents.set(contents.id, Date.now());
-      restoreAndFocusWindow(mainWindow);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
+  contents.on("console-message", (event: any, ...rest: any[]) => {
+    try {
+      let message = "";
+      if (event && typeof event.message === "string") {
+        message = event.message;
+      } else if (rest[0] && typeof rest[0] === "object" && typeof rest[0].message === "string") {
+        message = rest[0].message;
+      } else if (typeof rest[1] === "string") {
+        message = rest[1];
+      } else if (typeof rest[0] === "string") {
+        message = rest[0];
       }
-    }
+
+      if (!message || typeof message !== "string") return;
+
+      if (message.includes("__FORGE_PIP_ENTER__")) {
+        pipActiveWebContents.add(contents.id);
+        applyPipWindowIcon();
+      } else if (message.includes("__FORGE_PIP_LEAVE__")) {
+        pipActiveWebContents.delete(contents.id);
+        recentlyExitedPipWebContents.set(contents.id, Date.now());
+      } else if (message.includes("__FORGE_PIP_RETURN_TO_PAGE__")) {
+        pipActiveWebContents.delete(contents.id);
+        recentlyExitedPipWebContents.set(contents.id, Date.now());
+        restoreAndFocusWindow(mainWindow);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("webview:activate-tab-by-contents-id", contents.id);
+        }
+      }
+    } catch {}
   });
 
   // When user clicks native "Back to tab" in PiP window, Chromium focuses the guest WebContents
@@ -801,6 +928,9 @@ ipcMain.on("window:open-private", () => {
 
 ipcMain.handle("downloads:start", (event, { url, filename }: { url: string; filename?: string }) => {
   try {
+    if (filename && typeof filename === "string" && filename.trim()) {
+      pendingDownloadFilenames.set(url, filename.trim());
+    }
     const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
     if (win && !win.isDestroyed()) {
       win.webContents.downloadURL(url);
@@ -991,6 +1121,13 @@ app.whenReady().then(() => {
   });
   initSessionManager();
   initCompatManager();
+  ElectronPrivateSessionManager.getInstance().setDownloadSetupHandler((privSes) => {
+    setupDownloadListeners(privSes);
+  });
+  registerTorIPC();
+  ElectronTorRuntime.getInstance().initialize().catch((err) => {
+    console.warn("[Main] Error initializing Tor runtime:", err);
+  });
   createWindow();
 
   app.on("activate", () => {

@@ -5,6 +5,7 @@ import { app, session, ipcMain, type Session as ElectronSession } from "electron
 import { evaluateAdBlockRequest } from "../adblock/adblockAdapter.js";
 import { evaluateFocusRequest, updateFocusState, getFocusShieldHtml, type FocusStatePayload } from "../focus/socialFilterEngine.js";
 import { setupCorsBypassInterceptor } from "../compat/compatManager.js";
+import { ElectronPrivateSessionManager } from "../privacy/privateSessionManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,11 @@ const configuredSessions = new Set<string>();
 export function configureSessionPartition(ses: ElectronSession, partitionName: string) {
   if (configuredSessions.has(partitionName)) return;
   configuredSessions.add(partitionName);
+
+  // If this is a temporary private or Tor session, configure leak defenses & proxy
+  if (ElectronPrivateSessionManager.getInstance().isPrivateOrTorPartition(partitionName)) {
+    ElectronPrivateSessionManager.getInstance().configurePrivatePartition(ses, partitionName);
+  }
 
   // 1. Attach Guest Preload Script
   const guestPreload = path.join(__dirname, "../guestPreload.cjs");
@@ -78,6 +84,8 @@ export function configureSessionPartition(ses: ElectronSession, partitionName: s
  * Initializes the Session Manager and registers IPC handlers
  */
 export function initSessionManager() {
+  ElectronPrivateSessionManager.getInstance().registerIPC();
+
   // Always configure default partition immediately
   const defaultSes = session.fromPartition("persist:forge");
   configureSessionPartition(defaultSes, "persist:forge");

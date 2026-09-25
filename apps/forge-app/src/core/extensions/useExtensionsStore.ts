@@ -15,7 +15,7 @@ interface ExtensionsState {
   togglePinExtension: (id: string) => void;
   uninstallExtension: (id: string) => void;
   installExtension: (ext: ForgeExtension, override?: boolean) => boolean;
-  installFromWebStoreUrl: (urlOrId: string) => { success: boolean; message: string };
+  installFromWebStoreUrl: (urlOrId: string, customMetadata?: { name?: string; iconUrl?: string }) => { success: boolean; message: string };
   verifyPackage: (name: string, type: ExtensionType, permissions: string[]) => ExtensionVerificationReport;
 }
 
@@ -347,22 +347,24 @@ export const useExtensionsStore = create<ExtensionsState>((set) => ({
     return true;
   },
 
-  installFromWebStoreUrl: (urlOrId) => {
+  installFromWebStoreUrl: (urlOrId, customMetadata) => {
     const trimmed = urlOrId.trim();
     if (!trimmed) return { success: false, message: "Please provide a valid Chrome Web Store URL or ID" };
 
     const idMatch = trimmed.match(/([a-z]{32})/i) || trimmed.match(/detail\/[^/]+\/([a-z]{32})/i);
     const extId = idMatch ? idMatch[1].toLowerCase() : `ext-cws-${Date.now()}`;
 
-    let name = "Chrome Web Store Extension";
-    const nameMatch = trimmed.match(/detail\/([^/]+)\//i);
-    if (nameMatch) {
-      name = nameMatch[1]
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-    } else if (!idMatch) {
-      name = trimmed;
+    let name = customMetadata?.name?.trim() || "Chrome Web Store Extension";
+    if (!customMetadata?.name) {
+      const nameMatch = trimmed.match(/detail\/([^/]+)\//i);
+      if (nameMatch) {
+        name = nameMatch[1]
+          .split("-")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+      } else if (!idMatch) {
+        name = trimmed;
+      }
     }
 
     const report: ExtensionVerificationReport = {
@@ -390,7 +392,9 @@ export const useExtensionsStore = create<ExtensionsState>((set) => ({
       installedAt: Date.now(),
       verification: report,
       manifestPermissions: ["storage", "activeTab"],
-      icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M12 4L19 8V16L12 20L5 16V8L12 4Z" fill="#FFFFFF"/></svg>`,
+      icon: customMetadata?.iconUrl
+        ? `<img src="${customMetadata.iconUrl}" style="width:20px;height:20px;border-radius:4px;object-fit:contain;" alt="${name}" />`
+        : `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#0078D4"/><path d="M12 4L19 8V16L12 20L5 16V8L12 4Z" fill="#FFFFFF"/></svg>`,
     };
 
     set((s) => {

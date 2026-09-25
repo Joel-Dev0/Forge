@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { useFocusStore } from "../../core/focus/useFocusStore";
+import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { parseOnlineMusicUrl, type ParsedOnlineMedia } from "../../core/focus/onlineMusicParser";
 import { CURATED_ONLINE_STATIONS, type CuratedOnlineStation } from "../../core/focus/focusPresets";
 import type { SoundProviderType, FocusTrack } from "../../core/focus/focusPlayerTypes";
@@ -48,6 +49,7 @@ export function FocusPlayerModal() {
     currentTime,
     duration,
     play,
+    pause,
     togglePlay,
     nextTrack,
     previousTrack,
@@ -69,6 +71,72 @@ export function FocusPlayerModal() {
     addMultipleLocalTracks,
     cacheTrackLocally,
   } = useFocusPlayerStore();
+
+  const { tabs } = useTabsStore();
+  const activeAudioTab = tabs.find((t) => t.isPlayingAudio);
+  const isAudioPlaying = isPlaying || Boolean(activeAudioTab);
+
+  const handleTogglePlay = () => {
+    if (isPlaying) {
+      pause();
+      const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+        iframe.contentWindow.postMessage('{"method":"pause"}', '*');
+      }
+      window.dispatchEvent(new CustomEvent("forge:media-pause"));
+      if (activeAudioTab) {
+        useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+      }
+    } else {
+      if (activeAudioTab) {
+        window.dispatchEvent(new CustomEvent("forge:media-pause"));
+        useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+      }
+      play(currentTrack || undefined);
+      const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+      if (iframe?.contentWindow) {
+        iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        iframe.contentWindow.postMessage('{"method":"play"}', '*');
+      }
+    }
+  };
+
+  const handleNextTrack = () => {
+    if (activeAudioTab && !isPlaying) {
+      window.dispatchEvent(new CustomEvent("forge:media-next"));
+    } else {
+      nextTrack();
+    }
+  };
+
+  const handlePreviousTrack = () => {
+    if (activeAudioTab && !isPlaying) {
+      window.dispatchEvent(new CustomEvent("forge:media-prev"));
+    } else {
+      previousTrack();
+    }
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    setVolume(vol);
+    const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [vol * 100] }), '*');
+    }
+  };
+
+  const handleToggleMute = () => {
+    toggleMute();
+    const nextMuted = !isMuted;
+    const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: nextMuted ? 'mute' : 'unMute', args: '' }), '*');
+    }
+    if (activeAudioTab) {
+      useTabsStore.getState().setTabAudio(activeAudioTab.id, activeAudioTab.isPlayingAudio ?? true, nextMuted);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<"player" | "add_online" | "explore" | "add_local">("player");
   const [onlineUrlInput, setOnlineUrlInput] = useState("");
@@ -298,14 +366,14 @@ export function FocusPlayerModal() {
             <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/20 text-[#FF6B00] flex items-center justify-center border border-[#FF6B00]/30 shadow-inner">
               <Disc3
                 size={18}
-                className={isPlaying ? "animate-spin" : ""}
+                className={isAudioPlaying ? "animate-spin" : ""}
                 style={{ animationDuration: "4s" }}
               />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-white tracking-wide">Forge Focus Music & Radios</h2>
-                {renderProviderBadge(currentTrack?.provider)}
+                {renderProviderBadge(isPlaying ? currentTrack?.provider : (activeAudioTab?.url?.includes("youtube.com") ? "youtube" : currentTrack?.provider))}
               </div>
               <p className="text-[11px] text-zinc-400">
                 Online streams from YouTube, Spotify, Web Radio, and offline soundscapes
@@ -408,11 +476,24 @@ export function FocusPlayerModal() {
                 {currentTrack?.provider === "youtube" && currentTrack.embedUrl && (
                   <div className="relative w-full aspect-video max-h-56 bg-black flex items-center justify-center">
                     <iframe
-                      src={currentTrack.embedUrl}
+                      id="focus-player-embed-iframe"
+                      src={
+                        currentTrack.embedUrl.includes("enablejsapi=1")
+                          ? currentTrack.embedUrl
+                          : `${currentTrack.embedUrl}${currentTrack.embedUrl.includes("?") ? "&" : "?"}enablejsapi=1`
+                      }
                       title={currentTrack.title}
                       className="w-full h-full border-0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
+                      onLoad={(e) => {
+                        try {
+                          (e.target as HTMLIFrameElement)?.contentWindow?.postMessage('{"event":"listening"}', '*');
+                          if (!isAudioPlaying) {
+                            (e.target as HTMLIFrameElement)?.contentWindow?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                          }
+                        } catch {}
+                      }}
                     />
                   </div>
                 )}
@@ -421,6 +502,7 @@ export function FocusPlayerModal() {
                 {currentTrack?.provider === "spotify" && currentTrack.embedUrl && (
                   <div className="p-4 bg-[#121212] flex flex-col items-center justify-center">
                     <iframe
+                      id="focus-player-embed-iframe"
                       src={currentTrack.embedUrl}
                       title={currentTrack.title}
                       className="w-full h-[152px] rounded-xl border-0"
@@ -434,6 +516,7 @@ export function FocusPlayerModal() {
                 {currentTrack?.provider === "soundcloud" && currentTrack.embedUrl && (
                   <div className="p-4 bg-zinc-950 flex flex-col items-center justify-center">
                     <iframe
+                      id="focus-player-embed-iframe"
                       src={currentTrack.embedUrl}
                       title={currentTrack.title}
                       className="w-full h-[150px] border-0"
@@ -473,10 +556,14 @@ export function FocusPlayerModal() {
                           )}
                         </div>
                         <h3 className="text-lg font-bold text-white drop-shadow-sm truncate max-w-md">
-                          {currentTrack?.title || "No Track Loaded"}
+                          {isPlaying
+                            ? (currentTrack?.title || "No Track Loaded")
+                            : (activeAudioTab?.title?.replace(/ - YouTube.*$/i, "") || currentTrack?.title || "No Track Loaded")}
                         </h3>
                         <p className="text-xs text-zinc-300 font-medium">
-                          {currentTrack?.artist || "Ambient Soundscape"}
+                          {isPlaying
+                            ? (currentTrack?.artist || "Ambient Soundscape")
+                            : (activeAudioTab?.url?.includes("youtube.com") ? "YouTube Playing in Tab" : activeAudioTab ? "Browser Tab Audio" : currentTrack?.artist || "Ambient Soundscape")}
                         </p>
                       </div>
 
@@ -563,19 +650,19 @@ export function FocusPlayerModal() {
 
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={previousTrack}
+                    onClick={handlePreviousTrack}
                     className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-300 hover:text-white transition-all cursor-pointer"
                   >
                     <SkipBack size={18} />
                   </button>
                   <button
-                    onClick={togglePlay}
+                    onClick={handleTogglePlay}
                     className="w-12 h-12 rounded-full bg-[#FF6B00] hover:bg-[#FF8533] text-white flex items-center justify-center shadow-lg shadow-[#FF6B00]/30 transition-all cursor-pointer hover:scale-105 active:scale-95"
                   >
                     {isPlaying ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
                   </button>
                   <button
-                    onClick={nextTrack}
+                    onClick={handleNextTrack}
                     className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 text-zinc-300 hover:text-white transition-all cursor-pointer"
                   >
                     <SkipForward size={18} />
@@ -583,7 +670,7 @@ export function FocusPlayerModal() {
                 </div>
 
                 <div className="flex items-center gap-2 w-32">
-                  <button onClick={toggleMute} className="text-zinc-400 hover:text-white cursor-pointer">
+                  <button onClick={handleToggleMute} className="text-zinc-400 hover:text-white cursor-pointer">
                     {isMuted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
                   </button>
                   <input
@@ -592,7 +679,7 @@ export function FocusPlayerModal() {
                     max={1}
                     step={0.01}
                     value={isMuted ? 0 : volume}
-                    onChange={(e) => setVolume(Number(e.target.value))}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
                     className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#FF6B00]"
                   />
                 </div>
@@ -650,7 +737,13 @@ export function FocusPlayerModal() {
                   {playlists.map((pl) => (
                     <div
                       key={pl.id}
-                      onClick={() => selectPlaylist(pl.id, true)}
+                      onClick={() => {
+                        if (activeAudioTab) {
+                          window.dispatchEvent(new CustomEvent("forge:media-pause"));
+                          useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+                        }
+                        selectPlaylist(pl.id, true);
+                      }}
                       className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative group ${
                         currentPlaylistId === pl.id
                           ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
@@ -709,7 +802,13 @@ export function FocusPlayerModal() {
                       return (
                         <div
                           key={trk.id}
-                          onClick={() => play(trk)}
+                          onClick={() => {
+                            if (activeAudioTab) {
+                              window.dispatchEvent(new CustomEvent("forge:media-pause"));
+                              useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+                            }
+                            play(trk);
+                          }}
                           className={`flex items-center justify-between px-3 py-2 rounded-xl transition-all cursor-pointer text-xs ${
                             isTrackActive
                               ? "bg-[#FF6B00]/15 border border-[#FF6B00]/40 text-white font-semibold"

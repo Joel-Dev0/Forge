@@ -27,22 +27,31 @@ export function SessionBadgeButton() {
 
   if (!activeTab) return null;
 
+  const isTor = currentSession.mode === "tor" || currentSession.id === "tor";
+  const isPrivate = currentSession.mode === "private" || currentSession.id === "private";
+
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        title={`Current Container: ${currentSession.name} (${currentSession.partition}) - Click to switch`}
+        title={`Current Session: ${currentSession.name} (${currentSession.partition}) - Click to switch`}
         className="h-6 px-2 flex items-center gap-1.5 rounded-md hover:bg-[var(--forge-hover)] transition-all cursor-pointer border border-[var(--forge-border)]"
         style={{
           borderColor: currentSession.id !== "default" ? `${currentSession.color}50` : undefined,
           backgroundColor: currentSession.id !== "default" ? `${currentSession.color}15` : undefined,
         }}
       >
-        <span
-          className="w-2 h-2 rounded-full shrink-0 shadow-sm"
-          style={{ backgroundColor: currentSession.color }}
-        />
+        {isTor ? (
+          <span className="text-xs select-none">🧅</span>
+        ) : isPrivate ? (
+          <span className="text-xs select-none">🕶️</span>
+        ) : (
+          <span
+            className="w-2 h-2 rounded-full shrink-0 shadow-sm"
+            style={{ backgroundColor: currentSession.color }}
+          />
+        )}
         <span
           className="text-xs font-semibold max-w-[85px] truncate"
           style={{ color: currentSession.id !== "default" ? currentSession.color : "var(--forge-text-secondary)" }}
@@ -81,10 +90,16 @@ export function SessionBadgeButton() {
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
-                      style={{ backgroundColor: sess.color }}
-                    />
+                    {sess.mode === "private" || sess.id === "private" ? (
+                      <span className="text-xs select-none">🕶️</span>
+                    ) : sess.mode === "tor" || sess.id === "tor" ? (
+                      <span className="text-xs select-none">🧅</span>
+                    ) : (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                        style={{ backgroundColor: sess.color }}
+                      />
+                    )}
                     <span className="truncate">{sess.name}</span>
                   </div>
                   {isSelected && <Check size={12} className="text-[#FF6B00] shrink-0" />}
@@ -93,7 +108,20 @@ export function SessionBadgeButton() {
             })}
           </div>
 
-          <div className="pt-1.5 mt-1 border-t border-[var(--forge-border)]">
+          <div className="pt-1.5 mt-1 border-t border-[var(--forge-border)] space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                const bridge = (window as any).forge || (window as any).electron;
+                bridge?.openPrivate?.();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-purple-500/15 text-purple-300 hover:text-purple-200 transition-colors cursor-pointer text-left text-xs"
+            >
+              <span>🕶️</span>
+              <span className="font-semibold">New Private Window</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {

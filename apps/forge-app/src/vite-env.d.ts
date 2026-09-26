@@ -354,6 +354,11 @@ declare global {
         onTabCrashed: (callback: (data: { contentsId: number; reason: string; exitCode: number }) => void) => () => void;
         onDeprecationLogged: (callback: (data: { contentsId: number; level: number; message: string; line: number; source: string }) => void) => () => void;
       };
+      extensions?: {
+        installFromWebStore: (extId: string, url?: string) => Promise<{ success: boolean; message: string; extension?: any }>;
+        uninstall: (extId: string) => Promise<boolean>;
+        listInstalled: () => Promise<any[]>;
+      };
     };
   }
 

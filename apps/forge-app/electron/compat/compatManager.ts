@@ -101,21 +101,17 @@ export const CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
       try {
         const elements = document.querySelectorAll("button, [role='button'], cws-install-button, md-circular-progress, [role='progressbar']");
         elements.forEach(function(el) {
-          const html = el.innerHTML || "";
-          const hasSpinner = html.includes("<circle") ||
-                             html.includes("circular-progress") ||
-                             el.getAttribute("aria-busy") === "true" ||
-                             el.classList.contains("loading");
-          if (hasSpinner) {
-            const btn = el.closest("button, [role='button'], cws-install-button") || el;
+          el.removeAttribute("disabled");
+          el.removeAttribute("aria-busy");
+          const btn = el.closest("button, [role='button'], cws-install-button") || el;
+          if (btn) {
             btn.removeAttribute("disabled");
             btn.removeAttribute("aria-busy");
             btn.style.pointerEvents = "auto";
-            btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;color:#10b981;font-weight:700;font-size:14px;padding:6px 16px;background:rgba(16,185,129,0.12);border-radius:9999px;border:1px solid rgba(16,185,129,0.3);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Added to Forge</span>';
           }
         });
       } catch (err) {}
-      if (count > 20) clearInterval(interval);
+      if (count > 15) clearInterval(interval);
     }, 150);
   }
 
@@ -212,6 +208,26 @@ export const CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
  * Configure response header rewriting for developer CORS bypass, CSP stripping for CWS, and PiP/Fullscreen policies
  */
 export function setupCorsBypassInterceptor(targetSession: Electron.Session) {
+  try {
+    targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const urlLower = (details.url || "").toLowerCase();
+      const isGoogle = urlLower.includes("google.com");
+      const requestHeaders = { ...(details.requestHeaders || {}) };
+
+      if (isGoogle) {
+        requestHeaders["User-Agent"] =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
+        requestHeaders["sec-ch-ua"] =
+          '"Google Chrome";v="134", "Chromium";v="134", "Not:A-Brand";v="24"';
+        requestHeaders["sec-ch-ua-mobile"] = "?0";
+        requestHeaders["sec-ch-ua-platform"] = '"Windows"';
+        requestHeaders["sec-ch-ua-platform-version"] = '"15.0.0"';
+      }
+
+      callback({ requestHeaders });
+    });
+  } catch {}
+
   targetSession.webRequest.onHeadersReceived((details, callback) => {
     const urlLower = (details.url || "").toLowerCase();
     const isChromeWebStore =

@@ -1531,6 +1531,8 @@
     setupFocusDistractionCleaner();
     let cwsCompatibilityInitialized = false;
     const installedExtIds = /* @__PURE__ */ new Set();
+    const installingExtIds = /* @__PURE__ */ new Set();
+    const uninstallingExtIds = /* @__PURE__ */ new Set();
     const isChromeWebStoreUrl = () => {
       try {
         const h = (window.location.hostname || "").toLowerCase();
@@ -1540,537 +1542,610 @@
         return false;
       }
     };
-    const setupChromeWebStoreCompatibility = () => {
-      if (!isChromeWebStoreUrl()) return;
+    window.__forge_sync_installed_extensions = (extIds) => {
+      if (Array.isArray(extIds)) {
+        installedExtIds.clear();
+        extIds.forEach((id) => {
+          if (typeof id === "string") installedExtIds.add(id.toLowerCase());
+        });
+        window.__forge_installed_ids = Array.from(installedExtIds);
+        renderNativeCwsButton();
+      }
+    };
+    window.__forge_mark_extension_installed = (extId, isInstalled) => {
+      if (typeof extId === "string") {
+        const idClean = extId.toLowerCase();
+        installingExtIds.delete(idClean);
+        uninstallingExtIds.delete(idClean);
+        if (isInstalled) {
+          installedExtIds.add(idClean);
+          try {
+            window.__forge_dispatch_install_stage?.("install_complete");
+          } catch {
+          }
+        } else {
+          installedExtIds.delete(idClean);
+          try {
+            window.__forge_dispatch_install_stage?.("install_failed");
+          } catch {
+          }
+        }
+        window.__forge_installed_ids = Array.from(installedExtIds);
+        renderNativeCwsButton();
+      }
+    };
+    const getExtensionDetailsFromPage = () => {
+      const href = window.location.href;
+      const path = window.location.pathname;
+      const pathMatch = path.match(/\/detail\/(?:([^/]+)\/)?([a-z]{32})/i) || href.match(/\/detail\/([a-z]{32})/i) || href.match(/\b([a-z]{32})\b/i);
+      let extId = "";
+      if (pathMatch) {
+        if (pathMatch[2] && pathMatch[2].length === 32) extId = pathMatch[2];
+        else if (pathMatch[1] && pathMatch[1].length === 32) extId = pathMatch[1];
+        else if (pathMatch[0] && pathMatch[0].length === 32) extId = pathMatch[0];
+      }
+      extId = extId.toLowerCase();
+      const extSlug = pathMatch && pathMatch[1] && pathMatch[1].length !== 32 ? pathMatch[1] : "";
+      let friendlyName = "";
+      const h1 = document.querySelector("h1");
+      if (h1 && h1.textContent && h1.textContent.trim()) {
+        friendlyName = h1.textContent.trim();
+      } else if (extSlug) {
+        friendlyName = extSlug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      } else {
+        friendlyName = document.title.split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+      }
+      let iconUrl = "";
+      const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
+      if (img) {
+        iconUrl = img.src || "";
+      }
+      return { extId, friendlyName, iconUrl };
+    };
+    const removeSwitchToChromeBanner = () => {
       try {
-        let createCwsEvent = function() {
-          const listeners = /* @__PURE__ */ new Set();
-          return {
-            addListener: (fn) => {
-              if (typeof fn === "function") listeners.add(fn);
-            },
-            removeListener: (fn) => {
-              listeners.delete(fn);
-            },
-            hasListener: (fn) => listeners.has(fn),
-            hasListeners: () => listeners.size > 0,
-            dispatch: (...args) => {
-              for (const fn of listeners) {
-                try {
-                  fn(...args);
-                } catch {
-                }
-              }
-            }
-          };
-        };
-        const getExtensionDetailsFromPage = () => {
-          const href = window.location.href;
-          const path = window.location.pathname;
-          const pathMatch = path.match(/\/detail\/(?:([^/]+)\/)?([a-z]{32})/i) || href.match(/\/detail\/([a-z]{32})/i) || href.match(/\b([a-z]{32})\b/i);
-          const extId = pathMatch ? (pathMatch[2] || pathMatch[1] || pathMatch[0]).toLowerCase() : "";
-          const extSlug = pathMatch && pathMatch[1] && pathMatch[1].length !== 32 ? pathMatch[1] : "";
-          let friendlyName = "";
-          const h1 = document.querySelector("h1");
-          if (h1 && h1.textContent && h1.textContent.trim()) {
-            friendlyName = h1.textContent.trim();
-          } else if (extSlug) {
-            friendlyName = extSlug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-          } else {
-            friendlyName = document.title.split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+        document.querySelectorAll('cws-install-banner, [data-banner="install-chrome"]').forEach((el) => {
+          const html = el;
+          if (html.style.display !== "none") {
+            html.style.setProperty("display", "none", "important");
+            html.style.setProperty("height", "0", "important");
           }
-          let iconUrl = "";
-          const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
-          if (img) {
-            iconUrl = img.src || "";
-          }
-          return { extId, friendlyName, iconUrl };
-        };
-        const stopSpinnersAndMarkAdded = () => {
-          let attempts = 0;
-          const timer = setInterval(() => {
-            attempts++;
-            try {
-              const elements = document.querySelectorAll(
-                "button, [role='button'], cws-install-button, md-circular-progress, [role='progressbar']"
-              );
-              elements.forEach((el) => {
-                const html = el.innerHTML || "";
-                const hasSpinner = html.includes("<circle") || html.includes("circular-progress") || el.getAttribute("aria-busy") === "true" || el.classList.contains("loading");
-                if (hasSpinner) {
-                  const btn = el.closest("button, [role='button'], cws-install-button") || el;
-                  btn.removeAttribute("disabled");
-                  btn.removeAttribute("aria-busy");
-                  btn.style.pointerEvents = "auto";
-                  btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;color:#10b981;font-weight:700;font-size:14px;padding:6px 16px;background:rgba(16,185,129,0.12);border-radius:9999px;border:1px solid rgba(16,185,129,0.3);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Added to Forge</span>';
-                }
-              });
-            } catch {
-            }
-            if (attempts > 25) clearInterval(timer);
-          }, 120);
-        };
-        const notifyForgeExtensionInstall = (extId, extName, icon) => {
-          if (!extId) return;
-          installedExtIds.add(extId.toLowerCase());
-          console.log(
-            "__FORGE_EXT_INSTALL__:" + JSON.stringify({
-              id: extId.toLowerCase(),
-              name: extName || "Chrome Web Store Extension",
-              iconUrl: icon || "",
-              url: window.location.href
-            })
-          );
-          stopSpinnersAndMarkAdded();
-        };
-        const onInstallStageChanged = createCwsEvent();
-        const onDownloadProgress = createCwsEvent();
-        const mockWebstorePrivate = {
-          onInstallStageChanged,
-          onDownloadProgress,
-          beginInstallWithManifest3: (details, callback) => {
-            const detailsObj = getExtensionDetailsFromPage();
-            const extId = (details?.id || detailsObj.extId || "").toLowerCase();
-            const name = details?.localizedName || detailsObj.friendlyName;
-            const icon = details?.iconUrl || detailsObj.iconUrl;
-            if (extId) {
-              notifyForgeExtensionInstall(extId, name, icon);
-            }
-            try {
-              onInstallStageChanged.dispatch("installing");
-              setTimeout(() => {
-                onInstallStageChanged.dispatch("install_complete");
-              }, 50);
-            } catch {
-            }
-            if (typeof callback === "function") {
-              setTimeout(() => {
-                try {
-                  callback("");
-                } catch {
-                }
-              }, 10);
-            }
-            return Promise.resolve("");
-          },
-          completeInstall: (id, callback) => {
-            if (id) installedExtIds.add(String(id).toLowerCase());
-            stopSpinnersAndMarkAdded();
-            if (typeof callback === "function") {
-              setTimeout(() => {
-                try {
-                  callback();
-                } catch {
-                }
-              }, 10);
-            }
-            return Promise.resolve("");
-          },
-          install: (id, callback) => {
-            const detailsObj = getExtensionDetailsFromPage();
-            const extId = (id || detailsObj.extId || "").toLowerCase();
-            if (extId) {
-              notifyForgeExtensionInstall(extId, detailsObj.friendlyName, detailsObj.iconUrl);
-            }
-            if (typeof callback === "function") {
-              setTimeout(() => {
-                try {
-                  callback();
-                } catch {
-                }
-              }, 10);
-            }
-            return Promise.resolve("");
-          },
-          getExtensionStatus: (id, manifest, callback) => {
-            const cb = typeof manifest === "function" ? manifest : callback;
-            const detailsObj = getExtensionDetailsFromPage();
-            const targetId = (typeof id === "string" ? id : detailsObj.extId || "").toLowerCase();
-            const status = targetId && installedExtIds.has(targetId) ? "installed" : "not_installed";
-            if (typeof cb === "function") {
-              try {
-                cb(status);
-              } catch {
-              }
-            }
-            return Promise.resolve(status);
-          },
-          isInIncognitoMode: (callback) => {
-            if (typeof callback === "function") {
-              try {
-                callback(false);
-              } catch {
-              }
-            }
-            return Promise.resolve(false);
-          },
-          getIsLauncherEnabled: (callback) => {
-            if (typeof callback === "function") {
-              try {
-                callback(false);
-              } catch {
-              }
-            }
-            return Promise.resolve(false);
-          },
-          getStoreLogin: (callback) => {
-            if (typeof callback === "function") {
-              try {
-                callback("");
-              } catch {
-              }
-            }
-            return Promise.resolve("");
-          }
-        };
-        if (!window.chrome) {
-          window.chrome = {};
-        }
-        try {
-          Object.defineProperty(window.chrome, "webstorePrivate", {
-            value: mockWebstorePrivate,
-            writable: true,
-            configurable: true
-          });
-        } catch {
-          window.chrome.webstorePrivate = mockWebstorePrivate;
-        }
-        const injectScriptIntoPage = () => {
-          const parent = document.head || document.documentElement;
-          if (!parent) {
-            document.addEventListener("DOMContentLoaded", injectScriptIntoPage, { once: true });
+        });
+        const alerts = document.querySelectorAll('[role="alert"], aside');
+        alerts.forEach((el) => {
+          const html = el;
+          if (html.style.display === "none") return;
+          if (el.querySelector("h1") || el.querySelector("cws-install-button") || el.querySelector("main") || el.querySelector("article") || html.offsetHeight > 180) {
             return;
           }
-          const script = document.createElement("script");
-          script.textContent = `
-          (function() {
-            if (window.__forge_cws_mock_injected) return;
-            window.__forge_cws_mock_injected = true;
+          const text = (el.textContent || "").trim().toLowerCase();
+          if (text.includes("switch to chrome") || text.includes("cambiar a chrome") || text.includes("passer \xE0 chrome") || text.includes("zu chrome wechseln") || text.includes("install chrome to add") || text.includes("para a\xF1adir una extensi\xF3n o un tema a chrome") || text.includes("to add an extension or theme to chrome")) {
+            html.style.setProperty("display", "none", "important");
+            html.style.setProperty("height", "0", "important");
+          }
+        });
+      } catch {
+      }
+    };
+    let cwsStylesInjected = false;
+    const injectCwsStyles = () => {
+      if (cwsStylesInjected || document.getElementById("forge-cws-styles")) return;
+      try {
+        const style = document.createElement("style");
+        style.id = "forge-cws-styles";
+        style.textContent = `
+        @keyframes forge_cws_spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        /* Eliminate only dedicated Switch to Chrome banners, never content wrappers */
+        cws-install-banner,
+        [data-banner="install-chrome"] {
+          display: none !important;
+          visibility: hidden !important;
+          height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: hidden !important;
+        }
+        /* Ensure circular progress inside install button is cleanly hidden without touching buttons */
+        cws-install-button md-circular-progress,
+        cws-install-button [role="progressbar"] {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `;
+        const target = document.head || document.documentElement || document.body;
+        if (target) {
+          target.appendChild(style);
+          cwsStylesInjected = true;
+        }
+      } catch {
+      }
+    };
+    let cwsPolyfillInjected = false;
+    const injectWebstorePrivatePolyfill = () => {
+      if (cwsPolyfillInjected) return;
+      try {
+        const polyfillCode = `
+        (function() {
+          if (window.__forge_webstore_polyfilled) return;
+          window.__forge_webstore_polyfilled = true;
+          window.chrome = window.chrome || {};
 
-            if (!window.chrome) window.chrome = {};
-            if (!window.chrome.app) {
-              window.chrome.app = {
-                isInstalled: false,
-                InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
-                RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" },
-                getDetails: function() { return null; },
-                getIsInstalled: function() { return false; },
-                runningState: function() { return "cannot_run"; }
-              };
-            }
-
-            const installedExts = new Set();
-
-            function makeEvent() {
-              const list = new Set();
-              return {
-                addListener: function(fn) { if (typeof fn === "function") list.add(fn); },
-                removeListener: function(fn) { list.delete(fn); },
-                hasListener: function(fn) { return list.has(fn); },
-                hasListeners: function() { return list.size > 0; },
-                dispatch: function() {
-                  var args = arguments;
-                  for (var fn of list) {
-                    try { fn.apply(null, args); } catch (e) {}
-                  }
+          function makeEvent() {
+            var list = new Set();
+            return {
+              addListener: function(fn) { if (typeof fn === 'function') list.add(fn); },
+              removeListener: function(fn) { list.delete(fn); },
+              hasListener: function(fn) { return list.has(fn); },
+              hasListeners: function() { return list.size > 0; },
+              dispatch: function() {
+                var args = Array.prototype.slice.call(arguments);
+                for (var fn of list) {
+                  try { fn.apply(null, args); } catch (e) {}
                 }
-              };
-            }
-
-            const onInstallStageChanged = makeEvent();
-            const onDownloadProgress = makeEvent();
-
-            function parseDetails() {
-              const href = window.location.href;
-              const path = window.location.pathname;
-              const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
-                            href.match(/\\/detail\\/([a-z]{32})/i) ||
-                            href.match(/\\b([a-z]{32})\\b/i);
-              const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
-              const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
-
-              var name = "";
-              var h1 = document.querySelector("h1");
-              if (h1 && h1.textContent) {
-                name = h1.textContent.trim();
-              } else if (slug) {
-                name = slug.split("-").map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
-              } else {
-                name = (document.title || "").split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
               }
+            };
+          }
 
-              var iconUrl = "";
-              var img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
-              if (img && img.src) iconUrl = img.src;
+          var onInstallStageChanged = makeEvent();
+          var onDownloadProgress = makeEvent();
 
-              return { id: id, name: name, iconUrl: iconUrl, url: href };
-            }
-
-            function triggerInstall(idParam, nameParam, iconParam) {
-              const info = parseDetails();
-              const id = (idParam || info.id || "").toLowerCase();
-              const name = nameParam || info.name || "Chrome Extension";
-              const iconUrl = iconParam || info.iconUrl || "";
-
-              if (id) {
-                installedExts.add(id);
-                console.log("__FORGE_EXT_INSTALL__:" + JSON.stringify({
-                  id: id,
-                  name: name,
+          var webstoreMock = {
+            onInstallStageChanged: onInstallStageChanged,
+            onDownloadProgress: onDownloadProgress,
+            getExtensionStatus: function(id, manifest, callback) {
+              var cb = typeof manifest === 'function' ? manifest : callback;
+              var list = window.__forge_installed_ids || [];
+              var isInstalled = list.indexOf(String(id || '').toLowerCase()) !== -1;
+              var status = isInstalled ? 'enabled' : 'installable';
+              if (typeof cb === 'function') {
+                try { cb(status); } catch (e) {}
+              }
+              return Promise.resolve(status);
+            },
+            beginInstallWithManifest3: function(details, callback) {
+              var extId = (details && typeof details === 'string' ? details : (details && details.id ? details.id : '')).toLowerCase();
+              if (!extId) {
+                var m = window.location.pathname.match(/\\/detail\\/(?:[^/]+\\/)?([a-z]{32})/i) ||
+                        window.location.href.match(/\\/detail\\/([a-z]{32})/i) ||
+                        window.location.href.match(/\\b([a-z]{32})\\b/i);
+                if (m) extId = (m[2] || m[1] || m[0]).toLowerCase();
+              }
+              var extName = (details && details.localizedName ? details.localizedName : (document.querySelector('h1')?.textContent || '')).trim();
+              var iconUrl = details && details.iconUrl ? details.iconUrl : (document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']")?.src || '');
+              
+              if (extId) {
+                console.log('__FORGE_EXT_INSTALL__:' + JSON.stringify({
+                  id: extId,
+                  name: extName,
                   iconUrl: iconUrl,
                   url: window.location.href
                 }));
               }
-
-              try {
-                onInstallStageChanged.dispatch("installing");
-                setTimeout(function() {
-                  onInstallStageChanged.dispatch("install_complete");
-                }, 50);
-              } catch (e) {}
-
-              stopSpinners();
-            }
-
-            function stopSpinners() {
-              var count = 0;
-              var iv = setInterval(function() {
-                count++;
-                try {
-                  var els = document.querySelectorAll("button, [role='button'], cws-install-button, md-circular-progress, [role='progressbar']");
-                  els.forEach(function(el) {
-                    var h = el.innerHTML || "";
-                    if (h.includes("<circle") || h.includes("circular-progress") || el.getAttribute("aria-busy") === "true") {
-                      var b = el.closest("button, [role='button'], cws-install-button") || el;
-                      b.removeAttribute("disabled");
-                      b.removeAttribute("aria-busy");
-                      b.style.pointerEvents = "auto";
-                      b.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;color:#10b981;font-weight:700;font-size:14px;padding:6px 16px;background:rgba(16,185,129,0.12);border-radius:9999px;border:1px solid rgba(16,185,129,0.3);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Added to Forge</span>';
-                    }
-                  });
-                } catch (err) {}
-                if (count > 25) clearInterval(iv);
-              }, 120);
-            }
-
-            const mock = {
-              onInstallStageChanged: onInstallStageChanged,
-              onDownloadProgress: onDownloadProgress,
-
-              beginInstallWithManifest3: function(details, callback) {
-                var info = parseDetails();
-                var id = details?.id || info.id;
-                var name = details?.localizedName || info.name;
-                var icon = details?.iconUrl || info.iconUrl;
-                triggerInstall(id, name, icon);
-
-                if (typeof callback === "function") {
-                  setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
-                }
-                return Promise.resolve("");
-              },
-
-              completeInstall: function(id, callback) {
-                if (id) installedExts.add(String(id).toLowerCase());
-                stopSpinners();
-                if (typeof callback === "function") {
-                  setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
-                }
-                return Promise.resolve("");
-              },
-
-              install: function(id, callback) {
-                triggerInstall(id);
-                if (typeof callback === "function") {
-                  setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
-                }
-                return Promise.resolve("");
-              },
-
-              getExtensionStatus: function(id, manifest, callback) {
-                var cb = typeof manifest === "function" ? manifest : callback;
-                var info = parseDetails();
-                var targetId = (typeof id === "string" ? id : info.id || "").toLowerCase();
-                var status = (targetId && installedExts.has(targetId)) ? "installed" : "not_installed";
-                if (typeof cb === "function") {
-                  try { cb(status); } catch (e) {}
-                }
-                return Promise.resolve(status);
-              },
-
-              isInIncognitoMode: function(callback) {
-                if (typeof callback === "function") try { callback(false); } catch (e) {}
-                return Promise.resolve(false);
-              },
-
-              getIsLauncherEnabled: function(callback) {
-                if (typeof callback === "function") try { callback(false); } catch (e) {}
-                return Promise.resolve(false);
-              },
-
-              getStoreLogin: function(callback) {
-                if (typeof callback === "function") try { callback(""); } catch (e) {}
-                return Promise.resolve("");
+              try { onInstallStageChanged.dispatch('installing'); } catch (e) {}
+              if (typeof callback === 'function') {
+                setTimeout(function() { try { callback(''); } catch (e) {} }, 10);
               }
-            };
+              return Promise.resolve('');
+            },
+            completeInstall: function(id, callback) {
+              try { onInstallStageChanged.dispatch('install_complete'); } catch (e) {}
+              if (typeof callback === 'function') {
+                setTimeout(function() { try { callback(); } catch (e) {} }, 10);
+              }
+              return Promise.resolve();
+            },
+            install: function(id, callback) {
+              var targetId = String(id || '').toLowerCase();
+              if (targetId) {
+                console.log('__FORGE_EXT_INSTALL__:' + JSON.stringify({
+                  id: targetId,
+                  url: window.location.href
+                }));
+              }
+              if (typeof callback === 'function') {
+                setTimeout(function() { try { callback(''); } catch (e) {} }, 10);
+              }
+              return Promise.resolve('');
+            },
+            getBrowserLogin: function(cb) { if (cb) cb({ login: '' }); return Promise.resolve({ login: '' }); },
+            getStoreLogin: function(cb) { if (cb) cb(''); return Promise.resolve(''); },
+            setStoreLogin: function(login, cb) { if (cb) cb(); return Promise.resolve(); },
+            getWebGLStatus: function(cb) { if (cb) cb('webgl_allowed'); return Promise.resolve('webgl_allowed'); },
+            getIsLauncherEnabled: function(cb) { if (cb) cb(false); return Promise.resolve(false); },
+            isInIncognitoMode: function(cb) { if (cb) cb(false); return Promise.resolve(false); },
+            isPendingCustodianApproval: function(id, cb) { if (cb) cb(false); return Promise.resolve(false); },
+            getReferrerChain: function(cb) { if (cb) cb(''); return Promise.resolve(''); },
+            getFullChromeVersion: function(cb) { if (cb) cb({ version_number: '134.0.6998.88' }); return Promise.resolve({ version_number: '134.0.6998.88' }); },
+            getMV2DeprecationStatus: function(cb) { if (cb) cb('inactive'); return Promise.resolve('inactive'); },
+            shouldShowEnterprisePromotionBanner: function(cb) { if (cb) cb('PROMOTION_TYPE_UNSPECIFIED'); return Promise.resolve('PROMOTION_TYPE_UNSPECIFIED'); }
+          };
 
+          window.__forge_dispatch_install_stage = function(stage) {
             try {
-              Object.defineProperty(window.chrome, "webstorePrivate", {
-                value: mock,
-                writable: true,
-                configurable: true
-              });
-            } catch (e) {
-              window.chrome.webstorePrivate = mock;
-            }
+              onInstallStageChanged.dispatch(stage);
+              if (stage === 'install_complete' && typeof webstoreMock.completeInstall === 'function') {
+                try { webstoreMock.completeInstall(); } catch(e) {}
+              }
+            } catch(e) {}
+          };
 
-            if (!window.chrome.management) {
-              window.chrome.management = {
-                get: function(id, cb) {
-                  var res = { id: id, name: "Extension", enabled: true, installType: "normal" };
-                  if (typeof cb === "function") cb(res);
-                  return Promise.resolve(res);
-                },
-                getAll: function(cb) {
-                  if (typeof cb === "function") cb([]);
-                  return Promise.resolve([]);
-                },
-                onInstalled: makeEvent(),
-                onUninstalled: makeEvent(),
-                onEnabled: makeEvent(),
-                onDisabled: makeEvent()
+          try {
+            Object.defineProperty(window.chrome, 'webstorePrivate', {
+              value: webstoreMock,
+              writable: true,
+              configurable: true
+            });
+          } catch (e) {
+            window.chrome.webstorePrivate = webstoreMock;
+          }
+        })();
+      `;
+        const s = document.createElement("script");
+        s.textContent = polyfillCode;
+        const target = document.head || document.documentElement || document.body;
+        if (target) {
+          target.appendChild(s);
+          s.remove();
+          cwsPolyfillInjected = true;
+        }
+      } catch {
+      }
+    };
+    const renderNativeCwsButton = () => {
+      if (!isChromeWebStoreUrl()) return;
+      removeSwitchToChromeBanner();
+      injectCwsStyles();
+      injectWebstorePrivatePolyfill();
+      const { extId, friendlyName, iconUrl } = getExtensionDetailsFromPage();
+      if (!extId) return;
+      const isInstalled = installedExtIds.has(extId.toLowerCase());
+      const isInstalling = installingExtIds.has(extId.toLowerCase());
+      const isUninstalling = uninstallingExtIds.has(extId.toLowerCase());
+      const desiredState = isInstalling ? "installing" : isUninstalling ? "uninstalling" : isInstalled ? "installed" : "not_installed";
+      const isSpanish = (navigator.language || "").toLowerCase().startsWith("es") || (document.documentElement.lang || "").toLowerCase().startsWith("es") || window.location.href.includes("hl=es");
+      const installButtonContainers = document.querySelectorAll("cws-install-button");
+      if (!installButtonContainers.length) return;
+      installButtonContainers.forEach((container) => {
+        const shadow = container.shadowRoot;
+        const targetParent = shadow || container;
+        if (shadow) {
+          if (!shadow.getElementById("forge-shadow-style")) {
+            try {
+              const sStyle = document.createElement("style");
+              sStyle.id = "forge-shadow-style";
+              sStyle.textContent = `
+              md-circular-progress, [role="progressbar"] {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                width: 0 !important;
+                height: 0 !important;
+              }
+            `;
+              shadow.appendChild(sStyle);
+            } catch {
+            }
+          }
+          shadow.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((s) => {
+            const el = s;
+            if (el.style.display !== "none") {
+              el.style.setProperty("display", "none", "important");
+              el.style.setProperty("visibility", "hidden", "important");
+              el.style.setProperty("opacity", "0", "important");
+              el.style.setProperty("width", "0", "important");
+              el.style.setProperty("height", "0", "important");
+            }
+          });
+        }
+        container.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((s) => {
+          const el = s;
+          if (el.style.display !== "none") {
+            el.style.setProperty("display", "none", "important");
+            el.style.setProperty("visibility", "hidden", "important");
+            el.style.setProperty("width", "0", "important");
+            el.style.setProperty("height", "0", "important");
+          }
+        });
+        let actionBtn = targetParent.querySelector("button");
+        if (!actionBtn) {
+          const mdBtn = targetParent.querySelector("md-filled-button, md-outlined-button");
+          if (mdBtn) {
+            actionBtn = mdBtn.shadowRoot?.querySelector("button") || mdBtn;
+          }
+        }
+        if (!actionBtn) {
+          actionBtn = targetParent.querySelector("[role='button']");
+        }
+        if (!actionBtn) {
+          actionBtn = document.createElement("button");
+          actionBtn.id = "forge-native-cws-btn";
+          actionBtn.type = "button";
+          targetParent.appendChild(actionBtn);
+        }
+        if (actionBtn.dataset.forgeState === desiredState) {
+          return;
+        }
+        actionBtn.dataset.forgeState = desiredState;
+        actionBtn.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((p) => p.remove());
+        if (isInstalled) {
+          targetParent.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((p) => p.remove());
+        }
+        actionBtn.removeAttribute("disabled");
+        actionBtn.removeAttribute("aria-disabled");
+        actionBtn.removeAttribute("aria-busy");
+        actionBtn.style.setProperty("pointer-events", "auto", "important");
+        actionBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          const currentlyInstalled = installedExtIds.has(extId.toLowerCase());
+          if (currentlyInstalled) {
+            uninstallingExtIds.add(extId.toLowerCase());
+            actionBtn.dataset.forgeState = "";
+            renderNativeCwsButton();
+            console.log(
+              "__FORGE_EXT_UNINSTALL__:" + JSON.stringify({
+                id: extId.toLowerCase(),
+                name: friendlyName
+              })
+            );
+          } else {
+            installingExtIds.add(extId.toLowerCase());
+            actionBtn.dataset.forgeState = "";
+            renderNativeCwsButton();
+            console.log(
+              "__FORGE_EXT_INSTALL__:" + JSON.stringify({
+                id: extId.toLowerCase(),
+                name: friendlyName,
+                iconUrl,
+                url: window.location.href
+              })
+            );
+          }
+        };
+        if (isInstalling) {
+          const installingLabel = isSpanish ? "Instalando..." : "Installing...";
+          actionBtn.innerHTML = `
+          <span style="display:inline-block;width:14px;height:14px;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"></span>
+          <span>${installingLabel}</span>
+        `;
+          actionBtn.setAttribute(
+            "style",
+            `
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: 8px !important;
+          background-color: #0b57d0 !important;
+          color: #ffffff !important;
+          border: none !important;
+          border-radius: 9999px !important;
+          padding: 0 24px !important;
+          min-width: 140px !important;
+          height: 40px !important;
+          font-family: 'Google Sans', Roboto, -apple-system, sans-serif !important;
+          font-size: 14px !important;
+          font-weight: 500 !important;
+          letter-spacing: 0.1px !important;
+          cursor: wait !important;
+          user-select: none !important;
+          outline: none !important;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          pointer-events: none !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          `
+          );
+        } else if (isUninstalling) {
+          const removingLabel = isSpanish ? "Eliminando..." : "Removing...";
+          actionBtn.innerHTML = `
+          <span style="display:inline-block;width:14px;height:14px;border:2px solid #b3261e;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"></span>
+          <span>${removingLabel}</span>
+        `;
+          actionBtn.setAttribute(
+            "style",
+            `
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: 8px !important;
+          background-color: transparent !important;
+          color: #b3261e !important;
+          border: 1px solid #b3261e !important;
+          border-radius: 9999px !important;
+          padding: 0 24px !important;
+          min-width: 140px !important;
+          height: 40px !important;
+          font-family: 'Google Sans', Roboto, -apple-system, sans-serif !important;
+          font-size: 14px !important;
+          font-weight: 500 !important;
+          letter-spacing: 0.1px !important;
+          cursor: wait !important;
+          user-select: none !important;
+          outline: none !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          pointer-events: none !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          `
+          );
+        } else if (isInstalled) {
+          const removeLabel = isSpanish ? "Eliminar de Chrome" : "Remove from Chrome";
+          actionBtn.innerHTML = `
+          <svg style="width:16px;height:16px;fill:currentColor;flex-shrink:0;" viewBox="0 0 24 24">
+            <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+          </svg>
+          <span>${removeLabel}</span>
+        `;
+          actionBtn.setAttribute(
+            "style",
+            `
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: 8px !important;
+          background-color: transparent !important;
+          color: #0b57d0 !important;
+          border: 1px solid #747775 !important;
+          border-radius: 9999px !important;
+          padding: 0 24px !important;
+          min-width: 140px !important;
+          height: 40px !important;
+          font-family: 'Google Sans', Roboto, -apple-system, sans-serif !important;
+          font-size: 14px !important;
+          font-weight: 500 !important;
+          letter-spacing: 0.1px !important;
+          cursor: pointer !important;
+          user-select: none !important;
+          outline: none !important;
+          transition: all 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          pointer-events: auto !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          `
+          );
+          actionBtn.onmouseenter = () => {
+            actionBtn.style.borderColor = "#b3261e";
+            actionBtn.style.color = "#b3261e";
+            actionBtn.style.backgroundColor = "rgba(179, 38, 30, 0.08)";
+          };
+          actionBtn.onmouseleave = () => {
+            actionBtn.style.borderColor = "#747775";
+            actionBtn.style.color = "#0b57d0";
+            actionBtn.style.backgroundColor = "transparent";
+          };
+        } else {
+          const addLabel = isSpanish ? "A\xF1adir a Chrome" : "Add to Chrome";
+          actionBtn.innerHTML = `
+          <svg style="width:16px;height:16px;fill:currentColor;flex-shrink:0;" viewBox="0 0 24 24">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          </svg>
+          <span>${addLabel}</span>
+        `;
+          actionBtn.setAttribute(
+            "style",
+            `
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          gap: 8px !important;
+          background-color: #0b57d0 !important;
+          color: #ffffff !important;
+          border: none !important;
+          border-radius: 9999px !important;
+          padding: 0 24px !important;
+          min-width: 140px !important;
+          height: 40px !important;
+          font-family: 'Google Sans', Roboto, -apple-system, sans-serif !important;
+          font-size: 14px !important;
+          font-weight: 500 !important;
+          letter-spacing: 0.1px !important;
+          cursor: pointer !important;
+          user-select: none !important;
+          outline: none !important;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+          transition: all 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          pointer-events: auto !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          `
+          );
+          actionBtn.onmouseenter = () => {
+            actionBtn.style.backgroundColor = "#0842a0";
+            actionBtn.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+          };
+          actionBtn.onmouseleave = () => {
+            actionBtn.style.backgroundColor = "#0b57d0";
+            actionBtn.style.boxShadow = "0 1px 3px rgba(0,0,0,0.2)";
+          };
+        }
+      });
+    };
+    const setupChromeWebStoreCompatibility = () => {
+      if (!isChromeWebStoreUrl()) return;
+      try {
+        try {
+          console.log("__FORGE_REQUEST_INSTALLED_EXTENSIONS__");
+        } catch {
+        }
+        renderNativeCwsButton();
+        removeSwitchToChromeBanner();
+        if (!cwsCompatibilityInitialized) {
+          let debounceTimer = null;
+          const scheduleUpdate = () => {
+            if (debounceTimer) return;
+            debounceTimer = setTimeout(() => {
+              debounceTimer = null;
+              renderNativeCwsButton();
+              removeSwitchToChromeBanner();
+            }, 250);
+          };
+          const observer = new MutationObserver((mutations) => {
+            let hasRelevant = false;
+            for (const m of mutations) {
+              const t = m.target;
+              if (!t) continue;
+              if (t.id === "forge-cws-styles" || t.id === "forge-native-cws-btn" || t.id === "forge-shadow-style") continue;
+              if (t.closest && t.closest("#forge-native-cws-btn")) continue;
+              if (t.tagName === "STYLE" || t.tagName === "SCRIPT") continue;
+              hasRelevant = true;
+              break;
+            }
+            if (hasRelevant) {
+              scheduleUpdate();
+            }
+          });
+          observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+          });
+          let lastUrl = window.location.href;
+          const checkUrl = () => {
+            try {
+              if (window.location.href !== lastUrl) {
+                lastUrl = window.location.href;
+                console.log("__FORGE_REQUEST_INSTALLED_EXTENSIONS__");
+                scheduleUpdate();
+              }
+            } catch {
+            }
+          };
+          window.addEventListener("popstate", checkUrl);
+          window.addEventListener("hashchange", checkUrl);
+          try {
+            const origPushState = history.pushState;
+            if (typeof origPushState === "function") {
+              history.pushState = function(...args) {
+                const res = origPushState.apply(this, args);
+                setTimeout(checkUrl, 100);
+                return res;
               };
             }
-          })();
-        `;
-          parent.appendChild(script);
-          script.remove();
-        };
-        injectScriptIntoPage();
-        const setupForgeInstallBanner = () => {
-          const bannerId = "forge-cws-installer-banner";
-          const { extId, friendlyName, iconUrl } = getExtensionDetailsFromPage();
-          if (!extId) {
-            const existing2 = document.getElementById(bannerId);
-            if (existing2) existing2.remove();
-            return;
-          }
-          const existing = document.getElementById(bannerId);
-          if (existing) {
-            if (existing.dataset.extId === extId) return;
-            existing.remove();
-          }
-          const banner = document.createElement("div");
-          banner.id = bannerId;
-          banner.dataset.extId = extId;
-          banner.style.cssText = [
-            "position: fixed",
-            "bottom: 24px",
-            "right: 28px",
-            "z-index: 2147483647",
-            "display: flex",
-            "align-items: center",
-            "gap: 12px",
-            "background: rgba(18, 19, 22, 0.96)",
-            "border: 1px solid rgba(255, 107, 0, 0.6)",
-            "border-radius: 9999px",
-            "padding: 8px 18px",
-            "box-shadow: 0 16px 36px rgba(0,0,0,0.6), 0 0 20px rgba(255, 107, 0, 0.25)",
-            "font-family: system-ui, -apple-system, sans-serif",
-            "color: #ffffff",
-            "cursor: pointer",
-            "backdrop-filter: blur(14px)",
-            "transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
-            "user-select: none"
-          ].join(";");
-          banner.innerHTML = [
-            '<div style="width: 9px; height: 9px; border-radius: 50%; background: #FF6B00; box-shadow: 0 0 10px #FF6B00;"></div>',
-            `<span style="font-size: 13px; font-weight: 700; color: #ffffff;">Add "${friendlyName}" to Forge</span>`,
-            '<span style="background: #FF6B00; color: #000000; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 9999px; box-shadow: 0 2px 6px rgba(255,107,0,0.4);">\u26A1 Install</span>'
-          ].join("");
-          banner.onmouseenter = () => {
-            banner.style.transform = "scale(1.04) translateY(-2px)";
-            banner.style.borderColor = "#FF6B00";
-          };
-          banner.onmouseleave = () => {
-            banner.style.transform = "scale(1) translateY(0)";
-            banner.style.borderColor = "rgba(255, 107, 0, 0.6)";
-          };
-          banner.onclick = (e) => {
-            e.stopPropagation();
-            notifyForgeExtensionInstall(extId, friendlyName, iconUrl);
-            banner.innerHTML = [
-              '<span style="font-size: 13px; font-weight: 700; color: #34D399;">\u2713 Successfully Installed in Forge!</span>'
-            ].join("");
-            banner.style.borderColor = "#10B981";
-            setTimeout(() => {
-              banner.style.opacity = "0";
-              setTimeout(() => banner.remove(), 400);
-            }, 3e3);
-          };
-          const mountTarget = document.body || document.documentElement;
-          if (mountTarget) {
-            mountTarget.appendChild(banner);
-          }
-        };
-        if (!cwsCompatibilityInitialized) {
-          document.addEventListener(
-            "click",
-            (e) => {
-              const target = e.target;
-              if (!target) return;
-              const btn = target.closest("button, [role='button'], cws-install-button, div[jsaction], div[aria-label]");
-              if (!btn) return;
-              const text = ((btn.textContent || "") + " " + (btn.getAttribute("aria-label") || "")).toLowerCase().trim();
-              if (text.includes("add to chrome") || text.includes("a\xF1adir a chrome") || text.includes("agregar a chrome") || text.includes("ajouter \xE0 chrome") || text.includes("zu chrome hinzuf\xFCgen") || text.includes("add to brave") || text.includes("add to edge") || text.includes("add to forge")) {
-                const { extId, friendlyName, iconUrl } = getExtensionDetailsFromPage();
-                if (extId) {
-                  notifyForgeExtensionInstall(extId, friendlyName, iconUrl);
-                }
-              }
-            },
-            true
-          );
-        }
-        let lastUrl = window.location.href;
-        const checkUrl = () => {
-          try {
-            if (window.location.href !== lastUrl) {
-              lastUrl = window.location.href;
-              setupForgeInstallBanner();
-              injectScriptIntoPage();
+            const origReplaceState = history.replaceState;
+            if (typeof origReplaceState === "function") {
+              history.replaceState = function(...args) {
+                const res = origReplaceState.apply(this, args);
+                setTimeout(checkUrl, 100);
+                return res;
+              };
             }
           } catch {
           }
-        };
-        window.addEventListener("popstate", checkUrl);
-        window.addEventListener("hashchange", checkUrl);
-        try {
-          const origPushState = history.pushState;
-          if (typeof origPushState === "function") {
-            history.pushState = function(...args) {
-              const res = origPushState.apply(this, args);
-              setTimeout(checkUrl, 100);
-              return res;
-            };
-          }
-          const origReplaceState = history.replaceState;
-          if (typeof origReplaceState === "function") {
-            history.replaceState = function(...args) {
-              const res = origReplaceState.apply(this, args);
-              setTimeout(checkUrl, 100);
-              return res;
-            };
-          }
-        } catch {
+          cwsCompatibilityInitialized = true;
         }
-        setInterval(checkUrl, 600);
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", setupForgeInstallBanner);
-        } else {
-          setupForgeInstallBanner();
-        }
-        cwsCompatibilityInitialized = true;
       } catch (err) {
         console.warn("[Forge CWS Compatibility Error]", err);
       }
@@ -2080,23 +2155,12 @@
       document.addEventListener("DOMContentLoaded", setupChromeWebStoreCompatibility);
     }
     window.addEventListener("load", setupChromeWebStoreCompatibility);
-    setInterval(() => {
-      if (isChromeWebStoreUrl() && !cwsCompatibilityInitialized) {
-        setupChromeWebStoreCompatibility();
-      }
-    }, 400);
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
-        injectStyle();
-        injectScript();
         initUniversalMediaControls();
       });
     } else {
-      injectStyle();
-      injectScript();
       initUniversalMediaControls();
     }
-    injectStyle();
-    injectScript();
   })();
 })();

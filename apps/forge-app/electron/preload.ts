@@ -348,5 +348,13 @@ contextBridge.exposeInMainWorld("forge", {
       return () => ipcRenderer.removeListener("compat:deprecation-logged", listener);
     },
   },
+  extensions: {
+    installFromWebStore: (extId: string, url?: string) =>
+      ipcRenderer.invoke("extensions:install-from-cws", { extId, url }),
+    uninstall: (extId: string) =>
+      ipcRenderer.invoke("extensions:uninstall", { extId }),
+    listInstalled: () =>
+      ipcRenderer.invoke("extensions:list-installed"),
+  },
 });
 

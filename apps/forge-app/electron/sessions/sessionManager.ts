@@ -26,7 +26,9 @@ export function configureSessionPartition(ses: ElectronSession, partitionName: s
   }
 
   // 1. Attach Guest Preload Script
-  const guestPreload = path.join(__dirname, "../guestPreload.cjs");
+  const guestPreload = fs.existsSync(path.join(__dirname, "guestPreload.cjs"))
+    ? path.join(__dirname, "guestPreload.cjs")
+    : path.join(__dirname, "../guestPreload.cjs");
   if (fs.existsSync(guestPreload)) {
     try {
       ses.setPreloads([guestPreload]);

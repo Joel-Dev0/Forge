@@ -261,8 +261,26 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       syncTitleAndFavicon();
     };
 
+    const syncCwsExtensions = () => {
+      try {
+        const currentUrl = (el.getURL ? el.getURL() : "").toLowerCase();
+        if (currentUrl.includes("chromewebstore.google.com") || currentUrl.includes("chrome.google.com")) {
+          const exts = useExtensionsStore.getState().extensions;
+          const extIds = exts.map((e) => e.id.toLowerCase());
+          if (typeof el.executeJavaScript === "function") {
+            el.executeJavaScript(`
+              if (typeof window.__forge_sync_installed_extensions === "function") {
+                window.__forge_sync_installed_extensions(${JSON.stringify(extIds)});
+              }
+            `).catch(() => {});
+          }
+        }
+      } catch {}
+    };
+
     const onDomReady = () => {
       syncTitleAndFavicon();
+      syncCwsExtensions();
       try {
         const currentTab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
         if (currentTab?.isMuted && typeof (el as any).setAudioMuted === "function") {
@@ -273,6 +291,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
 
     const onFinishLoad = () => {
       syncTitleAndFavicon();
+      syncCwsExtensions();
     };
 
     const onNavigate = (e: any) => {
@@ -295,6 +314,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       }
 
       syncTitleAndFavicon();
+      syncCwsExtensions();
     };
 
     const onTitle = (e: any) => {
@@ -478,25 +498,104 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       if (typeof msg === "string" && (msg.includes("__FORGE_PIP_ENTER__") || msg.includes("__FORGE_PIP_LEAVE__"))) {
         return;
       }
+
+      if (typeof msg === "string" && msg.includes("__FORGE_REQUEST_INSTALLED_EXTENSIONS__")) {
+        try {
+          const exts = useExtensionsStore.getState().extensions;
+          const extIds = exts.map((e) => e.id.toLowerCase());
+          if (typeof el.executeJavaScript === "function") {
+            el.executeJavaScript(`
+              if (typeof window.__forge_sync_installed_extensions === "function") {
+                window.__forge_sync_installed_extensions(${JSON.stringify(extIds)});
+              }
+            `).catch(() => {});
+          }
+        } catch {}
+        return;
+      }
+
       if (typeof msg === "string" && msg.includes("__FORGE_EXT_INSTALL__:")) {
         try {
           const raw = msg.split("__FORGE_EXT_INSTALL__:")[1]?.trim();
           if (raw) {
             const extData = JSON.parse(raw);
             if (extData?.id) {
-              const res = useExtensionsStore.getState().installFromWebStoreUrl(extData.url || extData.id, {
+              useExtensionsStore.getState().installFromWebStoreUrl(extData.url || extData.id, {
                 name: extData.name,
                 iconUrl: extData.iconUrl,
+              }).then((res: { success: boolean; message: string }) => {
+                if (res.success) {
+                  if (typeof el.executeJavaScript === "function") {
+                    el.executeJavaScript(`
+                      if (typeof window.__forge_mark_extension_installed === "function") {
+                        window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, true);
+                      }
+                    `).catch(() => {});
+                  }
+                  window.dispatchEvent(
+                    new CustomEvent("forge:toast", {
+                      detail: res.message || `✓ Installed extension into Forge!`,
+                    })
+                  );
+                } else {
+                  if (typeof el.executeJavaScript === "function") {
+                    el.executeJavaScript(`
+                      if (typeof window.__forge_mark_extension_installed === "function") {
+                        window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
+                      }
+                    `).catch(() => {});
+                  }
+                  window.dispatchEvent(
+                    new CustomEvent("forge:toast", {
+                      detail: `Failed to install extension: ${res.message}`,
+                    })
+                  );
+                }
+              }).catch((err: any) => {
+                if (typeof el.executeJavaScript === "function") {
+                  el.executeJavaScript(`
+                    if (typeof window.__forge_mark_extension_installed === "function") {
+                      window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
+                    }
+                  `).catch(() => {});
+                }
+                window.dispatchEvent(
+                  new CustomEvent("forge:toast", {
+                    detail: `Failed to install extension: ${err?.message || err}`,
+                  })
+                );
               });
+            }
+          }
+        } catch (err) {
+          console.warn("[Forge Extension Install Error]", err);
+        }
+        return;
+      }
+
+      if (typeof msg === "string" && msg.includes("__FORGE_EXT_UNINSTALL__:")) {
+        try {
+          const raw = msg.split("__FORGE_EXT_UNINSTALL__:")[1]?.trim();
+          if (raw) {
+            const extData = JSON.parse(raw);
+            if (extData?.id) {
+              useExtensionsStore.getState().uninstallExtension(extData.id.toLowerCase());
+              if (typeof el.executeJavaScript === "function") {
+                el.executeJavaScript(`
+                  if (typeof window.__forge_mark_extension_installed === "function") {
+                    window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
+                  }
+                `).catch(() => {});
+              }
               window.dispatchEvent(
                 new CustomEvent("forge:toast", {
-                  detail: res.message || `✓ Installed extension into Forge!`,
+                  detail: `✓ Uninstalled extension "${extData.name || extData.id}"`,
                 })
               );
             }
           }
         } catch (err) {
-          console.warn("[Forge Extension Install Error]", err);
+          console.warn("[Forge Extension Uninstall Error]", err);
         }
         return;
       }

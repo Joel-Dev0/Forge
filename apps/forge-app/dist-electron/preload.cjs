@@ -328,5 +328,10 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
       import_electron.ipcRenderer.on("compat:deprecation-logged", listener);
       return () => import_electron.ipcRenderer.removeListener("compat:deprecation-logged", listener);
     }
+  },
+  extensions: {
+    installFromWebStore: (extId, url) => import_electron.ipcRenderer.invoke("extensions:install-from-cws", { extId, url }),
+    uninstall: (extId) => import_electron.ipcRenderer.invoke("extensions:uninstall", { extId }),
+    listInstalled: () => import_electron.ipcRenderer.invoke("extensions:list-installed")
   }
 });

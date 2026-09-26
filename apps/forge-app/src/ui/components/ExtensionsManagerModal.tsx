@@ -148,36 +148,44 @@ export function ExtensionsManagerModal() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                {filtered.map((ext) => {
-                  const isSel = selected?.id === ext.id;
-                  const tier = TIER_CONFIG[ext.verification.securityTier];
-                  return (
-                    <button
-                      key={ext.id}
-                      onClick={() => setSelectedExtension(ext.id)}
-                      className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                        isSel
-                          ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
-                          : "border-transparent hover:border-[var(--forge-border)] hover:bg-white/5"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white truncate max-w-[170px]">{ext.name}</span>
-                        <span
-                          className={`w-2 h-2 rounded-full ${ext.enabled ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "bg-zinc-600"}`}
-                        />
-                      </div>
-                      <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">{ext.description}</p>
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-white/5">
-                        <span className="text-[9px] font-mono text-zinc-400">{ext.type === "browser" ? "Chromium API" : "Forge IDE API"}</span>
-                        <span className={`flex items-center gap-1 text-[9px] font-mono ${tier.color}`}>
-                          {tier.icon}
-                          <span>{ext.verification.securityTier.toUpperCase()}</span>
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+                {filtered.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-zinc-500 flex flex-col items-center justify-center h-48 space-y-2">
+                    <Puzzle size={24} className="text-zinc-600 mb-1" />
+                    <p className="font-semibold text-zinc-400">No extensions installed</p>
+                    <p className="text-[10px] text-zinc-500">Install extensions directly from the Chrome Web Store</p>
+                  </div>
+                ) : (
+                  filtered.map((ext) => {
+                    const isSel = selected?.id === ext.id;
+                    const tier = TIER_CONFIG[ext.verification.securityTier];
+                    return (
+                      <button
+                        key={ext.id}
+                        onClick={() => setSelectedExtension(ext.id)}
+                        className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                          isSel
+                            ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
+                            : "border-transparent hover:border-[var(--forge-border)] hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-white truncate max-w-[170px]">{ext.name}</span>
+                          <span
+                            className={`w-2 h-2 rounded-full ${ext.enabled ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "bg-zinc-600"}`}
+                          />
+                        </div>
+                        <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">{ext.description}</p>
+                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-white/5">
+                          <span className="text-[9px] font-mono text-zinc-400">{ext.type === "browser" ? "Chromium API" : "Forge IDE API"}</span>
+                          <span className={`flex items-center gap-1 text-[9px] font-mono ${tier.color}`}>
+                            {tier.icon}
+                            <span>{ext.verification.securityTier.toUpperCase()}</span>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -263,7 +271,15 @@ export function ExtensionsManagerModal() {
                   </div>
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center bg-[#12141f] text-zinc-500 p-8 space-y-3">
+                <Puzzle size={40} className="text-zinc-600" />
+                <p className="text-sm font-semibold text-zinc-400">No Extension Selected</p>
+                <p className="text-xs text-zinc-500 max-w-sm text-center">
+                  Install extensions from the official Google Chrome Web Store to manage and inspect them here.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

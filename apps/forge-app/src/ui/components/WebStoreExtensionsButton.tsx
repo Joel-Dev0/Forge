@@ -8,16 +8,8 @@ import {
   Plus,
   Trash2,
   Check,
-  Settings,
   X,
   Shield,
-  Smartphone,
-  Music,
-  Camera,
-  Gauge,
-  Layers,
-  Code2,
-  RefreshCw,
   AlertTriangle,
 } from "lucide-react";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
@@ -50,13 +42,7 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
-  const [activeTab, setActiveTab] = useState<"installed" | "catalog">("installed");
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
-
-  // Extension specific mockup states
-  const [ublockEnabled, setUblockEnabled] = useState(true);
-  const [shazamListening, setShazamListening] = useState(false);
-  const [screenshotProgress, setScreenshotProgress] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -78,7 +64,6 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
 
   const browserExtensions = extensions.filter((e) => e.type === "browser");
   const pinnedExtensions = browserExtensions.filter((e) => e.pinned && e.enabled);
-  const enabledCount = browserExtensions.filter((e) => e.enabled).length;
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -107,15 +92,25 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
     setIsMenuOpen(false);
   };
 
-  const handleInstallFromInput = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!urlInput.trim()) return;
+  const [isInstalling, setIsInstalling] = useState(false);
 
-    const res = installFromWebStoreUrl(urlInput.trim());
-    setActionFeedback(res.message);
-    setTimeout(() => setActionFeedback(null), 3500);
-    setUrlInput("");
-    setActiveTab("installed");
+  const handleInstallFromInput = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!urlInput.trim() || isInstalling) return;
+
+    setIsInstalling(true);
+    setActionFeedback("Downloading & installing extension package...");
+    try {
+      const res = await installFromWebStoreUrl(urlInput.trim());
+      setActionFeedback(res.message);
+      setTimeout(() => setActionFeedback(null), 4000);
+      if (res.success) setUrlInput("");
+    } catch (err: any) {
+      setActionFeedback(`Installation failed: ${err?.message || "Unknown error"}`);
+      setTimeout(() => setActionFeedback(null), 4000);
+    } finally {
+      setIsInstalling(false);
+    }
   };
 
   const handlePinnedIconClick = (ext: ForgeExtension) => {
@@ -123,9 +118,11 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
     setActivePopupId((prev) => (prev === ext.id ? null : ext.id));
   };
 
+  const activeExt = extensions.find((e) => e.id === activePopupId);
+
   return (
     <div ref={containerRef} className="relative flex items-center gap-1 select-none">
-      {/* ═══ 1. Pinned Extension Icons (Exact match to Chrome Toolbar) ═══ */}
+      {/* ═══ 1. Pinned Extension Icons (From Chrome Web Store) ═══ */}
       {pinnedExtensions.map((ext) => (
         <button
           key={ext.id}
@@ -159,343 +156,82 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
         <Puzzle size={15} />
       </button>
 
-      {/* ═══ 3. Interactive Popups for Pinned Extensions ═══ */}
-      {activePopupId && (
+      {/* ═══ 3. Extension Action Popup for Pinned Extension ═══ */}
+      {activePopupId && activeExt && (
         <div
           ref={popupRef}
           className="absolute right-0 top-9 z-[10080] w-80 bg-[#1c1c1f]/98 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-150 ring-1 ring-black/60 text-zinc-200"
         >
-          {/* Popup: Wappalyzer */}
-          {activePopupId === "ext-wappalyzer" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded bg-[#491775] flex items-center justify-center text-white text-xs font-bold">
-                    w
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">Wappalyzer</h4>
-                    <p className="text-[10px] text-zinc-400">Technologies detected on this page</p>
-                  </div>
+          <div className="p-3.5 space-y-3">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                  {renderExtensionIcon(activeExt.icon, activeExt.name)}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-white truncate">{activeExt.name}</h4>
+                  <p className="text-[10px] text-zinc-400 truncate">v{activeExt.version} • {activeExt.author}</p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setActivePopupId(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
 
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
-                  <span className="font-semibold text-white">JavaScript Framework</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30">
-                    React 19.2.4
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
-                  <span className="font-semibold text-white">Build Tool & Bundler</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                    Vite 6.2
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
-                  <span className="font-semibold text-white">UI Styles</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                    Tailwind CSS
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
-                  <span className="font-semibold text-white">Programming Language</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                    TypeScript 5.8
-                  </span>
-                </div>
+            <div className="p-2.5 rounded-lg bg-white/5 border border-white/5 space-y-1.5 text-xs">
+              <p className="text-[11px] text-zinc-300 leading-relaxed">{activeExt.description}</p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-medium text-emerald-400">Active on current page</span>
               </div>
             </div>
-          )}
 
-          {/* Popup: Responsive Viewer */}
-          {activePopupId === "ext-responsive-viewer" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Smartphone size={16} className="text-blue-400" />
-                  <h4 className="text-xs font-bold text-white">Responsive Viewer</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="p-2 rounded bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/40 text-left transition-colors cursor-pointer"
-                >
-                  <p className="font-semibold text-white">Desktop HD</p>
-                  <p className="text-[10px] text-zinc-400">1920 × 1080</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="p-2 rounded bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/40 text-left transition-colors cursor-pointer"
-                >
-                  <p className="font-semibold text-white">Laptop Air</p>
-                  <p className="text-[10px] text-zinc-400">1366 × 768</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="p-2 rounded bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/40 text-left transition-colors cursor-pointer"
-                >
-                  <p className="font-semibold text-white">iPhone 15 Pro</p>
-                  <p className="text-[10px] text-zinc-400">393 × 852</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="p-2 rounded bg-white/5 hover:bg-blue-500/20 border border-white/5 hover:border-blue-500/40 text-left transition-colors cursor-pointer"
-                >
-                  <p className="font-semibold text-white">iPad Pro 11"</p>
-                  <p className="text-[10px] text-zinc-400">834 × 1194</p>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Popup: Shazam */}
-          {activePopupId === "ext-shazam" && (
-            <div className="p-4 text-center space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2 text-left">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-[#0088FF] flex items-center justify-center text-white text-xs font-bold">
-                    S
-                  </div>
-                  <h4 className="text-xs font-bold text-white">Shazam</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <div className="py-3 flex flex-col items-center justify-center">
-                <button
-                  type="button"
-                  onClick={() => setShazamListening(!shazamListening)}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                    shazamListening
-                      ? "bg-[#0088FF] ring-8 ring-[#0088FF]/30 scale-105 animate-pulse text-white"
-                      : "bg-[#0088FF]/20 text-[#0088FF] hover:bg-[#0088FF] hover:text-white"
-                  }`}
-                >
-                  <Music size={26} />
-                </button>
-                <p className="text-xs font-semibold text-white mt-3">
-                  {shazamListening ? "Listening to tab audio..." : "Click to Shazam"}
-                </p>
-                <p className="text-[11px] text-zinc-400 mt-1">
-                  Identify music playing in YouTube, Spotify, or videos
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Popup: React Developer Tools */}
-          {activePopupId === "ext-react-devtools" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Code2 size={16} className="text-[#61DAFB]" />
-                  <h4 className="text-xs font-bold text-white">React Developer Tools</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <div className="p-2 rounded bg-[#20232A] border border-[#61DAFB]/20 space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-[#61DAFB] font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>React 19.2.4 detected</span>
-                </div>
-                <p className="text-[11px] text-zinc-400 font-mono">
-                  Environment: Development (Vite HMR Active)
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="flex-1 py-1.5 rounded bg-[#61DAFB]/20 hover:bg-[#61DAFB]/30 text-[#61DAFB] font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Components
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="flex-1 py-1.5 rounded bg-white/5 hover:bg-white/10 text-white font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Profiler
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Popup: uBlock Origin */}
-          {activePopupId === "ext-ublock-origin" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Shield size={16} className="text-rose-500" />
-                  <h4 className="text-xs font-bold text-white">uBlock Origin</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <div className="flex flex-col items-center py-2">
-                <button
-                  type="button"
-                  onClick={() => setUblockEnabled(!ublockEnabled)}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                    ublockEnabled
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500"
-                      : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
-                  }`}
-                >
-                  <Power size={24} />
-                </button>
-                <p className="text-xs font-bold text-white mt-2">
-                  {ublockEnabled ? "Shield Protection Active" : "Disabled on this page"}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                <div className="p-2 rounded bg-white/5 border border-white/5">
-                  <p className="text-lg font-bold text-white">24</p>
-                  <p className="text-[10px] text-zinc-400">Blocked on page</p>
-                </div>
-                <div className="p-2 rounded bg-white/5 border border-white/5">
-                  <p className="text-lg font-bold text-white">3,412</p>
-                  <p className="text-[10px] text-zinc-400">Total blocked</p>
+            {activeExt.manifestPermissions && activeExt.manifestPermissions.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Manifest Permissions</p>
+                <div className="flex flex-wrap gap-1">
+                  {activeExt.manifestPermissions.map((p) => (
+                    <span key={p} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-300">
+                      {p}
+                    </span>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Popup: GoFullPage */}
-          {activePopupId === "ext-gofullpage" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Camera size={16} className="text-blue-500" />
-                  <h4 className="text-xs font-bold text-white">GoFullPage</h4>
-                </div>
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-xs">
+              {activeExt.webStoreUrl && (
                 <button
                   type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
+                  onClick={() => {
+                    if (onNavigate) onNavigate(activeExt.webStoreUrl!);
+                    else window.open(activeExt.webStoreUrl, "_blank");
+                    setActivePopupId(null);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
                 >
-                  <X size={13} />
+                  <span>Chrome Store page</span>
+                  <ExternalLink size={11} />
                 </button>
-              </div>
-
-              <p className="text-xs text-zinc-400">
-                Capture the entire webpage from top to bottom into high-resolution PNG or PDF.
-              </p>
+              )}
 
               <button
                 type="button"
                 onClick={() => {
-                  setScreenshotProgress(true);
-                  setTimeout(() => {
-                    setScreenshotProgress(false);
-                    setActivePopupId(null);
-                  }, 1200);
+                  uninstallExtension(activeExt.id);
+                  setActivePopupId(null);
                 }}
-                className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex items-center gap-1 text-[11px] text-rose-400 hover:text-rose-300 ml-auto transition-colors cursor-pointer"
               >
-                {screenshotProgress ? (
-                  <>
-                    <RefreshCw size={13} className="animate-spin" />
-                    <span>Capturing Full Page...</span>
-                  </>
-                ) : (
-                  <>
-                    <Camera size={13} />
-                    <span>Capture Full Page</span>
-                  </>
-                )}
+                <Trash2 size={11} />
+                <span>Remove</span>
               </button>
             </div>
-          )}
-
-          {/* Popup: Lighthouse */}
-          {activePopupId === "ext-lighthouse" && (
-            <div className="p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Gauge size={16} className="text-amber-500" />
-                  <h4 className="text-xs font-bold text-white">Lighthouse</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePopupId(null)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-4 gap-1 text-center">
-                <div className="p-1.5 rounded bg-white/5">
-                  <span className="text-emerald-400 font-bold text-sm">98</span>
-                  <p className="text-[9px] text-zinc-400 truncate">Perf</p>
-                </div>
-                <div className="p-1.5 rounded bg-white/5">
-                  <span className="text-emerald-400 font-bold text-sm">95</span>
-                  <p className="text-[9px] text-zinc-400 truncate">A11y</p>
-                </div>
-                <div className="p-1.5 rounded bg-white/5">
-                  <span className="text-emerald-400 font-bold text-sm">100</span>
-                  <p className="text-[9px] text-zinc-400 truncate">Best</p>
-                </div>
-                <div className="p-1.5 rounded bg-white/5">
-                  <span className="text-emerald-400 font-bold text-sm">100</span>
-                  <p className="text-[9px] text-zinc-400 truncate">SEO</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setActivePopupId(null)}
-                className="w-full py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 font-bold text-xs transition-colors cursor-pointer"
-              >
-                Generate Fresh Report
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -572,11 +308,20 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
             />
             <button
               type="submit"
-              disabled={!urlInput.trim()}
-              className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-[11px] font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+              disabled={!urlInput.trim() || isInstalling}
+              className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white text-[11px] font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
             >
-              <Plus size={12} />
-              <span>Install</span>
+              {isInstalling ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  <span>Installing...</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={12} />
+                  <span>Install</span>
+                </>
+              )}
             </button>
           </form>
 
@@ -591,8 +336,22 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
           {/* Extensions List */}
           <div className="max-h-72 overflow-y-auto p-2 space-y-1">
             {browserExtensions.length === 0 ? (
-              <div className="p-4 text-center text-xs text-zinc-400">
-                No browser extensions installed.
+              <div className="p-6 text-center text-xs text-zinc-400 flex flex-col items-center justify-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-zinc-500 mb-1">
+                  <Puzzle size={20} />
+                </div>
+                <p className="font-semibold text-white">No extensions installed</p>
+                <p className="text-[11px] text-zinc-400 max-w-[240px] leading-relaxed">
+                  Only extensions you add from the official Google Chrome Web Store will appear here.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenChromeWebStore}
+                  className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF6B00] hover:bg-[#FF8533] text-white text-xs font-bold transition-all shadow cursor-pointer"
+                >
+                  <ExternalLink size={12} />
+                  <span>Browse Chrome Web Store</span>
+                </button>
               </div>
             ) : (
               browserExtensions.map((ext) => (

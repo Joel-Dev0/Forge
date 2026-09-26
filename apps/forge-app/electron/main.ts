@@ -19,6 +19,7 @@ import { initCompatManager } from "./compat/compatManager.js";
 import { registerTorIPC } from "./tor/TorIPC.js";
 import { ElectronTorRuntime } from "./tor/TorRuntime.js";
 import { ElectronPrivateSessionManager } from "./privacy/privateSessionManager.js";
+import { initExtensionManager } from "./extensions/extensionManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1121,6 +1122,7 @@ app.whenReady().then(() => {
   });
   initSessionManager();
   initCompatManager();
+  initExtensionManager();
   ElectronPrivateSessionManager.getInstance().setDownloadSetupHandler((privSes) => {
     setupDownloadListeners(privSes);
   });

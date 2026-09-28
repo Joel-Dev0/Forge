@@ -11,27 +11,29 @@ export function FocusPlayerMiniWidget() {
 
   const handleTogglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isPlaying) {
+    if (isAudioPlaying) {
       pause();
       const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
       if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-        iframe.contentWindow.postMessage('{"method":"pause"}', '*');
+        try {
+          iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+          iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', "*");
+          iframe.contentWindow.postMessage('{"method":"pause"}', "*");
+        } catch {}
       }
       window.dispatchEvent(new CustomEvent("forge:media-pause"));
       if (activeAudioTab) {
         useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
       }
     } else {
-      if (activeAudioTab) {
-        window.dispatchEvent(new CustomEvent("forge:media-pause"));
-        useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
-      }
       play(currentTrack || undefined);
       const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
       if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-        iframe.contentWindow.postMessage('{"method":"play"}', '*');
+        try {
+          iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+          iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', "*");
+          iframe.contentWindow.postMessage('{"method":"play"}', "*");
+        } catch {}
       }
     }
   };
@@ -83,7 +85,7 @@ export function FocusPlayerMiniWidget() {
         title={isAudioPlaying ? "Pause Audio" : "Play Audio"}
         className="w-4 h-4 flex items-center justify-center rounded text-zinc-300 hover:text-[#FF6B00] transition-colors cursor-pointer"
       >
-        {isPlaying ? <Pause size={10} /> : <Play size={10} />}
+        {isAudioPlaying ? <Pause size={10} /> : <Play size={10} />}
       </button>
     </div>
   );

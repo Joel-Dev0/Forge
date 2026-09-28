@@ -84,7 +84,7 @@ export function parseOnlineMusicUrl(
     const isPlaylist = yt.type === "playlist";
     const embedUrl = isPlaylist
       ? `https://www.youtube.com/embed/videoseries?list=${yt.id}&autoplay=1&enablejsapi=1`
-      : `https://www.youtube.com/embed/${yt.id}?autoplay=1&enablejsapi=1&origin=http://localhost`;
+      : `https://www.youtube.com/embed/${yt.id}?autoplay=1&enablejsapi=1`;
     const coverArt = !isPlaylist
       ? `https://img.youtube.com/vi/${yt.id}/hqdefault.jpg`
       : undefined;

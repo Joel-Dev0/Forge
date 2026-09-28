@@ -1,6 +1,18 @@
 (() => {
   // electron/guestPreload.ts
   (function() {
+    try {
+      if (typeof window.trustedTypes !== "undefined" && typeof window.trustedTypes.createPolicy === "function") {
+        if (!window.trustedTypes.defaultPolicy) {
+          window.trustedTypes.createPolicy("default", {
+            createHTML: (s) => s,
+            createScript: (s) => s,
+            createScriptURL: (s) => s
+          });
+        }
+      }
+    } catch {
+    }
     const currentUrl = window.location.href || "";
     const isYouTube = currentUrl.includes("youtube.com") || currentUrl.includes("youtu.be");
     const hostname = (window.location.hostname || "").toLowerCase();
@@ -656,17 +668,20 @@
           const iframes = document.querySelectorAll("iframe");
           for (let i = 0; i < iframes.length; i++) {
             const iframe = iframes[i];
-            if (!iframe.hasAttribute("allowfullscreen")) {
-              iframe.setAttribute("allowfullscreen", "true");
-            }
+            const hasLegacyFullscreen = iframe.hasAttribute("allowfullscreen");
             let allow = iframe.getAttribute("allow") || "";
-            if (!allow.includes("fullscreen")) {
+            let allowUpdated = false;
+            if (!hasLegacyFullscreen && !allow.includes("fullscreen")) {
               allow = allow ? allow + "; fullscreen *" : "fullscreen *";
+              allowUpdated = true;
             }
             if (!allow.includes("picture-in-picture")) {
               allow = allow ? allow + "; picture-in-picture *" : "picture-in-picture *";
+              allowUpdated = true;
             }
-            iframe.setAttribute("allow", allow);
+            if (allowUpdated) {
+              iframe.setAttribute("allow", allow);
+            }
           }
           const videos = getAllVideosInDocument();
           for (let i = 0; i < videos.length; i++) {
@@ -676,7 +691,9 @@
             }
             if (v.hasAttribute("controlslist")) {
               const cl = v.getAttribute("controlslist") || "";
-              v.setAttribute("controlslist", cl.replace(/nopictureinpicture/gi, ""));
+              if (/nopictureinpicture/i.test(cl)) {
+                v.setAttribute("controlslist", cl.replace(/nopictureinpicture/gi, "").trim());
+              }
             }
           }
         } catch (e) {
@@ -806,30 +823,85 @@
       }, true);
       const ctrlPill = document.createElement("div");
       ctrlPill.id = "__forge_video_fullscreen_pill";
-      ctrlPill.innerHTML = `
-      <button id="__forge_btn_fullscreen" title="Pantalla Completa (F / Doble Click)">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-        </svg>
-        <span>Fullscreen</span>
-      </button>
-      <button id="__forge_btn_pip" title="Picture-in-Picture (PiP)">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-          <rect x="12" y="9" width="8" height="6" rx="1"></rect>
-        </svg>
-        <span>PiP</span>
-      </button>
-    `;
+      const btnFs = document.createElement("button");
+      btnFs.id = "__forge_btn_fullscreen";
+      btnFs.title = "Pantalla Completa (F / Doble Click)";
+      const svgFs = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svgFs.setAttribute("width", "12");
+      svgFs.setAttribute("height", "12");
+      svgFs.setAttribute("viewBox", "0 0 24 24");
+      svgFs.setAttribute("fill", "none");
+      svgFs.setAttribute("stroke", "currentColor");
+      svgFs.setAttribute("stroke-width", "2.5");
+      svgFs.setAttribute("stroke-linecap", "round");
+      svgFs.setAttribute("stroke-linejoin", "round");
+      const pathFs = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      pathFs.setAttribute("d", "M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3");
+      svgFs.appendChild(pathFs);
+      const spanFs = document.createElement("span");
+      spanFs.textContent = "Fullscreen";
+      btnFs.appendChild(svgFs);
+      btnFs.appendChild(spanFs);
+      const btnPip = document.createElement("button");
+      btnPip.id = "__forge_btn_pip";
+      btnPip.title = "Picture-in-Picture (PiP)";
+      const svgPip = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svgPip.setAttribute("width", "11");
+      svgPip.setAttribute("height", "11");
+      svgPip.setAttribute("viewBox", "0 0 24 24");
+      svgPip.setAttribute("fill", "none");
+      svgPip.setAttribute("stroke", "currentColor");
+      svgPip.setAttribute("stroke-width", "2.5");
+      svgPip.setAttribute("stroke-linecap", "round");
+      svgPip.setAttribute("stroke-linejoin", "round");
+      const r1 = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r1.setAttribute("x", "2");
+      r1.setAttribute("y", "3");
+      r1.setAttribute("width", "20");
+      r1.setAttribute("height", "14");
+      r1.setAttribute("rx", "2");
+      r1.setAttribute("ry", "2");
+      const r2 = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r2.setAttribute("x", "12");
+      r2.setAttribute("y", "9");
+      r2.setAttribute("width", "8");
+      r2.setAttribute("height", "6");
+      r2.setAttribute("rx", "1");
+      svgPip.appendChild(r1);
+      svgPip.appendChild(r2);
+      const spanPip = document.createElement("span");
+      spanPip.textContent = "PiP";
+      btnPip.appendChild(svgPip);
+      btnPip.appendChild(spanPip);
+      ctrlPill.appendChild(btnFs);
+      ctrlPill.appendChild(btnPip);
       const exitTheaterBtn = document.createElement("button");
       exitTheaterBtn.id = "__forge_btn_exit_theater";
-      exitTheaterBtn.innerHTML = `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>
-      <span>Exit Fullscreen</span>
-    `;
+      const svgExit = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svgExit.setAttribute("width", "13");
+      svgExit.setAttribute("height", "13");
+      svgExit.setAttribute("viewBox", "0 0 24 24");
+      svgExit.setAttribute("fill", "none");
+      svgExit.setAttribute("stroke", "currentColor");
+      svgExit.setAttribute("stroke-width", "2.5");
+      svgExit.setAttribute("stroke-linecap", "round");
+      svgExit.setAttribute("stroke-linejoin", "round");
+      const l1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l1.setAttribute("x1", "18");
+      l1.setAttribute("y1", "6");
+      l1.setAttribute("x2", "6");
+      l1.setAttribute("y2", "18");
+      const l2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l2.setAttribute("x1", "6");
+      l2.setAttribute("y1", "6");
+      l2.setAttribute("x2", "18");
+      l2.setAttribute("y2", "18");
+      svgExit.appendChild(l1);
+      svgExit.appendChild(l2);
+      const spanExit = document.createElement("span");
+      spanExit.textContent = "Exit Fullscreen";
+      exitTheaterBtn.appendChild(svgExit);
+      exitTheaterBtn.appendChild(spanExit);
       const ctrlStyle = document.createElement("style");
       ctrlStyle.id = "__forge_video_ctrl_css";
       ctrlStyle.textContent = `
@@ -1380,7 +1452,15 @@
       try {
         if (isSearchEngine) return;
         const script = document.createElement("script");
-        script.textContent = isYouTube ? youtubeCode : universalVideoCode;
+        const code = isYouTube ? youtubeCode : universalVideoCode;
+        let safeScript = code;
+        try {
+          if (window.trustedTypes?.defaultPolicy) {
+            safeScript = window.trustedTypes.defaultPolicy.createScript(code);
+          }
+        } catch {
+        }
+        script.textContent = safeScript;
         const target = document.head || document.documentElement;
         if (target) {
           target.appendChild(script);
@@ -1787,7 +1867,14 @@
         })();
       `;
         const s = document.createElement("script");
-        s.textContent = polyfillCode;
+        let safePolyfill = polyfillCode;
+        try {
+          if (window.trustedTypes?.defaultPolicy) {
+            safePolyfill = window.trustedTypes.defaultPolicy.createScript(polyfillCode);
+          }
+        } catch {
+        }
+        s.textContent = safePolyfill;
         const target = document.head || document.documentElement || document.body;
         if (target) {
           target.appendChild(s);
@@ -1911,10 +1998,16 @@
         };
         if (isInstalling) {
           const installingLabel = isSpanish ? "Instalando..." : "Installing...";
-          actionBtn.innerHTML = `
-          <span style="display:inline-block;width:14px;height:14px;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"></span>
-          <span>${installingLabel}</span>
-        `;
+          actionBtn.textContent = "";
+          const spin = document.createElement("span");
+          spin.setAttribute(
+            "style",
+            "display:inline-block;width:14px;height:14px;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"
+          );
+          const text = document.createElement("span");
+          text.textContent = installingLabel;
+          actionBtn.appendChild(spin);
+          actionBtn.appendChild(text);
           actionBtn.setAttribute(
             "style",
             `
@@ -1946,10 +2039,16 @@
           );
         } else if (isUninstalling) {
           const removingLabel = isSpanish ? "Eliminando..." : "Removing...";
-          actionBtn.innerHTML = `
-          <span style="display:inline-block;width:14px;height:14px;border:2px solid #b3261e;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"></span>
-          <span>${removingLabel}</span>
-        `;
+          actionBtn.textContent = "";
+          const spin = document.createElement("span");
+          spin.setAttribute(
+            "style",
+            "display:inline-block;width:14px;height:14px;border:2px solid #b3261e;border-top-color:transparent;border-radius:50%;animation:forge_cws_spin 0.8s linear infinite;margin-right:8px;flex-shrink:0;"
+          );
+          const text = document.createElement("span");
+          text.textContent = removingLabel;
+          actionBtn.appendChild(spin);
+          actionBtn.appendChild(text);
           actionBtn.setAttribute(
             "style",
             `
@@ -1980,12 +2079,17 @@
           );
         } else if (isInstalled) {
           const removeLabel = isSpanish ? "Eliminar de Chrome" : "Remove from Chrome";
-          actionBtn.innerHTML = `
-          <svg style="width:16px;height:16px;fill:currentColor;flex-shrink:0;" viewBox="0 0 24 24">
-            <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
-          </svg>
-          <span>${removeLabel}</span>
-        `;
+          actionBtn.textContent = "";
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("viewBox", "0 0 24 24");
+          svg.setAttribute("style", "width:16px;height:16px;fill:currentColor;flex-shrink:0;");
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", "M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z");
+          svg.appendChild(path);
+          const text = document.createElement("span");
+          text.textContent = removeLabel;
+          actionBtn.appendChild(svg);
+          actionBtn.appendChild(text);
           actionBtn.setAttribute(
             "style",
             `
@@ -2027,12 +2131,17 @@
           };
         } else {
           const addLabel = isSpanish ? "A\xF1adir a Chrome" : "Add to Chrome";
-          actionBtn.innerHTML = `
-          <svg style="width:16px;height:16px;fill:currentColor;flex-shrink:0;" viewBox="0 0 24 24">
-            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-          </svg>
-          <span>${addLabel}</span>
-        `;
+          actionBtn.textContent = "";
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("viewBox", "0 0 24 24");
+          svg.setAttribute("style", "width:16px;height:16px;fill:currentColor;flex-shrink:0;");
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
+          svg.appendChild(path);
+          const text = document.createElement("span");
+          text.textContent = addLabel;
+          actionBtn.appendChild(svg);
+          actionBtn.appendChild(text);
           actionBtn.setAttribute(
             "style",
             `

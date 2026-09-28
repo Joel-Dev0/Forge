@@ -11,7 +11,6 @@ import {
   Search,
   X,
   FolderGit2,
-  Puzzle,
   Disc3,
   Boxes,
   StickyNote,
@@ -20,7 +19,6 @@ import { useHistoryStore } from "../../core/history/useHistoryStore";
 import { useThemeStore } from "../../core/theme/useThemeStore";
 import { useFavoritesStore } from "../../core/favorites/useFavoritesStore";
 import { useProjectsStore } from "../../core/projects/useProjectsStore";
-import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useFocusPlayerStore } from "../../core/focus/useFocusPlayerStore";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useIdeExtensionsStore } from "../../core/extensions/useIdeExtensionsStore";
@@ -42,14 +40,12 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const totalNotesCount = notes.length + memoryCards.length;
 
   const { setDashboardOpen, runningProcesses } = useProjectsStore();
-  const { setManagerOpen, extensions } = useExtensionsStore();
   const { setPlayerModalOpen, isPlaying, currentTrack } = useFocusPlayerStore();
   const { tabs } = useTabsStore();
   const activeAudioTab = tabs.find((t) => t.isPlayingAudio);
   const isAudioPlaying = isPlaying || Boolean(activeAudioTab);
   const { setIdeModalOpen, extensions: ideExtensions } = useIdeExtensionsStore();
   const activeProcessesCount = Object.keys(runningProcesses).length;
-  const enabledExtensionsCount = extensions.filter((e) => e.enabled).length;
   const enabledIdeCount = ideExtensions.filter((e) => e.installed && e.enabled).length;
 
   useEffect(() => {
@@ -199,19 +195,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           {enabledIdeCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-xs">
               {enabledIdeCount}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setManagerOpen(true)}
-          title={`Extensions & Verification Gate (${enabledExtensionsCount} active)`}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--forge-text-muted)] hover:text-sky-400 hover:bg-[var(--forge-hover)] transition-all cursor-pointer relative"
-        >
-          <Puzzle size={15} />
-          {enabledExtensionsCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-sky-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-              {enabledExtensionsCount}
             </span>
           )}
         </button>
@@ -448,7 +431,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="text-[9px] uppercase font-semibold text-[var(--forge-text-muted)] tracking-wider">
           Workspace Tools
         </div>
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-3 gap-1">
           <button
             onClick={() => {
               setActiveSidebarTab("explorer");
@@ -485,15 +468,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             {enabledIdeCount > 0 && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full" />
             )}
-          </button>
-
-          <button
-            onClick={() => setManagerOpen(true)}
-            title="Extensions Platform"
-            className="flex flex-col items-center gap-1 p-1.5 rounded-lg bg-[var(--forge-surface-elevated)] hover:bg-[var(--forge-hover)] text-[var(--forge-text-muted)] hover:text-sky-400 transition-all cursor-pointer shadow-sm"
-          >
-            <Puzzle size={13} />
-            <span className="text-[9px] font-medium">Platform</span>
           </button>
 
           <button

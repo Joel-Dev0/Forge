@@ -242,6 +242,17 @@ function getOrCreateAudio(): HTMLAudioElement {
       }
     };
 
+    globalAudio.onplay = () => {
+      useFocusPlayerStore.setState({ isPlaying: true });
+    };
+
+    globalAudio.onpause = () => {
+      const p = useFocusPlayerStore.getState().currentTrack?.provider;
+      if (p === "stream" || p === "local") {
+        useFocusPlayerStore.setState({ isPlaying: false });
+      }
+    };
+
     globalAudio.onerror = () => {
       console.warn("[FocusPlayer] HTMLAudioElement error event:", globalAudio?.error);
     };
@@ -420,7 +431,7 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       if (key) {
         getLocalAudioUrl(key)
           .then((fresh) => {
-            if (fresh) {
+            if (fresh && get().isPlaying) {
               if (audio.src !== fresh) {
                 audio.src = fresh;
                 audio.volume = effectiveVol;
@@ -452,13 +463,18 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
     } else {
       // YouTube, Spotify, SoundCloud iframe providers
       stopAmbientSynth();
-      if (globalAudio) globalAudio.pause();
+      if (globalAudio) {
+        globalAudio.pause();
+        globalAudio.removeAttribute("src");
+        globalAudio.load();
+      }
       if (typeof window !== "undefined") {
         try {
           const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
           if (iframe?.contentWindow) {
-            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-            iframe.contentWindow.postMessage('{"method":"play"}', '*');
+            iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', "*");
+            iframe.contentWindow.postMessage('{"method":"play"}', "*");
           }
         } catch {}
       }
@@ -488,7 +504,13 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
   pause: () => {
     set({ isPlaying: false });
     stopAmbientSynth();
-    if (globalAudio) globalAudio.pause();
+    if (globalAudio) {
+      globalAudio.pause();
+      if (get().currentTrack?.provider === "stream") {
+        globalAudio.removeAttribute("src");
+        globalAudio.load();
+      }
+    }
     if (typeof window !== "undefined") {
       if ((window as any).__forgeFocusPlayerInterval) {
         clearInterval((window as any).__forgeFocusPlayerInterval);
@@ -496,8 +518,9 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       try {
         const iframe = document.getElementById("focus-player-embed-iframe") as HTMLIFrameElement;
         if (iframe?.contentWindow) {
-          iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-          iframe.contentWindow.postMessage('{"method":"pause"}', '*');
+          iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+          iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', "*");
+          iframe.contentWindow.postMessage('{"method":"pause"}', "*");
         }
       } catch {}
       window.dispatchEvent(new CustomEvent("forge:media-pause"));
@@ -678,7 +701,7 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       });
 
       persistStore(s.volume, s.isMuted, s.isShuffle, s.isRepeat, s.profileBindings, updatedPlaylists);
-      return { playlists: updatedPlaylists };
+      return { playlists: updatedPlaylists, currentPlaylistId: targetPlaylist.id };
     });
 
     get().play(newTrack);

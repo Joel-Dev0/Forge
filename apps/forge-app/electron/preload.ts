@@ -355,6 +355,12 @@ contextBridge.exposeInMainWorld("forge", {
       ipcRenderer.invoke("extensions:uninstall", { extId }),
     listInstalled: () =>
       ipcRenderer.invoke("extensions:list-installed"),
+    // Fix #4: Open extension popup window
+    openPopup: (extId: string) =>
+      ipcRenderer.invoke("extensions:open-popup", { extId }),
+    // Fix #4: Check if extension has a popup
+    getPopupInfo: (extId: string) =>
+      ipcRenderer.invoke("extensions:get-popup-info", { extId }),
   },
 });
 

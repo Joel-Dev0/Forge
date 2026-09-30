@@ -13,7 +13,11 @@ import {
   Power,
   X,
   Search,
+  AppWindow,
+  ExternalLink,
+  Info,
 } from "lucide-react";
+
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { type ExtensionType, type SecurityTier } from "../../core/extensions/extensionTypes";
 
@@ -33,6 +37,7 @@ export function ExtensionsManagerModal() {
 
   const [activeTab, setActiveTab] = useState<"installed" | "security_gate" | "catalog">("installed");
   const [search, setSearch] = useState("");
+  const [openingPopup, setOpeningPopup] = useState<string | null>(null);
 
   // Security gate test input state
   const [testName, setTestName] = useState("Custom Inspector Pro");
@@ -209,6 +214,23 @@ export function ExtensionsManagerModal() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* Fix #4: Open popup button for extensions with popup UI */}
+                    <button
+                      onClick={async () => {
+                        setOpeningPopup(selected.id);
+                        try {
+                          await (window as any).forge?.extensions?.openPopup?.(selected.id);
+                        } catch {}
+                        setTimeout(() => setOpeningPopup(null), 1200);
+                      }}
+                      disabled={openingPopup === selected.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/40 disabled:opacity-50"
+                      title="Open extension popup window"
+                    >
+                      <AppWindow size={12} />
+                      <span>{openingPopup === selected.id ? "Opening…" : "Popup"}</span>
+                    </button>
+
                     <button
                       onClick={() => toggleExtension(selected.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -269,6 +291,22 @@ export function ExtensionsManagerModal() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Fix #1: MV3 compatibility notice */}
+                  {selected.type === "browser" && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[10px] text-amber-400">
+                      <Info size={13} className="shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Compatibility Note</span>
+                        <span className="text-amber-300/80">
+                          Forge injects content scripts directly into webview pages. Service Workers and
+                          <code className="mx-1 px-1 rounded bg-amber-500/10">declarativeNetRequest</code>
+                          (MV3) are not supported by Electron. Extensions relying solely on page-DOM
+                          injection (CSS/JS) will work correctly.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

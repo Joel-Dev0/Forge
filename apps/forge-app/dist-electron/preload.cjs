@@ -332,6 +332,10 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
   extensions: {
     installFromWebStore: (extId, url) => import_electron.ipcRenderer.invoke("extensions:install-from-cws", { extId, url }),
     uninstall: (extId) => import_electron.ipcRenderer.invoke("extensions:uninstall", { extId }),
-    listInstalled: () => import_electron.ipcRenderer.invoke("extensions:list-installed")
+    listInstalled: () => import_electron.ipcRenderer.invoke("extensions:list-installed"),
+    // Fix #4: Open extension popup window
+    openPopup: (extId) => import_electron.ipcRenderer.invoke("extensions:open-popup", { extId }),
+    // Fix #4: Check if extension has a popup
+    getPopupInfo: (extId) => import_electron.ipcRenderer.invoke("extensions:get-popup-info", { extId })
   }
 });

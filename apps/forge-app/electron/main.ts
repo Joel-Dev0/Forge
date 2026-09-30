@@ -19,7 +19,7 @@ import { initCompatManager } from "./compat/compatManager.js";
 import { registerTorIPC } from "./tor/TorIPC.js";
 import { ElectronTorRuntime } from "./tor/TorRuntime.js";
 import { ElectronPrivateSessionManager } from "./privacy/privateSessionManager.js";
-import { initExtensionManager } from "./extensions/extensionManager.js";
+import { initExtensionManager, attachExtensionHooksToWebContents, onNewSessionPartition } from "./extensions/extensionManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -682,6 +682,9 @@ app.on("web-contents-created", (_event, contents) => {
     playingWebContents.delete(contents.id);
   });
 
+  // Fix #3: Attach content-script injection engine to every guest webview
+  attachExtensionHooksToWebContents(contents);
+
   // Bridge guest webview context-menu to Forge Browser UI
   contents.on("context-menu", (_e, params) => {
     try {
@@ -1123,6 +1126,16 @@ app.whenReady().then(() => {
   initSessionManager();
   initCompatManager();
   initExtensionManager();
+
+  // Fix #2: When a new session partition is created dynamically, load installed extensions into it
+  app.on("session-created", (createdSession) => {
+    try {
+      const partName = (createdSession as any)._partition || (createdSession as any).partition || "";
+      if (partName) {
+        onNewSessionPartition(partName, createdSession);
+      }
+    } catch {}
+  });
   ElectronPrivateSessionManager.getInstance().setDownloadSetupHandler((privSes) => {
     setupDownloadListeners(privSes);
   });

@@ -476,17 +476,50 @@ function createWindow(isIncognito = false) {
     }
   });
 
-  win.webContents.on("will-attach-webview", (_event, webPreferences) => {
-    webPreferences.nodeIntegrationInSubFrames = true;
+  win.webContents.on("will-attach-webview", (_event, webPreferences, _params) => {
+    // Enforce safe defaults on all webviews — never let a renderer page
+    // escalate webview privileges through webview tag attributes.
+    // nodeIntegrationInSubFrames is NOT needed for content scripts:
+    // Electron loads them via ses.loadExtension() or executeJavaScript(),
+    // not through the sub-frame node channel.
+    webPreferences.nodeIntegration = false;
+    webPreferences.nodeIntegrationInSubFrames = false;
+    webPreferences.contextIsolation = true;
   });
 
-  win.once("ready-to-show", () => {
+  let windowShown = false;
+  const showWindow = () => {
+    if (windowShown || win.isDestroyed()) return;
+    windowShown = true;
     win.maximize();
     win.show();
+    win.focus();
     if (!isIncognito) {
       updateTaskbarMediaButtons(win, false);
     }
+  };
+
+  win.once("ready-to-show", () => {
+    console.log("[Main] Window ready-to-show triggered");
+    showWindow();
   });
+
+  win.webContents.once("did-finish-load", () => {
+    console.log("[Main] Window did-finish-load triggered");
+    showWindow();
+  });
+
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[Main] Window failed to load ${validatedURL}: ${errorDescription} (${errorCode})`);
+    showWindow();
+  });
+
+  setTimeout(() => {
+    if (!windowShown) {
+      console.log("[Main] Fallback timer: displaying window");
+      showWindow();
+    }
+  }, 2500);
 
   const query = isIncognito ? "?incognito=1" : "";
   if (process.env.VITE_DEV_SERVER_URL) {

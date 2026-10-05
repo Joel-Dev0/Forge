@@ -14,6 +14,18 @@ export interface ExtensionVerificationReport {
   recommendedAction: "allow" | "prompt" | "override_required" | "block";
 }
 
+export interface ExtensionDiagnosticSummary {
+  extensionId: string;
+  name: string;
+  version: string;
+  manifestVersion: number;
+  electronLoaded: boolean;
+  contentScriptsNative: boolean;
+  score: number;
+  tier: "full-native" | "partial-native" | "adapter-required" | "unsupported";
+  usedApis: { api: string; status: "native" | "adapter" | "fallback" | "unsupported" }[];
+}
+
 export interface ForgeExtension {
   id: string;
   name: string;
@@ -29,4 +41,5 @@ export interface ForgeExtension {
   verification: ExtensionVerificationReport;
   settings?: Record<string, any>;
   manifestPermissions: string[];
+  diagnostic?: ExtensionDiagnosticSummary;
 }

@@ -809,6 +809,10 @@
     // 5. Cross-frame PiP & Fullscreen communication (works across all nested iframes)
     window.addEventListener('message', function(e) {
       if (!e.data || typeof e.data !== 'object') return;
+      // Only accept messages from the same origin or from trusted Forge internal frames.
+      // This prevents third-party pages from spoofing __FORGE_* commands.
+      const allowedOrigin = window.location.origin;
+      if (e.origin !== allowedOrigin && e.source !== window) return;
       if (e.data.type === '__FORGE_TOGGLE_PIP__') {
         const allV = getAllVideosInDocument();
         if (allV.length > 0) {
@@ -2462,4 +2466,9 @@
   } else {
     initUniversalMediaControls();
   }
+
+  // ── Extension Inter-Context Messaging Flag for Webview Guests ─────────────
+  try {
+    (window as any).__forge_extension_env = { active: true, chromium152: true };
+  } catch {}
 })();

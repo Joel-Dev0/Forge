@@ -333,9 +333,33 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     installFromWebStore: (extId, url) => import_electron.ipcRenderer.invoke("extensions:install-from-cws", { extId, url }),
     uninstall: (extId) => import_electron.ipcRenderer.invoke("extensions:uninstall", { extId }),
     listInstalled: () => import_electron.ipcRenderer.invoke("extensions:list-installed"),
-    // Fix #4: Open extension popup window
-    openPopup: (extId) => import_electron.ipcRenderer.invoke("extensions:open-popup", { extId }),
-    // Fix #4: Check if extension has a popup
-    getPopupInfo: (extId) => import_electron.ipcRenderer.invoke("extensions:get-popup-info", { extId })
+    // Fix #4 + Phase 6: Open extension popup window with optional anchorBounds
+    openPopup: (extId, anchorBounds) => import_electron.ipcRenderer.invoke("extensions:open-popup", { extId, anchorBounds }),
+    getPopupInfo: (extId) => import_electron.ipcRenderer.invoke("extensions:get-popup-info", { extId }),
+    // Phase 1 Diagnostics: Query extension compatibility data
+    getDiagnostics: (extId) => import_electron.ipcRenderer.invoke("extensions:diagnostics", extId ? { extId } : void 0),
+    getDiagnosticsSummary: () => import_electron.ipcRenderer.invoke("extensions:diagnostics-summary"),
+    getSessionBridgeSummary: () => import_electron.ipcRenderer.invoke("extensions:session-bridge-summary"),
+    // Phase 3: Tab Bridge
+    getTabSummary: () => import_electron.ipcRenderer.invoke("extensions:tabs:summary"),
+    syncTabs: (tabs) => import_electron.ipcRenderer.invoke("extensions:tabs:sync", tabs),
+    setActiveTab: (webContentsId) => import_electron.ipcRenderer.invoke("extensions:tabs:set-active", webContentsId),
+    queryTabs: (filter) => import_electron.ipcRenderer.invoke("extensions:tabs:query", filter),
+    sendMessageToTab: (tabId, message) => import_electron.ipcRenderer.invoke("extensions:tabs:send-message", { tabId, message }),
+    // Phase 5: Messaging Bridge
+    sendMessage: (extensionId, message) => import_electron.ipcRenderer.invoke("extensions:runtime:send-message", { extensionId, message }),
+    broadcastMessage: (message, filter) => import_electron.ipcRenderer.invoke("extensions:runtime:broadcast", { message, filter }),
+    getMessageStats: () => import_electron.ipcRenderer.invoke("extensions:message:stats"),
+    // Phase 6: Action & Badges
+    getAllBadges: (tabId) => import_electron.ipcRenderer.invoke("extensions:action:get-all-badges", tabId),
+    getBadge: (extensionId, tabId) => import_electron.ipcRenderer.invoke("extensions:action:get-badge", { extensionId, tabId }),
+    onBadgeUpdated: (callback) => {
+      const listener = (_event, data) => callback(data);
+      import_electron.ipcRenderer.on("extensions:action:badge-updated", listener);
+      return () => import_electron.ipcRenderer.removeListener("extensions:action:badge-updated", listener);
+    },
+    // Phase 7: Service Worker Lifecycle
+    getServiceWorkerStatuses: () => import_electron.ipcRenderer.invoke("extensions:sw:get-statuses"),
+    wakeServiceWorker: (extensionId) => import_electron.ipcRenderer.invoke("extensions:sw:wake", { extensionId })
   }
 });

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ForgeExtension, ExtensionType, SecurityTier, ExtensionVerificationReport } from "./extensionTypes";
+import type { ForgeExtension, ExtensionType, SecurityTier, ExtensionVerificationReport, ExtensionDiagnosticSummary } from "./extensionTypes";
 
 interface ExtensionsState {
   extensions: ForgeExtension[];
@@ -7,6 +7,14 @@ interface ExtensionsState {
   activeFilter: "all" | ExtensionType;
   selectedExtensionId: string | null;
   pendingInstall: { ext: ForgeExtension; overrideAccepted?: boolean } | null;
+
+  diagnosticReports: Record<string, any>;
+  diagnosticSummaries: ExtensionDiagnosticSummary[];
+  sessionBridgeSummary: any[];
+  actionBadges: Record<string, { text: string; textColor?: string; backgroundColor?: string; title?: string }>;
+  tabSummary: { totalTabs: number; activeTabId: number | null; tabs: any[] } | null;
+  messageStats: { totalSent: number; totalDelivered: number; totalFailed: number; activeChannels: number; lastMessageAt: number | null } | null;
+  serviceWorkerStatuses: Record<string, any>;
 
   setManagerOpen: (open: boolean) => void;
   setActiveFilter: (filter: "all" | ExtensionType) => void;
@@ -17,6 +25,14 @@ interface ExtensionsState {
   installExtension: (ext: ForgeExtension, override?: boolean) => boolean;
   installFromWebStoreUrl: (urlOrId: string, customMetadata?: { name?: string; iconUrl?: string }) => Promise<{ success: boolean; message: string }>;
   verifyPackage: (name: string, type: ExtensionType, permissions: string[]) => ExtensionVerificationReport;
+
+  fetchDiagnostics: (extId?: string) => Promise<any>;
+  fetchDiagnosticsSummary: () => Promise<ExtensionDiagnosticSummary[]>;
+  fetchSessionBridgeSummary: () => Promise<any[]>;
+  fetchActionBadges: () => Promise<void>;
+  fetchTabSummary: () => Promise<void>;
+  fetchMessageStats: () => Promise<void>;
+  fetchServiceWorkerStatuses: () => Promise<void>;
 }
 
 const STORAGE_KEY = "forge_extensions_v5";
@@ -65,16 +81,139 @@ function loadSavedExtensions(): ForgeExtension[] {
   return [];
 }
 
-export const useExtensionsStore = create<ExtensionsState>((set) => ({
+export const useExtensionsStore = create<ExtensionsState>((set, get) => ({
   extensions: loadSavedExtensions(),
   isManagerOpen: false,
   activeFilter: "all",
   selectedExtensionId: null,
   pendingInstall: null,
 
+  diagnosticReports: {},
+  diagnosticSummaries: [],
+  sessionBridgeSummary: [],
+  actionBadges: {},
+  tabSummary: null,
+  messageStats: null,
+  serviceWorkerStatuses: {},
+
   setManagerOpen: (open) => set({ isManagerOpen: open }),
   setActiveFilter: (filter) => set({ activeFilter: filter }),
   setSelectedExtension: (id) => set({ selectedExtensionId: id }),
+
+  fetchDiagnostics: async (extId?: string) => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getDiagnostics) {
+      try {
+        const report = await forgeApi.extensions.getDiagnostics(extId);
+        if (extId && report) {
+          set((s) => ({
+            diagnosticReports: { ...s.diagnosticReports, [extId.toLowerCase()]: report },
+          }));
+        }
+        return report;
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch diagnostics:", e);
+      }
+    }
+    return null;
+  },
+
+  fetchDiagnosticsSummary: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getDiagnosticsSummary) {
+      try {
+        const summaries: ExtensionDiagnosticSummary[] = await forgeApi.extensions.getDiagnosticsSummary();
+        if (Array.isArray(summaries)) {
+          set((s) => {
+            const updatedExts = s.extensions.map((ext) => {
+              const match = summaries.find((d) => d.extensionId === ext.id.toLowerCase());
+              return match ? { ...ext, diagnostic: match } : ext;
+            });
+            return {
+              diagnosticSummaries: summaries,
+              extensions: updatedExts,
+            };
+          });
+          return summaries;
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch diagnostic summary:", e);
+      }
+    }
+    return [];
+  },
+
+  fetchSessionBridgeSummary: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getSessionBridgeSummary) {
+      try {
+        const summary = await forgeApi.extensions.getSessionBridgeSummary();
+        if (Array.isArray(summary)) {
+          set({ sessionBridgeSummary: summary });
+          return summary;
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch session bridge summary:", e);
+      }
+    }
+    return [];
+  },
+
+  fetchActionBadges: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getAllBadges) {
+      try {
+        const badges = await forgeApi.extensions.getAllBadges();
+        if (badges && typeof badges === "object") {
+          set({ actionBadges: badges });
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch action badges:", e);
+      }
+    }
+  },
+
+  fetchTabSummary: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getTabSummary) {
+      try {
+        const tabSummary = await forgeApi.extensions.getTabSummary();
+        if (tabSummary) {
+          set({ tabSummary });
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch tab summary:", e);
+      }
+    }
+  },
+
+  fetchMessageStats: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getMessageStats) {
+      try {
+        const messageStats = await forgeApi.extensions.getMessageStats();
+        if (messageStats) {
+          set({ messageStats });
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch message stats:", e);
+      }
+    }
+  },
+
+  fetchServiceWorkerStatuses: async () => {
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getServiceWorkerStatuses) {
+      try {
+        const serviceWorkerStatuses = await forgeApi.extensions.getServiceWorkerStatuses();
+        if (serviceWorkerStatuses) {
+          set({ serviceWorkerStatuses });
+        }
+      } catch (e) {
+        console.warn("[useExtensionsStore] Failed to fetch service worker statuses:", e);
+      }
+    }
+  },
 
   toggleExtension: (id) => {
     set((s) => {
@@ -97,17 +236,23 @@ export const useExtensionsStore = create<ExtensionsState>((set) => ({
   },
 
   uninstallExtension: (id) => {
+    const cleanId = id.toLowerCase();
     try {
       (window as any).forge?.extensions?.uninstall?.(id);
     } catch {}
     set((s) => {
       const updated = s.extensions.filter((e) => e.id !== id);
+      const remainingReports = { ...s.diagnosticReports };
+      delete remainingReports[cleanId];
+      const remainingSummaries = s.diagnosticSummaries.filter((d) => d.extensionId !== cleanId);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch {}
       return {
         extensions: updated,
         selectedExtensionId: s.selectedExtensionId === id ? updated[0]?.id || null : s.selectedExtensionId,
+        diagnosticReports: remainingReports,
+        diagnosticSummaries: remainingSummaries,
       };
     });
   },
@@ -237,6 +382,11 @@ export const useExtensionsStore = create<ExtensionsState>((set) => ({
             return { extensions: updated, selectedExtensionId: newExt.id };
           });
 
+          // Fetch diagnostic report and session summary for the freshly installed extension
+          get().fetchDiagnosticsSummary();
+          get().fetchDiagnostics(extId);
+          get().fetchSessionBridgeSummary();
+
           return { success: true, message: `Successfully installed "${newExt.name}" from Chrome Web Store!` };
         } else if (result && !result.success) {
           return { success: false, message: result.message || "Failed to install extension." };
@@ -336,6 +486,25 @@ if (typeof window !== "undefined") {
           });
         }
       }).catch(() => {});
+      useExtensionsStore.getState().fetchDiagnosticsSummary();
+      useExtensionsStore.getState().fetchSessionBridgeSummary();
+      useExtensionsStore.getState().fetchActionBadges();
+      useExtensionsStore.getState().fetchTabSummary();
+      useExtensionsStore.getState().fetchMessageStats();
+      useExtensionsStore.getState().fetchServiceWorkerStatuses();
+
+      if (typeof forgeApi.extensions.onBadgeUpdated === "function") {
+        forgeApi.extensions.onBadgeUpdated(({ extensionId, badge }: any) => {
+          if (extensionId && badge) {
+            useExtensionsStore.setState((s) => ({
+              actionBadges: {
+                ...s.actionBadges,
+                [extensionId.toLowerCase()]: badge,
+              },
+            }));
+          }
+        });
+      }
     }
   }, 200);
 }

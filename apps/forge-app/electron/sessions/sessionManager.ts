@@ -6,6 +6,7 @@ import { evaluateAdBlockRequest } from "../adblock/adblockAdapter.js";
 import { evaluateFocusRequest, updateFocusState, getFocusShieldHtml, type FocusStatePayload } from "../focus/socialFilterEngine.js";
 import { setupCorsBypassInterceptor } from "../compat/compatManager.js";
 import { ElectronPrivateSessionManager } from "../privacy/privateSessionManager.js";
+import { onNewSessionPartition } from "../extensions/extensionManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +81,13 @@ export function configureSessionPartition(ses: ElectronSession, partitionName: s
 
   // 3. Attach CORS & Local Security Bypass Interceptor
   setupCorsBypassInterceptor(ses);
+
+  // 4. Hook partition into dynamic extension session bridge
+  try {
+    onNewSessionPartition(partitionName, ses);
+  } catch (err) {
+    console.warn(`[SessionManager] Could not attach extension bridge to ${partitionName}:`, err);
+  }
 }
 
 /**

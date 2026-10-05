@@ -770,6 +770,8 @@
       }, 350);
       window.addEventListener("message", function(e) {
         if (!e.data || typeof e.data !== "object") return;
+        const allowedOrigin = window.location.origin;
+        if (e.origin !== allowedOrigin && e.source !== window) return;
         if (e.data.type === "__FORGE_TOGGLE_PIP__") {
           const allV = getAllVideosInDocument();
           if (allV.length > 0) {
@@ -2270,6 +2272,10 @@
       });
     } else {
       initUniversalMediaControls();
+    }
+    try {
+      window.__forge_extension_env = { active: true, chromium152: true };
+    } catch {
     }
   })();
 })();

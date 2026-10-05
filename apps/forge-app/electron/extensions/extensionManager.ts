@@ -3,6 +3,12 @@ import path from "node:path";
 import fs from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { diagnoseExtension, getDiagnosticReport, getAllDiagnosticReports, getDiagnosticSummary, clearDiagnosticReport } from "./extensionDiagnostics.js";
+import { ExtensionSessionBridge } from "./extensionSessionBridge.js";
+import { ExtensionTabBridge } from "./extensionTabBridge.js";
+import { ExtensionMessageBridge } from "./extensionMessageBridge.js";
+import { ExtensionActionBridge } from "./extensionActionBridge.js";
+import { ExtensionServiceWorkerManager } from "./extensionServiceWorkerManager.js";
 
 const execAsync = promisify(exec);
 
@@ -51,43 +57,17 @@ function getExtensionsStorageDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fix #2: Load extension into ALL known session partitions
+// Load & Remove extensions across all eligible session partitions
+// Delegates to ExtensionSessionBridge which tracks active sessions
 // ---------------------------------------------------------------------------
-async function loadExtensionIntoAllSessions(extDir: string): Promise<void> {
-  // Always include default session
-  try {
-    await session.defaultSession.loadExtension(extDir, { allowFileAccess: true });
-  } catch (err: any) {
-    // MV3 extensions fail here — log but don't abort
-    if (!err?.message?.includes("manifest_version 3")) {
-      console.warn(`[ExtensionManager] defaultSession load notice:`, err?.message);
-    }
-  }
-
-  // Load into every named partition
-  for (const partName of runtimePartitions) {
-    try {
-      const ses = session.fromPartition(partName);
-      await ses.loadExtension(extDir, { allowFileAccess: true });
-    } catch (err: any) {
-      if (!err?.message?.includes("manifest_version 3")) {
-        console.warn(`[ExtensionManager] ${partName} load notice:`, err?.message);
-      }
-    }
-  }
+async function loadExtensionIntoAllSessions(extDir: string, extId?: string): Promise<Map<string, { success: boolean; error?: string }>> {
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  return sessionBridge.loadExtensionIntoAll(extDir, extId || path.basename(extDir));
 }
 
-// ---------------------------------------------------------------------------
-// Fix #2: Remove extension from ALL known session partitions
-// ---------------------------------------------------------------------------
 function removeExtensionFromAllSessions(extId: string): void {
-  try { session.defaultSession.removeExtension(extId); } catch {}
-  for (const partName of runtimePartitions) {
-    try {
-      const ses = session.fromPartition(partName);
-      ses.removeExtension(extId);
-    } catch {}
-  }
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  sessionBridge.removeExtensionFromAll(extId);
 }
 
 // ---------------------------------------------------------------------------
@@ -112,13 +92,27 @@ function matchesContentScriptPattern(url: string, pattern: string): boolean {
   }
 }
 
-function injectContentScriptsIntoWebContents(contents: Electron.WebContents): void {
+function injectContentScriptsIntoWebContents(contents: Electron.WebContents, stage: "did-finish-load" | "dom-ready" = "dom-ready"): void {
   if (loadedExtensions.size === 0) return;
 
   const url = contents.getURL();
   if (!url || url === "about:blank" || url.startsWith("devtools:") || url.startsWith("chrome-extension:")) return;
 
+  const ses = contents.session;
+  // Level 1 Native Engine Check:
+  // If the extension was loaded natively into this session partition via ses.loadExtension(),
+  // Electron 44 (Chromium 152) natively runs its content scripts in the isolated world.
+  // We skip duplicate injection in that case so we do not double-run or collide with real window.chrome.
+  const nativeExts = typeof ses?.getAllExtensions === "function" ? ses.getAllExtensions() : [];
+  const nativeExtIds = new Set(nativeExts.map((e: any) => e.id.toLowerCase()));
+
   for (const { manifest, info } of loadedExtensions.values()) {
+    // If natively handled by Chromium in this session, skip manual injection
+    if (nativeExtIds.has(info.id.toLowerCase())) {
+      continue;
+    }
+
+    // Level 3 Guard: Safe non-invasive fallback for contexts where native injection was bypassed
     const contentScripts: any[] = manifest.content_scripts || [];
     for (const cs of contentScripts) {
       const matches: string[] = cs.matches || [];
@@ -129,6 +123,10 @@ function injectContentScriptsIntoWebContents(contents: Electron.WebContents): vo
         !excludeMatches.some((p: string) => matchesContentScriptPattern(url, p));
 
       if (!shouldInject) continue;
+
+      const runAt = cs.run_at || "document_idle";
+      if (stage === "dom-ready" && runAt === "document_idle") continue;
+      if (stage === "did-finish-load" && runAt !== "document_idle") continue;
 
       // Inject CSS files
       for (const cssFile of cs.css || []) {
@@ -141,40 +139,63 @@ function injectContentScriptsIntoWebContents(contents: Electron.WebContents): vo
         } catch {}
       }
 
-      // Inject JS files
+      // Inject JS files with non-destructive Level 3 runtime guards
       for (const jsFile of cs.js || []) {
         try {
           const jsPath = path.join(info.path, jsFile);
           if (fs.existsSync(jsPath)) {
             const code = fs.readFileSync(jsPath, "utf-8");
-            const runAt = cs.run_at || "document_idle";
-            // Wrap in IIFE with chrome runtime stub so basic extensions don't throw
             const wrapped = `
 (function() {
-  if (!window.chrome) window.chrome = {};
-  if (!window.chrome.runtime) window.chrome.runtime = {
-    id: "${info.id}",
-    getURL: function(p) { return "chrome-extension://${info.id}/" + p; },
-    sendMessage: function() {},
-    onMessage: { addListener: function() {}, removeListener: function() {} },
-    lastError: null
-  };
-  if (!window.chrome.storage) window.chrome.storage = {
-    local: { get: function(k,cb) { if(cb)cb({}); return Promise.resolve({}); }, set: function(k,cb) { if(cb)cb(); return Promise.resolve(); }, remove: function(k,cb) { if(cb)cb(); return Promise.resolve(); } },
-    sync: { get: function(k,cb) { if(cb)cb({}); return Promise.resolve({}); }, set: function(k,cb) { if(cb)cb(); return Promise.resolve(); }, remove: function(k,cb) { if(cb)cb(); return Promise.resolve(); } },
-    onChanged: { addListener: function() {}, removeListener: function() {} }
-  };
+  // Non-destructive fallback guard: Never overwrite genuine window.chrome if present
+  window.chrome = window.chrome || {};
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = {
+      id: "${info.id}",
+      getURL: function(p) { return "chrome-extension://${info.id}/" + (p || ""); },
+      sendMessage: function(msg, cb) {
+        try {
+          // Target own origin only — never broadcast to cross-origin listeners
+          window.postMessage({ __forge_ext_msg: true, extId: "${info.id}", message: msg }, window.location.origin || '*');
+        } catch(e) {}
+        if (typeof cb === "function") cb({ success: true });
+        return Promise.resolve({ success: true });
+      },
+      onMessage: {
+        addListener: function(fn) {
+          window.addEventListener("message", function(e) {
+            if (e.data && e.data.__forge_ext_resp && e.data.extId === "${info.id}") {
+              fn(e.data.payload, { id: "${info.id}" }, function() {});
+            }
+          });
+        },
+        removeListener: function() {}
+      },
+      lastError: null
+    };
+  }
+  if (!window.chrome.storage) {
+    window.chrome.storage = {
+      local: {
+        get: function(k, cb) { if(cb) cb({}); return Promise.resolve({}); },
+        set: function(k, cb) { if(cb) cb(); return Promise.resolve(); },
+        remove: function(k, cb) { if(cb) cb(); return Promise.resolve(); }
+      },
+      sync: {
+        get: function(k, cb) { if(cb) cb({}); return Promise.resolve({}); },
+        set: function(k, cb) { if(cb) cb(); return Promise.resolve(); },
+        remove: function(k, cb) { if(cb) cb(); return Promise.resolve(); }
+      },
+      onChanged: { addListener: function() {}, removeListener: function() {} }
+    };
+  }
   try {
     ${code}
-  } catch(e) { /* content script error isolated */ }
+  } catch(e) {
+    console.warn("[Forge Ext Fallback] Error in content script for ${info.id}:", e);
+  }
 })();`;
-            if (runAt === "document_start") {
-              // Inject immediately (page may still be loading)
-              contents.executeJavaScript(wrapped, true).catch(() => {});
-            } else {
-              // document_idle / document_end — inject after DOM ready
-              contents.executeJavaScript(wrapped).catch(() => {});
-            }
+            contents.executeJavaScript(wrapped).catch(() => {});
           }
         } catch {}
       }
@@ -183,38 +204,67 @@ function injectContentScriptsIntoWebContents(contents: Electron.WebContents): vo
 }
 
 // ---------------------------------------------------------------------------
-// Fix #4: Extension Popup Renderer
-// Opens extension popup HTML in a small floating BrowserWindow
+// Fix #4 + Phase 6: Extension Popup Renderer with Anchored Coordinates & Wake
 // ---------------------------------------------------------------------------
-function openExtensionPopup(extId: string, popupFile: string, extPath: string): void {
+function openExtensionPopup(
+  extId: string,
+  popupFile: string,
+  extPath: string,
+  anchorBounds?: { x: number; y: number; width: number; height: number }
+): void {
+  const cleanId = extId.toLowerCase();
+
   // Close any existing popup for this extension
-  const existing = popupWindows.get(extId);
+  const existing = popupWindows.get(cleanId);
   if (existing && !existing.isDestroyed()) {
     existing.close();
-    popupWindows.delete(extId);
+    popupWindows.delete(cleanId);
     return;
   }
 
   const popupPath = path.join(extPath, popupFile);
   if (!fs.existsSync(popupPath)) return;
 
+  // Phase 7: Wake the extension's service worker if it was idle/sleeping
+  ExtensionServiceWorkerManager.getInstance().wakeWorker(cleanId).catch(() => {});
+
   const focusedWin = BrowserWindow.getFocusedWindow();
   const winBounds = focusedWin?.getBounds() || { x: 0, y: 0, width: 1400, height: 900 };
 
+  const calculatedBounds = anchorBounds
+    ? ExtensionActionBridge.getInstance().calculateAnchoredBounds(anchorBounds)
+    : {
+        width: 380,
+        height: 540,
+        x: winBounds.x + winBounds.width - 400,
+        y: winBounds.y + 80,
+      };
+
+  // Determine the active tab's session partition so extension storage, cookies, and network state align
+  const activeTab = ExtensionTabBridge.getInstance().getActiveTab();
+  const partition = activeTab?.partition || "persist:forge";
+  let popupSession = session.defaultSession;
+  try {
+    popupSession = session.fromPartition(partition);
+  } catch {}
+
+  const preloadCandidate1 = path.join(__dirname, "extensionPopupPreload.cjs");
+  const preloadCandidate2 = path.join(__dirname, "extensions", "extensionPopupPreload.cjs");
+  const preloadPath = fs.existsSync(preloadCandidate1) ? preloadCandidate1 : preloadCandidate2;
+
   const popup = new BrowserWindow({
-    width: 380,
-    height: 540,
-    x: winBounds.x + winBounds.width - 400,
-    y: winBounds.y + 80,
+    ...calculatedBounds,
     frame: false,
     resizable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     backgroundColor: "#1e1e2e",
     webPreferences: {
+      preload: fs.existsSync(preloadPath) ? preloadPath : undefined,
       nodeIntegration: false,
-      contextIsolation: true,
+      contextIsolation: false,
       sandbox: false,
+      session: popupSession,
     },
     show: false,
   });
@@ -225,16 +275,28 @@ function openExtensionPopup(extId: string, popupFile: string, extPath: string): 
   });
 
   popup.on("closed", () => {
-    popupWindows.delete(extId);
+    popupWindows.delete(cleanId);
   });
 
-  // Close popup if it loses focus (behaves like a real browser extension popup)
+  // Close popup if it loses focus (standard browser extension popup behavior)
   popup.on("blur", () => {
     if (!popup.isDestroyed()) popup.close();
   });
 
-  popup.loadFile(popupPath);
-  popupWindows.set(extId, popup);
+  // Try loading via chrome-extension protocol first to preserve extension security context
+  const cleanPopupFile = popupFile.replace(/^[/\\]+/, "");
+  const chromeExtUrl = `chrome-extension://${cleanId}/${cleanPopupFile}`;
+
+  popup.loadURL(chromeExtUrl).catch((err) => {
+    console.log(`[ExtensionManager] Notice loading popup via chrome-extension:// (${err?.message}), falling back to file://`);
+    if (!popup.isDestroyed()) {
+      popup.loadFile(popupPath).catch((fileErr) => {
+        console.warn(`[ExtensionManager] Failed to load extension popup:`, fileErr);
+      });
+    }
+  });
+
+  popupWindows.set(cleanId, popup);
 }
 
 // ---------------------------------------------------------------------------
@@ -352,16 +414,11 @@ export async function installExtensionFromChromeWebStore(
     }
 
     const manifestVersion: number = manifest.manifest_version || 2;
-
-    // Fix #1: Clear MV3 warning to user instead of silent failure
-    if (manifestVersion >= 3) {
-      console.warn(`[ExtensionManager] "${manifest.name}" uses Manifest V3. Content scripts will be injected manually via Forge's content script engine. Service workers and declarativeNetRequest are not supported.`);
-    }
-
     const iconDataUrl = resolveIconDataUrl(manifest, targetDir);
 
-    // Fix #2: Load into ALL session partitions
-    await loadExtensionIntoAllSessions(targetDir);
+    // Multi-session loading & Diagnostics via ExtensionSessionBridge
+    const loadResults = await loadExtensionIntoAllSessions(targetDir, cleanedId);
+    const diagnosticReport = diagnoseExtension(targetDir, manifest, cleanedId, loadResults);
 
     const extInfo: InstalledExtensionInfo = {
       id: cleanedId,
@@ -379,7 +436,10 @@ export async function installExtensionFromChromeWebStore(
     // Register in the in-memory registry for content script injection
     loadedExtensions.set(cleanedId, { info: extInfo, manifest });
 
-    console.log(`[ExtensionManager] Installed "${extInfo.name}" (MV${manifestVersion}) into all sessions.`);
+    // Phase 6: Register action in ExtensionActionBridge
+    ExtensionActionBridge.getInstance().registerAction(cleanedId, manifest.action || manifest.browser_action);
+
+    console.log(`[ExtensionManager] Installed "${extInfo.name}" (MV${manifestVersion}) — compatibility: ${diagnosticReport.compatibilityScore}% (${diagnosticReport.compatibilityTier})`);
     return {
       success: true,
       message: `Successfully installed "${extInfo.name}"!`,
@@ -399,6 +459,9 @@ export async function uninstallExtension(extId: string): Promise<boolean> {
   try {
     removeExtensionFromAllSessions(cleanedId);
     loadedExtensions.delete(cleanedId);
+
+    // Phase 6: Unregister action from ExtensionActionBridge
+    ExtensionActionBridge.getInstance().unregisterAction(cleanedId);
 
     // Close popup if open
     const popup = popupWindows.get(cleanedId);
@@ -437,8 +500,9 @@ export async function listAndReloadInstalledExtensions(): Promise<InstalledExten
       const extId = entry.name.toLowerCase();
       const manifestVersion: number = manifest.manifest_version || 2;
 
-      // Fix #2: Load into all sessions
-      await loadExtensionIntoAllSessions(extDir);
+      // Load into all eligible sessions & run diagnostics
+      const loadResults = await loadExtensionIntoAllSessions(extDir, extId);
+      diagnoseExtension(extDir, manifest, extId, loadResults);
 
       const iconDataUrl = resolveIconDataUrl(manifest, extDir);
 
@@ -458,6 +522,9 @@ export async function listAndReloadInstalledExtensions(): Promise<InstalledExten
       // Register for content script injection
       loadedExtensions.set(extId, { info: extInfo, manifest });
 
+      // Phase 6: Register action in ExtensionActionBridge
+      ExtensionActionBridge.getInstance().registerAction(extId, manifest.action || manifest.browser_action);
+
       results.push(extInfo);
     } catch (e) {
       console.warn(`[ExtensionManager] Error loading extension at ${extDir}:`, e);
@@ -468,21 +535,24 @@ export async function listAndReloadInstalledExtensions(): Promise<InstalledExten
 }
 
 // ---------------------------------------------------------------------------
-// Fix #2 + Fix #3: Hook into new session partitions and webview WebContents
+// Fix #2 + Fix #3 + Phase 3: Hook into new session partitions and webview WebContents
 // Called from main.ts after app is ready
 // ---------------------------------------------------------------------------
 export function attachExtensionHooksToWebContents(contents: Electron.WebContents): void {
   if (contents.getType() !== "webview") return;
 
-  // Fix #3: Inject content scripts after each navigation
-  const inject = () => {
+  // Phase 3: Track tab in ExtensionTabBridge
+  ExtensionTabBridge.getInstance().attachWebContents(contents);
+
+  // Fix #3 + Phase 4: Non-destructive content scripts injection for fallback contexts
+  const inject = (stage: "did-finish-load" | "dom-ready") => {
     try {
-      injectContentScriptsIntoWebContents(contents);
+      injectContentScriptsIntoWebContents(contents, stage);
     } catch {}
   };
 
-  contents.on("did-finish-load", inject);
-  contents.on("dom-ready", inject);
+  contents.on("did-finish-load", () => inject("did-finish-load"));
+  contents.on("dom-ready", () => inject("dom-ready"));
 }
 
 // Fix #2: When a new session is created dynamically, load all extensions into it
@@ -492,6 +562,17 @@ export function onNewSessionPartition(partitionName: string, ses: Electron.Sessi
   if (!partitionName.startsWith("persist:")) return;
 
   runtimePartitions.add(partitionName);
+
+  // Register with session bridge for dynamic tracking
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  const installedExtDirs = new Map<string, string>();
+  for (const { info } of loadedExtensions.values()) {
+    installedExtDirs.set(info.id, info.path);
+  }
+  sessionBridge.onNewSessionCreated(partitionName, ses, installedExtDirs).catch(() => {});
+
+  // Phase 7: Monitor service workers on the new partition
+  ExtensionServiceWorkerManager.getInstance().monitorSession(ses, partitionName);
 
   // Load all currently installed extensions into the new session
   for (const { info } of loadedExtensions.values()) {
@@ -503,34 +584,104 @@ export function onNewSessionPartition(partitionName: string, ses: Electron.Sessi
 // Initialize all IPC handlers
 // ---------------------------------------------------------------------------
 export function initExtensionManager(): void {
+  // Phase 3, 5, 6, 7: Register all Extension subsystem bridges
+  ExtensionTabBridge.getInstance().registerIPC();
+  ExtensionMessageBridge.getInstance().registerIPC();
+  ExtensionActionBridge.getInstance().registerIPC();
+  ExtensionServiceWorkerManager.getInstance().registerIPC();
+
+  // Phase 7: Monitor service workers on default session
+  ExtensionServiceWorkerManager.getInstance().monitorSession(session.defaultSession, "default");
+
+  // Register default session partitions with the session bridge
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  for (const partName of NAMED_PARTITIONS) {
+    try {
+      const ses = session.fromPartition(partName);
+      sessionBridge.registerSession(partName, ses);
+      ExtensionServiceWorkerManager.getInstance().monitorSession(ses, partName);
+    } catch {}
+  }
+
   ipcMain.handle("extensions:install-from-cws", async (_event, payload: { extId: string; url?: string }) => {
     return installExtensionFromChromeWebStore(payload.extId, payload.url);
   });
 
   ipcMain.handle("extensions:uninstall", async (_event, payload: { extId: string }) => {
-    return uninstallExtension(payload.extId);
+    const result = await uninstallExtension(payload.extId);
+    // Clean up diagnostic data for uninstalled extension
+    clearDiagnosticReport(payload.extId?.trim().toLowerCase());
+    return result;
   });
 
   ipcMain.handle("extensions:list-installed", async () => {
     return listAndReloadInstalledExtensions();
   });
 
-  // Fix #4: IPC to open extension popup window
-  ipcMain.handle("extensions:open-popup", (_event, payload: { extId: string }) => {
-    const record = loadedExtensions.get(payload.extId?.toLowerCase());
+  // Fix #4 + Phase 6: IPC to open extension popup window with optional anchor bounds
+  ipcMain.handle("extensions:open-popup", async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { success: false, message: "Invalid payload" };
+    }
+    const p = payload as Record<string, unknown>;
+    const rawExtId = p["extId"];
+    if (typeof rawExtId !== "string" || !/^[a-z][a-z0-9]{31}$/i.test(rawExtId)) {
+      return { success: false, message: "Invalid extension ID" };
+    }
+    const cleanId = rawExtId.toLowerCase();
+    const record = loadedExtensions.get(cleanId);
     if (!record) return { success: false, message: "Extension not found" };
 
     const popupFile =
       record.manifest.action?.default_popup ||
       record.manifest.browser_action?.default_popup;
 
-    if (!popupFile) return { success: false, message: "This extension has no popup UI" };
+    if (!popupFile) {
+      // Phase 6: Extension without popup triggers action.onClicked
+      try {
+        const activeTab = ExtensionTabBridge.getInstance().getActiveTab();
+        await ExtensionServiceWorkerManager.getInstance().wakeWorker(cleanId);
+        await ExtensionMessageBridge.getInstance().sendMessageToExtension(cleanId, {
+          __forge_action_click: true,
+          tab: activeTab,
+        });
+        return { success: true, clicked: true };
+      } catch {
+        return { success: false, message: "This extension has no popup UI" };
+      }
+    }
 
     try {
-      openExtensionPopup(record.info.id, popupFile, record.info.path);
+      openExtensionPopup(record.info.id, popupFile, record.info.path, p["anchorBounds"] as any);
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err?.message || "Failed to open popup" };
+    }
+  });
+
+  // Dynamic popup window auto-resize handler
+  ipcMain.on("extensions:popup:resize", (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    const p = payload as Record<string, unknown>;
+
+    const extId = p["extensionId"];
+    if (typeof extId !== "string" || !/^[a-z][a-z0-9]{31}$/i.test(extId)) return;
+
+    // Clamp dimensions server-side (defence-in-depth — preload also clamps)
+    const rawW = p["width"];
+    const rawH = p["height"];
+    if (typeof rawW !== "number" || typeof rawH !== "number") return;
+    if (!Number.isFinite(rawW) || !Number.isFinite(rawH)) return;
+
+    const targetW = Math.round(Math.min(Math.max(rawW, 200), 800));
+    const targetH = Math.round(Math.min(Math.max(rawH, 150), 600));
+
+    const win = popupWindows.get(extId.toLowerCase());
+    if (win && !win.isDestroyed()) {
+      const [currentW, currentH] = win.getSize();
+      if (Math.abs(currentW - targetW) > 8 || Math.abs(currentH - targetH) > 8) {
+        win.setSize(targetW, targetH);
+      }
     }
   });
 
@@ -542,6 +693,22 @@ export function initExtensionManager(): void {
       record.manifest.action?.default_popup ||
       record.manifest.browser_action?.default_popup;
     return { hasPopup: Boolean(popupFile), popupFile: popupFile || null };
+  });
+
+  // ── Phase 1 Diagnostics IPC ──
+  ipcMain.handle("extensions:diagnostics", async (_event, payload?: { extId?: string }) => {
+    if (payload?.extId) {
+      return getDiagnosticReport(payload.extId.toLowerCase()) || null;
+    }
+    return getAllDiagnosticReports();
+  });
+
+  ipcMain.handle("extensions:diagnostics-summary", async () => {
+    return getDiagnosticSummary();
+  });
+
+  ipcMain.handle("extensions:session-bridge-summary", async () => {
+    return sessionBridge.getSummary();
   });
 
   // Startup: load all previously installed extensions

@@ -245,6 +245,20 @@ export function setupCorsBypassInterceptor(targetSession: Electron.Session) {
       delete responseHeaders["Content-Security-Policy-Report-Only"];
     }
 
+    // Strip deprecated/invalid 'X-Frame-Options: ALLOW-FROM' directives (e.g. from ogs.google.com)
+    // which modern Chromium/Blink no longer recognizes and logs as a console error
+    for (const key of Object.keys(responseHeaders)) {
+      if (key.toLowerCase() === "x-frame-options") {
+        const val = responseHeaders[key];
+        const hasAllowFrom = (s: string) => s.toLowerCase().includes("allow-from");
+        if (Array.isArray(val) && val.some(hasAllowFrom)) {
+          delete responseHeaders[key];
+        } else if (typeof val === "string" && hasAllowFrom(val)) {
+          delete responseHeaders[key];
+        }
+      }
+    }
+
     // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen
     for (const key of Object.keys(responseHeaders)) {
       const lower = key.toLowerCase();

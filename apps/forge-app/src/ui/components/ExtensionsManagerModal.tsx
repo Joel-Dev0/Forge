@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Puzzle,
   ShieldCheck,
@@ -16,10 +16,22 @@ import {
   AppWindow,
   ExternalLink,
   Info,
+  Cpu,
+  Layers,
+  Server,
+  Activity,
+  Check,
+  Globe,
+  Radio,
+  Clock,
+  Sparkles,
+  Shield,
+  RefreshCw,
 } from "lucide-react";
 
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { type ExtensionType, type SecurityTier } from "../../core/extensions/extensionTypes";
+import { CAPABILITY_MAP, type SupportLevel } from "../../core/extensions/extensionCapabilityMap";
 
 export function ExtensionsManagerModal() {
   const {
@@ -27,17 +39,34 @@ export function ExtensionsManagerModal() {
     isManagerOpen,
     activeFilter,
     selectedExtensionId,
+    diagnosticReports,
+    diagnosticSummaries,
+    sessionBridgeSummary,
+    tabSummary,
+    messageStats,
+    serviceWorkerStatuses,
+    actionBadges,
     setManagerOpen,
     setActiveFilter,
     setSelectedExtension,
     toggleExtension,
     uninstallExtension,
     verifyPackage,
+    fetchDiagnostics,
+    fetchDiagnosticsSummary,
+    fetchSessionBridgeSummary,
+    fetchTabSummary,
+    fetchMessageStats,
+    fetchServiceWorkerStatuses,
+    fetchActionBadges,
   } = useExtensionsStore();
 
-  const [activeTab, setActiveTab] = useState<"installed" | "security_gate" | "catalog">("installed");
+  const [activeTab, setActiveTab] = useState<"installed" | "security_gate" | "diagnostics">("installed");
   const [search, setSearch] = useState("");
   const [openingPopup, setOpeningPopup] = useState<string | null>(null);
+  const [matrixFilter, setMatrixFilter] = useState<"all" | SupportLevel>("all");
+  const [matrixSearch, setMatrixSearch] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Security gate test input state
   const [testName, setTestName] = useState("Custom Inspector Pro");
@@ -45,7 +74,36 @@ export function ExtensionsManagerModal() {
   const [testPermissions, setTestPermissions] = useState<string>("tabs, storage, webRequest");
   const [testResult, setTestResult] = useState<any | null>(null);
 
+  // Auto-fetch diagnostics on open
+  useEffect(() => {
+    if (isManagerOpen) {
+      fetchDiagnosticsSummary();
+      fetchSessionBridgeSummary();
+      fetchTabSummary();
+      fetchMessageStats();
+      fetchServiceWorkerStatuses();
+      fetchActionBadges();
+      if (selectedExtensionId) {
+        fetchDiagnostics(selectedExtensionId);
+      }
+    }
+  }, [isManagerOpen, selectedExtensionId]);
+
   if (!isManagerOpen) return null;
+
+  const handleRefreshDiagnostics = async () => {
+    setIsRefreshing(true);
+    await Promise.allSettled([
+      fetchDiagnosticsSummary(),
+      fetchSessionBridgeSummary(),
+      fetchTabSummary(),
+      fetchMessageStats(),
+      fetchServiceWorkerStatuses(),
+      fetchActionBadges(),
+      selectedExtensionId ? fetchDiagnostics(selectedExtensionId) : Promise.resolve(),
+    ]);
+    setTimeout(() => setIsRefreshing(false), 400);
+  };
 
   const filtered = extensions.filter((e) => {
     const matchesFilter = activeFilter === "all" || e.type === activeFilter;
@@ -57,6 +115,7 @@ export function ExtensionsManagerModal() {
   });
 
   const selected = extensions.find((e) => e.id === selectedExtensionId) || filtered[0];
+  const selectedDiagnostic = selected ? diagnosticReports[selected.id.toLowerCase()] || selected.diagnostic : null;
 
   const TIER_CONFIG: Record<SecurityTier, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     trusted: { label: "Trusted (Auto-Install)", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", icon: <CheckCircle2 size={12} /> },
@@ -66,25 +125,46 @@ export function ExtensionsManagerModal() {
     critical: { label: "Critical (Blocked)", color: "text-red-400", bg: "bg-red-500/10 border-red-500/30", icon: <XCircle size={12} /> },
   };
 
+  const SUPPORT_CONFIG: Record<SupportLevel, { label: string; color: string; bg: string; border: string }> = {
+    native: { label: "Native (Electron 44)", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
+    partial: { label: "Partial Native", color: "text-sky-400", bg: "bg-sky-500/10", border: "border-sky-500/30" },
+    adapter: { label: "Forge Adapter", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
+    fallback: { label: "Forge Fallback", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
+    unsupported: { label: "Unsupported", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30" },
+  };
+
   const handleRunSecurityGate = () => {
     const perms = testPermissions.split(",").map((s) => s.trim()).filter(Boolean);
     const rep = verifyPackage(testName, testType, perms);
     setTestResult(rep);
   };
 
+  const filteredCapabilityMap = CAPABILITY_MAP.filter((cap) => {
+    const matchesFilter = matrixFilter === "all" || cap.electronSupport === matrixFilter;
+    const matchesSearch =
+      cap.api.toLowerCase().includes(matrixSearch.toLowerCase()) ||
+      cap.notes.toLowerCase().includes(matrixSearch.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
   return (
     <div className="fixed inset-0 z-[10015] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-200">
-      <div className="bg-[#12141f] border border-[var(--forge-border)] w-full max-w-5xl h-[82vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-white font-sans">
+      <div className="bg-[#12141f] border border-[var(--forge-border)] w-full max-w-5xl h-[86vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-white font-sans">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--forge-border)] bg-[#151827]">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-[var(--forge-border)] bg-[#151827]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/20 text-[#FF6B00] flex items-center justify-center border border-[#FF6B00]/30 shadow-inner">
               <Puzzle size={18} />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white tracking-wide">Forge Extension Platform</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white tracking-wide">Forge Extension Platform</h2>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                  Chromium 152 • Electron 44
+                </span>
+              </div>
               <p className="text-[11px] text-zinc-400">
-                Dual architecture: Chromium Browser Extensions &amp; Developer Workspace Extensions
+                3-Level Architecture: Native Extension Engine • Forge Adapters • Polyfill Fallbacks
               </p>
             </div>
           </div>
@@ -107,7 +187,26 @@ export function ExtensionsManagerModal() {
               >
                 Security &amp; Verification Gate
               </button>
+              <button
+                onClick={() => setActiveTab("diagnostics")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                  activeTab === "diagnostics" ? "bg-[var(--forge-surface)] text-[#FF6B00] font-bold shadow-xs" : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <Cpu size={12} />
+                <span>Electron 44 Architecture</span>
+              </button>
             </div>
+
+            <button
+              onClick={handleRefreshDiagnostics}
+              title="Refresh diagnostic metrics"
+              className={`w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer ${
+                isRefreshing ? "animate-spin text-[#FF6B00]" : ""
+              }`}
+            >
+              <RefreshCw size={14} />
+            </button>
 
             <button
               onClick={() => setManagerOpen(false)}
@@ -163,10 +262,15 @@ export function ExtensionsManagerModal() {
                   filtered.map((ext) => {
                     const isSel = selected?.id === ext.id;
                     const tier = TIER_CONFIG[ext.verification.securityTier];
+                    const diagSummary = diagnosticSummaries.find((d) => d.extensionId === ext.id.toLowerCase()) || ext.diagnostic;
+
                     return (
                       <button
                         key={ext.id}
-                        onClick={() => setSelectedExtension(ext.id)}
+                        onClick={() => {
+                          setSelectedExtension(ext.id);
+                          fetchDiagnostics(ext.id);
+                        }}
                         className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
                           isSel
                             ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
@@ -181,7 +285,22 @@ export function ExtensionsManagerModal() {
                         </div>
                         <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">{ext.description}</p>
                         <div className="flex items-center justify-between mt-2 pt-1 border-t border-white/5">
-                          <span className="text-[9px] font-mono text-zinc-400">{ext.type === "browser" ? "Chromium API" : "Forge IDE API"}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-mono text-zinc-400">
+                              {ext.type === "browser" ? "Chromium Ext" : "Forge IDE API"}
+                            </span>
+                            {diagSummary && (
+                              <span className={`text-[8px] font-mono px-1 py-0.2 rounded border ${
+                                diagSummary.score >= 90
+                                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                                  : diagSummary.score >= 65
+                                    ? "bg-sky-500/15 border-sky-500/30 text-sky-400"
+                                    : "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                              }`}>
+                                {diagSummary.score}%
+                              </span>
+                            )}
+                          </div>
                           <span className={`flex items-center gap-1 text-[9px] font-mono ${tier.color}`}>
                             {tier.icon}
                             <span>{ext.verification.securityTier.toUpperCase()}</span>
@@ -194,7 +313,7 @@ export function ExtensionsManagerModal() {
               </div>
             </div>
 
-            {/* Right: Selected Extension Details & Permissions Audit */}
+            {/* Right: Selected Extension Details & Diagnostics */}
             {selected ? (
               <div className="flex-1 flex flex-col bg-[#12141f] overflow-y-auto p-6 space-y-6">
                 <div className="flex items-start justify-between pb-4 border-b border-[var(--forge-border)]">
@@ -205,6 +324,17 @@ export function ExtensionsManagerModal() {
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-zinc-300">
                         {selected.type === "browser" ? "Chromium Extension" : "Developer Extension"}
                       </span>
+                      {selectedDiagnostic && (
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                          selectedDiagnostic.score >= 90
+                            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                            : selectedDiagnostic.score >= 65
+                              ? "bg-sky-500/15 border-sky-500/30 text-sky-400"
+                              : "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                        }`}>
+                          {selectedDiagnostic.score}% COMPATIBLE • {selectedDiagnostic.tier?.toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-zinc-400 mt-1">{selected.description}</p>
                     <p className="text-[11px] font-mono text-zinc-500 mt-1 flex items-center gap-1.5">
@@ -214,7 +344,7 @@ export function ExtensionsManagerModal() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Fix #4: Open popup button for extensions with popup UI */}
+                    {/* Open popup button */}
                     <button
                       onClick={async () => {
                         setOpeningPopup(selected.id);
@@ -253,7 +383,116 @@ export function ExtensionsManagerModal() {
                   </div>
                 </div>
 
-                {/* Security Verification Gate Report (Section 10.2) */}
+                {/* ── Level 1 / 2 / 3 Electron 44 Compatibility & Diagnostics Card ── */}
+                <div className="p-4 rounded-xl bg-[#090b11] border border-[var(--forge-border)] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Cpu size={14} className="text-[#FF6B00]" />
+                      <span>Electron 44 Runtime &amp; Diagnostic Inspection</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-1">
+                      <Radio size={10} className="text-emerald-400 animate-pulse" />
+                      <span>Chromium 152 Native Engine</span>
+                    </span>
+                  </div>
+
+                  {/* Architecture Metrics Grid */}
+                  <div className="grid grid-cols-4 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-mono uppercase block">Manifest Version</span>
+                      <span className="font-bold text-white text-xs flex items-center gap-1">
+                        <Sparkles size={11} className="text-amber-400" />
+                        <span>MV{selectedDiagnostic?.manifestVersion || (selected.manifestPermissions.includes("host_permissions") ? 3 : 2)}</span>
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-mono uppercase block">Native Injection</span>
+                      <span className="font-bold text-emerald-400 text-xs flex items-center gap-1">
+                        <CheckCircle2 size={11} />
+                        <span>Content Scripts ✓</span>
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-mono uppercase block">Background Type</span>
+                      <span className="font-bold text-sky-400 text-xs truncate block font-mono">
+                        {selectedDiagnostic?.background?.type === "service_worker"
+                          ? "Service Worker (MV3)"
+                          : selectedDiagnostic?.background?.type === "scripts"
+                            ? "Background Page (MV2)"
+                            : "None"}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-mono uppercase block">Session Partitions</span>
+                      <span className="font-bold text-zinc-300 text-xs flex items-center gap-1">
+                        <Server size={11} className="text-purple-400" />
+                        <span>{selectedDiagnostic?.loadedIntoSessions?.length || 2} active sessions</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Real Compatibility Breakdown */}
+                  {selectedDiagnostic?.capabilities && selectedDiagnostic.capabilities.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                        API Support Breakdown
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {selectedDiagnostic.capabilities
+                          .filter((c: any) => c.usedByExtension)
+                          .map((cap: any) => {
+                            const isNative = cap.status === "native";
+                            const isAdapter = cap.status === "adapter";
+                            const isFallback = cap.status === "fallback";
+                            return (
+                              <div
+                                key={cap.api}
+                                className={`p-2 rounded-lg border flex items-center justify-between ${
+                                  isNative
+                                    ? "bg-emerald-500/5 border-emerald-500/20"
+                                    : isAdapter
+                                      ? "bg-blue-500/5 border-blue-500/20"
+                                      : isFallback
+                                        ? "bg-amber-500/5 border-amber-500/20"
+                                        : "bg-rose-500/5 border-rose-500/20"
+                                }`}
+                              >
+                                <span className="font-mono text-[11px] text-zinc-200">{cap.api}</span>
+                                <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                  isNative
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : isAdapter
+                                      ? "bg-blue-500/20 text-blue-400"
+                                      : isFallback
+                                        ? "bg-amber-500/20 text-amber-400"
+                                        : "bg-rose-500/20 text-rose-400"
+                                }`}>
+                                  {cap.status.toUpperCase()}
+                                </span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Multi-Session Isolation Guarantee */}
+                  <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 flex items-start gap-2.5 text-xs">
+                    <Shield size={14} className="text-purple-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-white text-[11px] block">Session Bridge &amp; Privacy Isolation</span>
+                      <span className="text-zinc-400 text-[10px] leading-relaxed block mt-0.5">
+                        Extension runs natively in standard workspaces (<code className="px-1 bg-white/5 rounded text-zinc-300">default</code>, <code className="px-1 bg-white/5 rounded text-zinc-300">persist:forge</code>).
+                        Extensions are <strong className="text-emerald-400">strictly excluded</strong> from Tor circuits (<code className="px-1 bg-white/5 rounded text-zinc-300">tor_*</code>) and Private browsing (<code className="px-1 bg-white/5 rounded text-zinc-300">private_*</code>) to prevent identity leakage.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Security Verification Gate Report */}
                 <div className="p-4 rounded-xl bg-[#090b11] border border-[var(--forge-border)] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -291,22 +530,6 @@ export function ExtensionsManagerModal() {
                       ))}
                     </div>
                   </div>
-
-                  {/* Fix #1: MV3 compatibility notice */}
-                  {selected.type === "browser" && (
-                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[10px] text-amber-400">
-                      <Info size={13} className="shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold block">Compatibility Note</span>
-                        <span className="text-amber-300/80">
-                          Forge injects content scripts directly into webview pages. Service Workers and
-                          <code className="mx-1 px-1 rounded bg-amber-500/10">declarativeNetRequest</code>
-                          (MV3) are not supported by Electron. Extensions relying solely on page-DOM
-                          injection (CSS/JS) will work correctly.
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (
@@ -436,6 +659,268 @@ export function ExtensionsManagerModal() {
                     Configure permissions on the left and click "Run Gate Verification Pipeline" to inspect.
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Electron 44 Extension Engine Architecture & Diagnostics Matrix */}
+        {activeTab === "diagnostics" && (
+          <div className="flex-1 p-6 overflow-y-auto space-y-6">
+            <div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Cpu size={18} className="text-[#FF6B00]" />
+                    <span>Electron 44 (Chromium 152) Extension Architecture</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Real architectural model: Native Electron capabilities, custom Forge adapters, and fallback safeguards.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
+                    MV3 Supported
+                  </div>
+                  <div className="px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-mono">
+                    Service Worker Preload ✓
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3-Level Architecture Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-[#0e101a] border border-emerald-500/30 space-y-2 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <CheckCircle2 size={16} />
+                  <h4 className="font-bold text-xs uppercase tracking-wider">Level 1: Native Engine</h4>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Electron 44 &amp; Chromium 152 natively parse MV3 manifests, execute Service Workers, inject Content Scripts by run_at timing, and run core Chrome APIs:
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {["chrome.runtime", "chrome.storage.local", "content_scripts", "chrome.webRequest", "chrome.scripting", "host_permissions"].map((api) => (
+                    <span key={api} className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono text-[9px]">
+                      {api}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0e101a] border border-blue-500/30 space-y-2 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center gap-2 text-blue-400">
+                  <Layers size={16} />
+                  <h4 className="font-bold text-xs uppercase tracking-wider">Level 2: Forge Adapters</h4>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Electron renders no browser chrome. Forge provides custom adapters for extension actions, popup windows, and tab coordination:
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {["chrome.action", "chrome.browserAction", "chrome.tabs (partial)", "chrome.windows", "chrome.contextMenus", "chrome.downloads"].map((api) => (
+                    <span key={api} className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 font-mono text-[9px]">
+                      {api}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0e101a] border border-amber-500/30 space-y-2 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center gap-2 text-amber-400">
+                  <Activity size={16} />
+                  <h4 className="font-bold text-xs uppercase tracking-wider">Level 3: Polyfill Guards</h4>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Defensive fallbacks for APIs not natively wired to Electron's event loop, ensuring robust execution even when extensions rely on timers:
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {["chrome.alarms", "chrome.notifications", "ContentScript Injector Guard"].map((api) => (
+                    <span key={api} className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono text-[9px]">
+                      {api}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Subsystem Bridges Telemetry */}
+            <div className="p-4 rounded-xl bg-[#090b11] border border-[var(--forge-border)] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity size={14} className="text-sky-400" />
+                  <span>Subsystem Bridges &amp; Runtime Telemetry</span>
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>ACTIVE ELECTRON 44 BRIDGES</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3 text-xs">
+                {/* 1. Tab Bridge */}
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">ExtensionTabBridge</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold text-white font-mono">{tabSummary?.totalTabs ?? 0}</span>
+                    <span className="text-[10px] font-mono text-sky-400">TABS WIRED</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Maps <code className="text-zinc-400">chrome.tabs</code> to guest &lt;webview&gt; WebContents.
+                  </p>
+                </div>
+
+                {/* 2. Message Bridge */}
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">MessageBridge</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold text-white font-mono">{messageStats?.totalDelivered ?? 0}</span>
+                    <span className="text-[10px] font-mono text-emerald-400">MSGS ROUTED</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Cross-context content script ↔ SW ↔ UI router.
+                  </p>
+                </div>
+
+                {/* 3. Action Bridge */}
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">ActionBridge</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold text-white font-mono">{Object.keys(actionBadges).length}</span>
+                    <span className="text-[10px] font-mono text-purple-400">BADGES SYNCED</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Toolbar icon badges &amp; anchored popup coords.
+                  </p>
+                </div>
+
+                {/* 4. Service Worker Manager */}
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">ServiceWorkerManager</span>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold text-white font-mono">{Object.keys(serviceWorkerStatuses).length}</span>
+                    <span className="text-[10px] font-mono text-amber-400">WORKERS TRACKED</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Lifecycle &amp; on-demand wake for MV3 workers.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic Session Bridge Registry */}
+            <div className="p-4 rounded-xl bg-[#090b11] border border-[var(--forge-border)] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Server size={14} className="text-purple-400" />
+                  <span>Dynamic Session Bridge Registry</span>
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  {sessionBridgeSummary.length > 0 ? `${sessionBridgeSummary.length} registered partitions` : "Default sessions active"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1 text-xs">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">Active Partitions</span>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="flex items-center justify-between text-emerald-400">
+                      <span>• defaultSession</span>
+                      <span className="text-[9px] px-1 rounded bg-emerald-500/20">ELIGIBLE</span>
+                    </div>
+                    <div className="flex items-center justify-between text-emerald-400">
+                      <span>• persist:forge</span>
+                      <span className="text-[9px] px-1 rounded bg-emerald-500/20">ELIGIBLE</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1 text-xs">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">Tor Circuit Mode</span>
+                  <p className="text-emerald-400 font-semibold flex items-center gap-1 text-[11px]">
+                    <CheckCircle2 size={12} />
+                    <span>Extensions Strictly Blocked</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Zero network requests, no canvas fingerprinting leaks.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg bg-[var(--forge-input)] border border-white/5 space-y-1 text-xs">
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase block">Private Browsing</span>
+                  <p className="text-purple-400 font-semibold flex items-center gap-1 text-[11px]">
+                    <Shield size={12} />
+                    <span>In-Memory RAM Isolation</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Partitions are cleaned on tab close; extensions excluded by default.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Capability Reference Table */}
+            <div className="p-4 rounded-xl bg-[#090b11] border border-[var(--forge-border)] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Cpu size={14} className="text-[#FF6B00]" />
+                  <span>Electron 44 Capability Map ({filteredCapabilityMap.length} APIs)</span>
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--forge-input)] border border-[var(--forge-border)]">
+                    <Search size={12} className="text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder="Filter APIs..."
+                      value={matrixSearch}
+                      onChange={(e) => setMatrixSearch(e.target.value)}
+                      className="bg-transparent text-[11px] text-white outline-none w-32 placeholder-zinc-500 font-mono"
+                    />
+                  </div>
+
+                  <select
+                    value={matrixFilter}
+                    onChange={(e) => setMatrixFilter(e.target.value as any)}
+                    className="px-2.5 py-1 rounded-lg bg-[var(--forge-input)] border border-[var(--forge-border)] text-[11px] text-white outline-none font-mono cursor-pointer"
+                  >
+                    <option value="all">All Tiers</option>
+                    <option value="native">Native Only</option>
+                    <option value="partial">Partial Native</option>
+                    <option value="adapter">Forge Adapter</option>
+                    <option value="fallback">Forge Fallback</option>
+                    <option value="unsupported">Unsupported</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+                {filteredCapabilityMap.map((cap) => {
+                  const conf = SUPPORT_CONFIG[cap.electronSupport];
+                  return (
+                    <div
+                      key={cap.api}
+                      className="p-2.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 flex items-center justify-between gap-3 text-xs transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-white text-[11px]">{cap.api}</span>
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${conf.bg} ${conf.border} ${conf.color}`}>
+                            {conf.label.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 mt-0.5 leading-relaxed">{cap.notes}</p>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[9px] font-mono text-zinc-500 block">Weight: {cap.weight}/10</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -358,6 +358,24 @@ declare global {
         installFromWebStore: (extId: string, url?: string) => Promise<{ success: boolean; message: string; extension?: any }>;
         uninstall: (extId: string) => Promise<boolean>;
         listInstalled: () => Promise<any[]>;
+        openPopup?: (extId: string, anchorBounds?: { x: number; y: number; width: number; height: number }) => Promise<{ success: boolean; message?: string }>;
+        getPopupInfo: (extId: string) => Promise<{ hasPopup: boolean; popupFile: string | null }>;
+        getDiagnostics: (extId?: string) => Promise<any>;
+        getDiagnosticsSummary: () => Promise<any[]>;
+        getSessionBridgeSummary: () => Promise<any[]>;
+        getTabSummary?: () => Promise<{ totalTabs: number; activeTabId: number | null; tabs: any[] }>;
+        syncTabs?: (tabs: any[]) => Promise<{ success: boolean }>;
+        setActiveTab?: (webContentsId: number) => Promise<{ success: boolean }>;
+        queryTabs?: (filter?: any) => Promise<any[]>;
+        sendMessageToTab?: (tabId: number, message: any) => Promise<any>;
+        sendMessage?: (extensionId: string, message: any) => Promise<any>;
+        broadcastMessage?: (message: any, filter?: any) => Promise<{ success: boolean }>;
+        getMessageStats?: () => Promise<{ totalSent: number; totalDelivered: number; totalFailed: number; activeChannels: number; lastMessageAt: number | null }>;
+        getAllBadges?: (tabId?: number) => Promise<Record<string, { text: string; textColor?: string; backgroundColor?: string; title?: string }>>;
+        getBadge?: (extensionId: string, tabId?: number) => Promise<{ text: string; textColor?: string; backgroundColor?: string; title?: string }>;
+        onBadgeUpdated?: (callback: (data: { extensionId: string; badge: any }) => void) => () => void;
+        getServiceWorkerStatuses?: () => Promise<Record<string, any>>;
+        wakeServiceWorker?: (extensionId: string) => Promise<{ success: boolean; message: string }>;
       };
     };
   }

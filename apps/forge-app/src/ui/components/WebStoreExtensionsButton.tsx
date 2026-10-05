@@ -11,6 +11,7 @@ import {
   X,
   Shield,
   AlertTriangle,
+  Cpu,
 } from "lucide-react";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
@@ -56,6 +57,9 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
 
   const {
     extensions,
+    diagnosticSummaries,
+    actionBadges,
+    setManagerOpen,
     toggleExtension,
     togglePinExtension,
     uninstallExtension,
@@ -113,8 +117,24 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
     }
   };
 
-  const handlePinnedIconClick = (ext: ForgeExtension) => {
+  const handlePinnedIconClick = async (ext: ForgeExtension, e: React.MouseEvent<HTMLButtonElement>) => {
     setIsMenuOpen(false);
+    const forgeApi = (window as any).forge;
+    if (forgeApi?.extensions?.getPopupInfo) {
+      try {
+        const popupInfo = await forgeApi.extensions.getPopupInfo(ext.id);
+        if (popupInfo?.hasPopup && forgeApi.extensions.openPopup) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          await forgeApi.extensions.openPopup(ext.id, {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          });
+          return;
+        }
+      } catch {}
+    }
     setActivePopupId((prev) => (prev === ext.id ? null : ext.id));
   };
 
@@ -123,21 +143,35 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
   return (
     <div ref={containerRef} className="relative flex items-center gap-1 select-none">
       {/* ═══ 1. Pinned Extension Icons (From Chrome Web Store) ═══ */}
-      {pinnedExtensions.map((ext) => (
-        <button
-          key={ext.id}
-          type="button"
-          onClick={() => handlePinnedIconClick(ext)}
-          title={`${ext.name}`}
-          className={`w-7 h-7 flex items-center justify-center rounded-md transition-all cursor-pointer relative p-1 ${
-            activePopupId === ext.id
-              ? "bg-[var(--forge-hover)] ring-1 ring-[#FF6B00]/40 shadow-sm"
-              : "hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white"
-          }`}
-        >
-          {renderExtensionIcon(ext.icon, ext.name)}
-        </button>
-      ))}
+      {pinnedExtensions.map((ext) => {
+        const badge = actionBadges[ext.id.toLowerCase()];
+        return (
+          <button
+            key={ext.id}
+            type="button"
+            onClick={(e) => handlePinnedIconClick(ext, e)}
+            title={badge?.title || ext.name}
+            className={`w-7 h-7 flex items-center justify-center rounded-md transition-all cursor-pointer relative p-1 ${
+              activePopupId === ext.id
+                ? "bg-[var(--forge-hover)] ring-1 ring-[#FF6B00]/40 shadow-sm"
+                : "hover:bg-[var(--forge-hover)] text-zinc-300 hover:text-white"
+            }`}
+          >
+            {renderExtensionIcon(ext.icon, ext.name)}
+            {badge?.text && (
+              <span
+                className="absolute -top-1 -right-1 px-1 min-w-[13px] h-[13px] rounded-full text-[8.5px] font-bold flex items-center justify-center pointer-events-none shadow"
+                style={{
+                  backgroundColor: badge.backgroundColor || "#FF6B00",
+                  color: badge.textColor || "#ffffff",
+                }}
+              >
+                {badge.text}
+              </span>
+            )}
+          </button>
+        );
+      })}
 
       {/* ═══ 2. Chrome Extension Puzzle Piece Hub Button ═══ */}
       <button
@@ -257,15 +291,29 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenChromeWebStore}
-              title="Open Chrome Web Store in browser"
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FF6B00] hover:bg-[#FF8533] text-white text-[10px] font-bold transition-all shadow cursor-pointer"
-            >
-              <span>Web Store</span>
-              <ExternalLink size={10} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setManagerOpen(true);
+                }}
+                title="Open Extensions Manager & Matrix"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[10px] font-mono transition-colors cursor-pointer border border-white/10"
+              >
+                <Cpu size={11} className="text-[#FF6B00]" />
+                <span>Matrix</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenChromeWebStore}
+                title="Open Chrome Web Store in browser"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FF6B00] hover:bg-[#FF8533] text-white text-[10px] font-bold transition-all shadow cursor-pointer"
+              >
+                <span>Web Store</span>
+                <ExternalLink size={10} />
+              </button>
+            </div>
           </div>
 
           {/* Tor Mode Policy Alert */}
@@ -354,24 +402,66 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
                 </button>
               </div>
             ) : (
-              browserExtensions.map((ext) => (
+              browserExtensions.map((ext) => {
+                const diag = diagnosticSummaries.find((d) => d.extensionId === ext.id.toLowerCase()) || ext.diagnostic;
+                const badge = actionBadges[ext.id.toLowerCase()];
+                return (
                 <div
                   key={ext.id}
                   className="flex items-center justify-between p-2 rounded-xl hover:bg-white/[0.05] transition-colors text-xs group"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => handlePinnedIconClick(ext, e)}
+                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group/title"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center shrink-0 relative">
                       {renderExtensionIcon(ext.icon, ext.name)}
+                      {badge?.text && (
+                        <span
+                          className="absolute -top-1 -right-1 px-1 min-w-[11px] h-[11px] rounded-full text-[7.5px] font-bold flex items-center justify-center pointer-events-none shadow"
+                          style={{
+                            backgroundColor: badge.backgroundColor || "#FF6B00",
+                            color: badge.textColor || "#ffffff",
+                          }}
+                        >
+                          {badge.text}
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-white truncate text-[11px] leading-tight">
+                      <p className="font-bold text-white group-hover/title:text-sky-300 transition-colors truncate text-[11px] leading-tight">
                         {ext.name}
                       </p>
-                      <p className="text-[10px] text-zinc-400 truncate">
-                        v{ext.version} • {ext.author}
-                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[10px] text-zinc-400 truncate">
+                          v{ext.version}
+                        </p>
+                        {badge?.text && (
+                          <span
+                            className="text-[8px] font-bold px-1 py-0.2 rounded"
+                            style={{
+                              backgroundColor: `${badge.backgroundColor || "#FF6B00"}25`,
+                              color: badge.backgroundColor || "#FF6B00",
+                            }}
+                          >
+                            {badge.text}
+                          </span>
+                        )}
+                        {diag && (
+                          <span className={`text-[8px] font-mono px-1 py-0.2 rounded border ${
+                            diag.score >= 90
+                              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                              : diag.score >= 65
+                                ? "bg-sky-500/15 border-sky-500/30 text-sky-400"
+                                : "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                          }`}>
+                            {diag.score}%
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </button>
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     {/* Pin / Unpin Button */}
@@ -413,7 +503,8 @@ export function WebStoreExtensionsButton({ onNavigate }: Props) {
                     </button>
                   </div>
                 </div>
-              ))
+              );
+            })
             )}
           </div>
         </div>

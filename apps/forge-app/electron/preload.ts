@@ -355,12 +355,51 @@ contextBridge.exposeInMainWorld("forge", {
       ipcRenderer.invoke("extensions:uninstall", { extId }),
     listInstalled: () =>
       ipcRenderer.invoke("extensions:list-installed"),
-    // Fix #4: Open extension popup window
-    openPopup: (extId: string) =>
-      ipcRenderer.invoke("extensions:open-popup", { extId }),
-    // Fix #4: Check if extension has a popup
+    // Fix #4 + Phase 6: Open extension popup window with optional anchorBounds
+    openPopup: (extId: string, anchorBounds?: { x: number; y: number; width: number; height: number }) =>
+      ipcRenderer.invoke("extensions:open-popup", { extId, anchorBounds }),
     getPopupInfo: (extId: string) =>
       ipcRenderer.invoke("extensions:get-popup-info", { extId }),
+    // Phase 1 Diagnostics: Query extension compatibility data
+    getDiagnostics: (extId?: string) =>
+      ipcRenderer.invoke("extensions:diagnostics", extId ? { extId } : undefined),
+    getDiagnosticsSummary: () =>
+      ipcRenderer.invoke("extensions:diagnostics-summary"),
+    getSessionBridgeSummary: () =>
+      ipcRenderer.invoke("extensions:session-bridge-summary"),
+    // Phase 3: Tab Bridge
+    getTabSummary: () =>
+      ipcRenderer.invoke("extensions:tabs:summary"),
+    syncTabs: (tabs: any[]) =>
+      ipcRenderer.invoke("extensions:tabs:sync", tabs),
+    setActiveTab: (webContentsId: number) =>
+      ipcRenderer.invoke("extensions:tabs:set-active", webContentsId),
+    queryTabs: (filter?: any) =>
+      ipcRenderer.invoke("extensions:tabs:query", filter),
+    sendMessageToTab: (tabId: number, message: any) =>
+      ipcRenderer.invoke("extensions:tabs:send-message", { tabId, message }),
+    // Phase 5: Messaging Bridge
+    sendMessage: (extensionId: string, message: any) =>
+      ipcRenderer.invoke("extensions:runtime:send-message", { extensionId, message }),
+    broadcastMessage: (message: any, filter?: any) =>
+      ipcRenderer.invoke("extensions:runtime:broadcast", { message, filter }),
+    getMessageStats: () =>
+      ipcRenderer.invoke("extensions:message:stats"),
+    // Phase 6: Action & Badges
+    getAllBadges: (tabId?: number) =>
+      ipcRenderer.invoke("extensions:action:get-all-badges", tabId),
+    getBadge: (extensionId: string, tabId?: number) =>
+      ipcRenderer.invoke("extensions:action:get-badge", { extensionId, tabId }),
+    onBadgeUpdated: (callback: (data: { extensionId: string; badge: any }) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("extensions:action:badge-updated", listener);
+      return () => ipcRenderer.removeListener("extensions:action:badge-updated", listener);
+    },
+    // Phase 7: Service Worker Lifecycle
+    getServiceWorkerStatuses: () =>
+      ipcRenderer.invoke("extensions:sw:get-statuses"),
+    wakeServiceWorker: (extensionId: string) =>
+      ipcRenderer.invoke("extensions:sw:wake", { extensionId }),
   },
 });
 

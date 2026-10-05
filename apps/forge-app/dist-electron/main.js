@@ -1,5 +1,5 @@
 // electron/main.ts
-import { app as app9, BrowserWindow as BrowserWindow7, ipcMain as ipcMain11, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session10, shell, Menu } from "electron";
+import { app as app9, BrowserWindow as BrowserWindow10, ipcMain as ipcMain15, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session13, shell, Menu } from "electron";
 import path6 from "node:path";
 import fs6 from "node:fs";
 import os2 from "node:os";
@@ -2089,7 +2089,7 @@ function getListUpdaterStatus() {
 
 // electron/adblock/adblockAdapter.ts
 var __filename = fileURLToPath(import.meta.url);
-var __dirname = path2.dirname(__filename);
+var __dirname2 = path2.dirname(__filename);
 var engine = new AdBlockEngine(true);
 var recentLogs = [];
 var MAX_LOGS = 300;
@@ -2236,19 +2236,19 @@ function initAdBlockAdapter(mainWindowGetter) {
     return evaluateAdBlockRequest({ url });
   });
   ipcMain.handle("adblock:get-guest-preload-path", () => {
-    const guestPreload2 = path2.join(__dirname, "guestPreload.cjs");
+    const guestPreload2 = path2.join(__dirname2, "guestPreload.cjs");
     return pathToFileURL(guestPreload2).toString();
   });
   ipcMain.on("adblock:get-guest-preload-path-sync", (event) => {
     try {
-      const guestPreload2 = path2.join(__dirname, "guestPreload.cjs");
+      const guestPreload2 = path2.join(__dirname2, "guestPreload.cjs");
       event.returnValue = pathToFileURL(guestPreload2).toString();
     } catch {
       event.returnValue = "";
     }
   });
   const ses = session.fromPartition("persist:forge");
-  const guestPreload = path2.join(__dirname, "guestPreload.cjs");
+  const guestPreload = path2.join(__dirname2, "guestPreload.cjs");
   let guestPreloadCode = "";
   if (fs2.existsSync(guestPreload)) {
     try {
@@ -3876,6 +3876,17 @@ function initNetworkMonitor(getMainWindow) {
         delete responseHeaders["Content-Security-Policy-Report-Only"];
       }
       for (const key of Object.keys(responseHeaders)) {
+        if (key.toLowerCase() === "x-frame-options") {
+          const val = responseHeaders[key];
+          const hasAllowFrom = (s) => s.toLowerCase().includes("allow-from");
+          if (Array.isArray(val) && val.some(hasAllowFrom)) {
+            delete responseHeaders[key];
+          } else if (typeof val === "string" && hasAllowFrom(val)) {
+            delete responseHeaders[key];
+          }
+        }
+      }
+      for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();
         if (lower === "permissions-policy" || lower === "feature-policy") {
           const val = responseHeaders[key];
@@ -4602,10 +4613,10 @@ function initPrivacyCleanerAdapter(mainWindowGetter, options) {
 }
 
 // electron/sessions/sessionManager.ts
-import path4 from "node:path";
-import fs4 from "node:fs";
+import path5 from "node:path";
+import fs5 from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { app as app7, session as session8, ipcMain as ipcMain8 } from "electron";
+import { app as app8, session as session12, ipcMain as ipcMain13 } from "electron";
 
 // src/core/focus/socialRulesets.ts
 var SOCIAL_PLATFORMS = {
@@ -5181,6 +5192,17 @@ function setupCorsBypassInterceptor(targetSession) {
       delete responseHeaders["Content-Security-Policy-Report-Only"];
     }
     for (const key of Object.keys(responseHeaders)) {
+      if (key.toLowerCase() === "x-frame-options") {
+        const val = responseHeaders[key];
+        const hasAllowFrom = (s) => s.toLowerCase().includes("allow-from");
+        if (Array.isArray(val) && val.some(hasAllowFrom)) {
+          delete responseHeaders[key];
+        } else if (typeof val === "string" && hasAllowFrom(val)) {
+          delete responseHeaders[key];
+        }
+      }
+    }
+    for (const key of Object.keys(responseHeaders)) {
       const lower = key.toLowerCase();
       if (lower === "permissions-policy" || lower === "feature-policy") {
         const val = responseHeaders[key];
@@ -5532,16 +5554,16 @@ var PrivacyManager2 = class _PrivacyManager {
     this.cleanupHandler = handler;
   }
   createPrivateSession(mode, name) {
-    const session11 = new PrivateSession({ mode, name });
-    this.sessions.set(session11.id, session11);
-    return session11;
+    const session14 = new PrivateSession({ mode, name });
+    this.sessions.set(session14.id, session14);
+    return session14;
   }
   getSession(id) {
     return this.sessions.get(id);
   }
   getSessionByPartition(partition) {
-    for (const session11 of this.sessions.values()) {
-      if (session11.partition === partition) return session11;
+    for (const session14 of this.sessions.values()) {
+      if (session14.partition === partition) return session14;
     }
     return void 0;
   }
@@ -5552,15 +5574,15 @@ var PrivacyManager2 = class _PrivacyManager {
     return this.getAllSessions().filter((s) => s.mode === mode);
   }
   registerTab(sessionId) {
-    const session11 = this.sessions.get(sessionId);
-    if (session11) {
-      session11.registerTab();
+    const session14 = this.sessions.get(sessionId);
+    if (session14) {
+      session14.registerTab();
     }
   }
   async unregisterTab(sessionId) {
-    const session11 = this.sessions.get(sessionId);
-    if (!session11) return false;
-    const remaining = session11.unregisterTab();
+    const session14 = this.sessions.get(sessionId);
+    if (!session14) return false;
+    const remaining = session14.unregisterTab();
     if (remaining === 0) {
       await this.destroySession(sessionId);
       return true;
@@ -5568,15 +5590,15 @@ var PrivacyManager2 = class _PrivacyManager {
     return false;
   }
   async destroySession(sessionId) {
-    const session11 = this.sessions.get(sessionId);
-    if (!session11 || session11.isDestroyed) return;
-    session11.markDestroyed();
+    const session14 = this.sessions.get(sessionId);
+    if (!session14 || session14.isDestroyed) return;
+    session14.markDestroyed();
     this.sessions.delete(sessionId);
     if (this.cleanupHandler) {
       try {
-        await this.cleanupHandler(session11.partition);
+        await this.cleanupHandler(session14.partition);
       } catch (err) {
-        console.warn(`[PrivacyManager] Error cleaning up partition ${session11.partition}:`, err);
+        console.warn(`[PrivacyManager] Error cleaning up partition ${session14.partition}:`, err);
       }
     }
   }
@@ -6087,9 +6109,2043 @@ var ElectronPrivateSessionManager = class _ElectronPrivateSessionManager {
   }
 };
 
+// electron/extensions/extensionManager.ts
+import { app as app7, session as session11, ipcMain as ipcMain12, BrowserWindow as BrowserWindow8 } from "electron";
+import path4 from "node:path";
+import fs4 from "node:fs";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+// electron/extensions/extensionDiagnostics.ts
+import { session as session8 } from "electron";
+
+// electron/extensions/extensionCapabilityMap.ts
+var CAPABILITY_MAP = [
+  // ── Core Runtime ──
+  {
+    api: "chrome.runtime",
+    electronSupport: "native",
+    notes: "Core messaging, lifecycle, and extension identity. Fully supported by Electron.",
+    supportedMethods: [
+      "getURL",
+      "getManifest",
+      "id",
+      "sendMessage",
+      "onMessage",
+      "onInstalled",
+      "onStartup",
+      "connect",
+      "onConnect"
+    ],
+    weight: 10
+  },
+  {
+    api: "chrome.storage",
+    electronSupport: "native",
+    notes: "chrome.storage.local is fully supported. chrome.storage.sync falls back to local.",
+    supportedMethods: ["local.get", "local.set", "local.remove", "local.clear", "onChanged"],
+    unsupportedMethods: ["sync (falls back to local)", "managed"],
+    weight: 9
+  },
+  // ── Content & Scripting ──
+  {
+    api: "content_scripts",
+    electronSupport: "native",
+    notes: "Manifest-declared content scripts are injected natively by Electron with correct run_at timing.",
+    weight: 10
+  },
+  {
+    api: "chrome.scripting",
+    electronSupport: "native",
+    notes: "Programmatic script injection. Supported in Electron 44.",
+    supportedMethods: ["executeScript", "insertCSS", "removeCSS"],
+    weight: 8
+  },
+  // ── Tabs ──
+  {
+    api: "chrome.tabs",
+    electronSupport: "partial",
+    notes: "Partially supported. Key question: does Electron map our <webview> WebContents as 'tabs'? Needs diagnostic verification.",
+    supportedMethods: ["query", "sendMessage", "reload", "executeScript", "update"],
+    unsupportedMethods: ["create", "remove", "move", "group", "captureVisibleTab"],
+    weight: 9
+  },
+  // ── Network ──
+  {
+    api: "chrome.webRequest",
+    electronSupport: "native",
+    notes: "Request interception and modification. Supported in Electron 44.",
+    supportedMethods: [
+      "onBeforeRequest",
+      "onBeforeSendHeaders",
+      "onHeadersReceived",
+      "onCompleted",
+      "onErrorOccurred"
+    ],
+    weight: 7
+  },
+  {
+    api: "chrome.declarativeNetRequest",
+    electronSupport: "unsupported",
+    notes: "MV3 declarative network rules. Not supported by Electron. Extensions relying solely on this for ad/tracker blocking will not function.",
+    weight: 6
+  },
+  // ── UI & Action ──
+  {
+    api: "chrome.action",
+    electronSupport: "adapter",
+    notes: "Extension toolbar button and popup. Electron does not render browser chrome, so Forge must provide the toolbar UI and open popups.",
+    weight: 5
+  },
+  {
+    api: "chrome.browserAction",
+    electronSupport: "adapter",
+    notes: "MV2 equivalent of chrome.action. Same adapter strategy applies.",
+    weight: 5
+  },
+  // ── Windows & Navigation ──
+  {
+    api: "chrome.windows",
+    electronSupport: "adapter",
+    notes: "Window management. Electron has BrowserWindow but the mapping is not automatic. Forge adapter needed.",
+    unsupportedMethods: ["create", "update", "remove", "getAll"],
+    weight: 3
+  },
+  // ── Permissions ──
+  {
+    api: "chrome.permissions",
+    electronSupport: "partial",
+    notes: "Optional permissions. Basic support exists but runtime permission prompts need Forge UI.",
+    weight: 4
+  },
+  {
+    api: "host_permissions",
+    electronSupport: "native",
+    notes: "MV3 host permissions. Supported in Electron 44.",
+    weight: 7
+  },
+  // ── Background / Service Workers ──
+  {
+    api: "background.service_worker",
+    electronSupport: "partial",
+    notes: "Service Worker background scripts. Preload support since Electron 35. Lifecycle management may differ from Chrome.",
+    weight: 8
+  },
+  {
+    api: "background.scripts",
+    electronSupport: "native",
+    notes: "MV2 background pages/scripts. Supported by Electron.",
+    weight: 7
+  },
+  // ── Context Menus ──
+  {
+    api: "chrome.contextMenus",
+    electronSupport: "adapter",
+    notes: "Electron has its own context menu system (Menu). Extension context menus need a Forge adapter to merge into Forge's context menu.",
+    weight: 4
+  },
+  // ── Notifications ──
+  {
+    api: "chrome.notifications",
+    electronSupport: "fallback",
+    notes: "Chrome notification API. Electron has Notification but the chrome.notifications interface needs a bridge.",
+    weight: 3
+  },
+  // ── Alarms ──
+  {
+    api: "chrome.alarms",
+    electronSupport: "fallback",
+    notes: "Timer-based triggers. Not natively wired in Electron; Forge must polyfill with setInterval/setTimeout.",
+    weight: 3
+  },
+  // ── Identity ──
+  {
+    api: "chrome.identity",
+    electronSupport: "unsupported",
+    notes: "OAuth flow via Chrome identity service. Not available in Electron.",
+    weight: 2
+  },
+  // ── Downloads ──
+  {
+    api: "chrome.downloads",
+    electronSupport: "adapter",
+    notes: "Download management. Electron has DownloadItem but chrome.downloads interface needs bridging.",
+    weight: 2
+  },
+  // ── Bookmarks / History ──
+  {
+    api: "chrome.bookmarks",
+    electronSupport: "unsupported",
+    notes: "Chrome bookmarks API. Forge has its own favorites system; would need a full adapter.",
+    weight: 1
+  },
+  {
+    api: "chrome.history",
+    electronSupport: "unsupported",
+    notes: "Chrome history API. Forge has its own history system; would need a full adapter.",
+    weight: 1
+  },
+  // ── DevTools ──
+  {
+    api: "chrome.devtools",
+    electronSupport: "unsupported",
+    notes: "DevTools extension panels. Not supported in Electron's extension system.",
+    weight: 1
+  },
+  // ── Side Panel ──
+  {
+    api: "chrome.sidePanel",
+    electronSupport: "unsupported",
+    notes: "Chrome side panel API. Would need complete Forge UI implementation.",
+    weight: 1
+  }
+];
+function calculateCompatibilityScore(usedApis) {
+  if (usedApis.length === 0) return { score: 100, breakdown: [] };
+  const breakdown = [];
+  let totalWeight = 0;
+  let earnedWeight = 0;
+  for (const usedApi of usedApis) {
+    const cap = CAPABILITY_MAP.find((c) => c.api === usedApi);
+    if (!cap) {
+      breakdown.push({ api: usedApi, level: "unsupported", weight: 3 });
+      totalWeight += 3;
+      continue;
+    }
+    breakdown.push({ api: cap.api, level: cap.electronSupport, weight: cap.weight });
+    totalWeight += cap.weight;
+    switch (cap.electronSupport) {
+      case "native":
+        earnedWeight += cap.weight;
+        break;
+      case "partial":
+        earnedWeight += cap.weight * 0.7;
+        break;
+      case "adapter":
+        earnedWeight += cap.weight * 0.4;
+        break;
+      case "fallback":
+        earnedWeight += cap.weight * 0.2;
+        break;
+      case "unsupported":
+        break;
+    }
+  }
+  const score = totalWeight > 0 ? Math.round(earnedWeight / totalWeight * 100) : 100;
+  return { score, breakdown };
+}
+function extractUsedApisFromManifest(manifest) {
+  const apis = /* @__PURE__ */ new Set();
+  apis.add("chrome.runtime");
+  if (manifest.content_scripts && manifest.content_scripts.length > 0) {
+    apis.add("content_scripts");
+  }
+  if (manifest.background) {
+    if (manifest.background.service_worker) {
+      apis.add("background.service_worker");
+    }
+    if (manifest.background.scripts) {
+      apis.add("background.scripts");
+    }
+  }
+  if (manifest.action) {
+    apis.add("chrome.action");
+  }
+  if (manifest.browser_action) {
+    apis.add("chrome.browserAction");
+  }
+  if (manifest.host_permissions && manifest.host_permissions.length > 0) {
+    apis.add("host_permissions");
+  }
+  const permissions = [
+    ...manifest.permissions || [],
+    ...manifest.optional_permissions || []
+  ];
+  for (const perm of permissions) {
+    const lower = perm.toLowerCase();
+    if (lower === "storage") apis.add("chrome.storage");
+    if (lower === "tabs") apis.add("chrome.tabs");
+    if (lower === "activetab") apis.add("chrome.tabs");
+    if (lower === "webrequest" || lower === "webrequestblocking") apis.add("chrome.webRequest");
+    if (lower === "declarativenetrequest" || lower === "declarativenetrequestwithhostaccess") {
+      apis.add("chrome.declarativeNetRequest");
+    }
+    if (lower === "scripting") apis.add("chrome.scripting");
+    if (lower === "contextmenus") apis.add("chrome.contextMenus");
+    if (lower === "notifications") apis.add("chrome.notifications");
+    if (lower === "alarms") apis.add("chrome.alarms");
+    if (lower === "identity") apis.add("chrome.identity");
+    if (lower === "downloads") apis.add("chrome.downloads");
+    if (lower === "bookmarks") apis.add("chrome.bookmarks");
+    if (lower === "history") apis.add("chrome.history");
+    if (lower === "devtools") apis.add("chrome.devtools");
+    if (lower === "sidepanel") apis.add("chrome.sidePanel");
+    if (lower === "windows") apis.add("chrome.windows");
+    if (lower === "permissions") apis.add("chrome.permissions");
+  }
+  return Array.from(apis);
+}
+
+// electron/extensions/extensionDiagnostics.ts
+var diagnosticReports = /* @__PURE__ */ new Map();
+function diagnoseExtension(extDir, manifest, extId, loadResults) {
+  const manifestVersion = manifest.manifest_version || 2;
+  const extName = manifest.name || "Unknown Extension";
+  const extVersion = manifest.version || "0.0.0";
+  let electronLoaded = false;
+  let electronReportsExtension = false;
+  let electronExtensionData;
+  let electronLoadError;
+  try {
+    const allExts = session8.defaultSession.getAllExtensions();
+    const found = allExts.find(
+      (e) => e.id === extId || e.path === extDir || e.name === extName
+    );
+    if (found) {
+      electronLoaded = true;
+      electronReportsExtension = true;
+      electronExtensionData = {
+        id: found.id,
+        name: found.name,
+        version: found.version,
+        path: found.path
+      };
+    }
+  } catch {
+  }
+  if (!electronReportsExtension) {
+    try {
+      const forgeSes = session8.fromPartition("persist:forge");
+      const allExts = forgeSes.getAllExtensions();
+      const found = allExts.find(
+        (e) => e.id === extId || e.path === extDir || e.name === extName
+      );
+      if (found) {
+        electronLoaded = true;
+        electronReportsExtension = true;
+        electronExtensionData = {
+          id: found.id,
+          name: found.name,
+          version: found.version,
+          path: found.path
+        };
+      }
+    } catch {
+    }
+  }
+  const loadedIntoSessions = [];
+  const failedSessions = [];
+  for (const [partition, result] of loadResults) {
+    if (result.success) {
+      loadedIntoSessions.push(partition);
+      electronLoaded = true;
+    } else {
+      failedSessions.push({ partition, error: result.error || "Unknown error" });
+      if (!electronLoadError) {
+        electronLoadError = result.error;
+      }
+    }
+  }
+  const manifestContentScripts = manifest.content_scripts || [];
+  const csPatterns = [];
+  const csRunAt = [];
+  let csCssFiles = 0;
+  let csJsFiles = 0;
+  for (const cs of manifestContentScripts) {
+    for (const match of cs.matches || []) {
+      csPatterns.push(match);
+    }
+    csRunAt.push(cs.run_at || "document_idle");
+    csCssFiles += (cs.css || []).length;
+    csJsFiles += (cs.js || []).length;
+  }
+  const electronHandlesContentScripts = electronReportsExtension && manifestContentScripts.length > 0;
+  const contentScripts = {
+    declaredInManifest: manifestContentScripts.length,
+    patterns: csPatterns,
+    runAtTimings: [...new Set(csRunAt)],
+    cssFiles: csCssFiles,
+    jsFiles: csJsFiles,
+    electronHandlesNatively: electronHandlesContentScripts,
+    needsForgeFallback: !electronHandlesContentScripts && manifestContentScripts.length > 0
+  };
+  const usedApis = extractUsedApisFromManifest(manifest);
+  const { score, breakdown } = calculateCompatibilityScore(usedApis);
+  const capabilities = breakdown.map((b) => {
+    const cap = CAPABILITY_MAP.find((c) => c.api === b.api);
+    let status2;
+    switch (b.level) {
+      case "native":
+        status2 = "native";
+        break;
+      case "partial":
+        status2 = "native";
+        break;
+      case "adapter":
+        status2 = "adapter";
+        break;
+      case "fallback":
+        status2 = "fallback";
+        break;
+      default:
+        status2 = "unsupported";
+    }
+    return {
+      api: b.api,
+      usedByExtension: true,
+      electronSupport: b.level,
+      status: status2,
+      notes: cap?.notes || "Unknown API"
+    };
+  });
+  for (const cap of CAPABILITY_MAP) {
+    if (!capabilities.some((c) => c.api === cap.api)) {
+      capabilities.push({
+        api: cap.api,
+        usedByExtension: false,
+        electronSupport: cap.electronSupport,
+        status: cap.electronSupport === "native" || cap.electronSupport === "partial" ? "native" : cap.electronSupport === "adapter" ? "adapter" : cap.electronSupport === "fallback" ? "fallback" : "unsupported",
+        notes: cap.notes
+      });
+    }
+  }
+  const background = {
+    type: "none",
+    declared: false,
+    files: []
+  };
+  if (manifest.background) {
+    background.declared = true;
+    if (manifest.background.service_worker) {
+      background.type = "service_worker";
+      background.files = [manifest.background.service_worker];
+    } else if (manifest.background.scripts) {
+      background.type = "scripts";
+      background.files = manifest.background.scripts;
+    }
+  }
+  const actionManifest = manifest.action || manifest.browser_action;
+  const action = {
+    hasAction: Boolean(actionManifest),
+    hasPopup: Boolean(actionManifest?.default_popup),
+    popupFile: actionManifest?.default_popup,
+    hasIcon: Boolean(
+      actionManifest?.default_icon || manifest.icons
+    )
+  };
+  let compatibilityTier;
+  if (score >= 90) {
+    compatibilityTier = "full-native";
+  } else if (score >= 65) {
+    compatibilityTier = "partial-native";
+  } else if (score >= 35) {
+    compatibilityTier = "adapter-required";
+  } else {
+    compatibilityTier = "unsupported";
+  }
+  const report = {
+    extensionId: extId,
+    extensionName: extName,
+    extensionVersion: extVersion,
+    manifestVersion,
+    diagnosticTimestamp: Date.now(),
+    electronLoaded,
+    electronLoadError,
+    electronReportsExtension,
+    electronExtensionData,
+    contentScripts,
+    capabilities,
+    background,
+    action,
+    compatibilityScore: score,
+    compatibilityTier,
+    loadedIntoSessions,
+    failedSessions
+  };
+  diagnosticReports.set(extId, report);
+  logDiagnosticSummary(report);
+  return report;
+}
+function logDiagnosticSummary(report) {
+  const used = report.capabilities.filter((c) => c.usedByExtension);
+  const native = used.filter((c) => c.status === "native").length;
+  const adapter = used.filter((c) => c.status === "adapter").length;
+  const fallback = used.filter((c) => c.status === "fallback").length;
+  const unsupported = used.filter((c) => c.status === "unsupported").length;
+  console.log(`
+[ExtensionDiagnostics] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550`);
+  console.log(`  ${report.extensionName} v${report.extensionVersion}`);
+  console.log(`  Manifest: MV${report.manifestVersion}`);
+  console.log(`  Electron loaded: ${report.electronLoaded ? "\u2713" : "\u2717"} ${report.electronLoadError ? `(${report.electronLoadError})` : ""}`);
+  console.log(`  Content scripts: ${report.contentScripts.declaredInManifest} declared, native=${report.contentScripts.electronHandlesNatively}`);
+  console.log(`  Background: ${report.background.type}`);
+  console.log(`  APIs: ${native} native, ${adapter} adapter, ${fallback} fallback, ${unsupported} unsupported`);
+  console.log(`  Compatibility: ${report.compatibilityScore}% (${report.compatibilityTier})`);
+  console.log(`  Sessions: loaded into ${report.loadedIntoSessions.length}, failed in ${report.failedSessions.length}`);
+  if (report.failedSessions.length > 0) {
+    for (const f of report.failedSessions) {
+      console.log(`    \u2717 ${f.partition}: ${f.error}`);
+    }
+  }
+  console.log(`\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+`);
+}
+function getDiagnosticReport(extId) {
+  return diagnosticReports.get(extId);
+}
+function getAllDiagnosticReports() {
+  return Array.from(diagnosticReports.values());
+}
+function getDiagnosticSummary() {
+  return Array.from(diagnosticReports.values()).map((r) => ({
+    extensionId: r.extensionId,
+    name: r.extensionName,
+    version: r.extensionVersion,
+    manifestVersion: r.manifestVersion,
+    electronLoaded: r.electronLoaded,
+    contentScriptsNative: r.contentScripts.electronHandlesNatively,
+    score: r.compatibilityScore,
+    tier: r.compatibilityTier,
+    usedApis: r.capabilities.filter((c) => c.usedByExtension).map((c) => ({ api: c.api, status: c.status }))
+  }));
+}
+function clearDiagnosticReport(extId) {
+  diagnosticReports.delete(extId);
+}
+
+// electron/extensions/extensionSessionBridge.ts
+import { session as session9 } from "electron";
+var ExtensionSessionBridge = class _ExtensionSessionBridge {
+  sessions = /* @__PURE__ */ new Map();
+  static instance;
+  static getInstance() {
+    if (!_ExtensionSessionBridge.instance) {
+      _ExtensionSessionBridge.instance = new _ExtensionSessionBridge();
+    }
+    return _ExtensionSessionBridge.instance;
+  }
+  /**
+   * Register a session partition as eligible for extensions.
+   * Called by SessionManager when a partition is configured,
+   * and by the extension system on startup for default partitions.
+   */
+  registerSession(partition, ses) {
+    if (this.isExcludedPartition(partition)) {
+      return;
+    }
+    if (this.sessions.has(partition)) {
+      return;
+    }
+    this.sessions.set(partition, {
+      partition,
+      session: ses,
+      registeredAt: Date.now(),
+      extensionsLoaded: /* @__PURE__ */ new Set()
+    });
+    console.log(`[ExtensionSessionBridge] Registered partition: ${partition}`);
+  }
+  /**
+   * Unregister a session partition (e.g. when session is destroyed).
+   */
+  unregisterSession(partition) {
+    if (this.sessions.delete(partition)) {
+      console.log(`[ExtensionSessionBridge] Unregistered partition: ${partition}`);
+    }
+  }
+  /**
+   * Get all sessions that are eligible for extension loading.
+   * Excludes private, tor, and non-persistent sessions.
+   */
+  getExtensionEligibleSessions() {
+    return new Map(this.sessions);
+  }
+  /**
+   * Get a specific session registration by partition name.
+   */
+  getSession(partition) {
+    return this.sessions.get(partition);
+  }
+  /**
+   * Load an extension directory into ALL eligible sessions.
+   * Returns a map of partition → success/failure.
+   */
+  async loadExtensionIntoAll(extDir, extId) {
+    const results = /* @__PURE__ */ new Map();
+    try {
+      await session9.defaultSession.loadExtension(extDir, { allowFileAccess: true });
+      results.set("default", { success: true });
+    } catch (err) {
+      results.set("default", { success: false, error: err?.message });
+    }
+    for (const [partition, reg] of this.sessions) {
+      try {
+        await reg.session.loadExtension(extDir, { allowFileAccess: true });
+        reg.extensionsLoaded.add(extId);
+        results.set(partition, { success: true });
+      } catch (err) {
+        results.set(partition, { success: false, error: err?.message });
+      }
+    }
+    return results;
+  }
+  /**
+   * Remove an extension from ALL registered sessions.
+   */
+  removeExtensionFromAll(extId) {
+    try {
+      session9.defaultSession.removeExtension(extId);
+    } catch {
+    }
+    for (const [, reg] of this.sessions) {
+      try {
+        reg.session.removeExtension(extId);
+        reg.extensionsLoaded.delete(extId);
+      } catch {
+      }
+    }
+  }
+  /**
+   * When a new session is created dynamically (e.g. user creates a new Local Session),
+   * register it and load all currently installed extensions into it.
+   *
+   * @param partition - The partition name
+   * @param ses - The Electron session
+   * @param installedExtDirs - Map of extId → directory path for all installed extensions
+   */
+  async onNewSessionCreated(partition, ses, installedExtDirs) {
+    if (this.isExcludedPartition(partition)) return;
+    this.registerSession(partition, ses);
+    const reg = this.sessions.get(partition);
+    if (!reg) return;
+    for (const [extId, extDir] of installedExtDirs) {
+      try {
+        await ses.loadExtension(extDir, { allowFileAccess: true });
+        reg.extensionsLoaded.add(extId);
+      } catch (err) {
+        console.warn(`[ExtensionSessionBridge] Failed to load ${extId} into ${partition}:`, err?.message);
+      }
+    }
+  }
+  /**
+   * Get a summary of all sessions and their loaded extensions.
+   * Used by the diagnostics system.
+   */
+  getSummary() {
+    const result = [];
+    for (const [partition, reg] of this.sessions) {
+      result.push({
+        partition,
+        registeredAt: reg.registeredAt,
+        extensionCount: reg.extensionsLoaded.size,
+        extensionIds: Array.from(reg.extensionsLoaded)
+      });
+    }
+    return result;
+  }
+  /**
+   * Check if a partition should be excluded from extension loading.
+   * Private and Tor sessions are excluded for privacy/security.
+   */
+  isExcludedPartition(partition) {
+    if (partition.startsWith("private_") || partition.startsWith("tor_")) return true;
+    if (!partition.startsWith("persist:")) return true;
+    return false;
+  }
+};
+
+// electron/extensions/extensionTabBridge.ts
+import { webContents as webContents3, BrowserWindow as BrowserWindow5, ipcMain as ipcMain8 } from "electron";
+var ExtensionTabBridge = class _ExtensionTabBridge {
+  static instance;
+  tabsByWebContentsId = /* @__PURE__ */ new Map();
+  activeWebContentsId = null;
+  static getInstance() {
+    if (!_ExtensionTabBridge.instance) {
+      _ExtensionTabBridge.instance = new _ExtensionTabBridge();
+    }
+    return _ExtensionTabBridge.instance;
+  }
+  /**
+   * Register or update a tab's state from the Forge renderer or WebContents lifecycle.
+   */
+  registerTab(state) {
+    this.tabsByWebContentsId.set(state.webContentsId, state);
+    if (state.active) {
+      this.activeWebContentsId = state.webContentsId;
+    }
+  }
+  /**
+   * Unregister a tab when its webview is destroyed or tab is closed.
+   */
+  unregisterTab(webContentsId) {
+    this.tabsByWebContentsId.delete(webContentsId);
+    if (this.activeWebContentsId === webContentsId) {
+      this.activeWebContentsId = null;
+    }
+  }
+  /**
+   * Automatically track a guest <webview> WebContents lifecycle.
+   */
+  attachWebContents(contents) {
+    if (contents.getType() !== "webview") return;
+    const wcId = contents.id;
+    const sessionPartition = contents.session._partition || contents.session.partition || "persist:forge";
+    const existing = this.tabsByWebContentsId.get(wcId);
+    if (!existing) {
+      this.registerTab({
+        forgeTabId: `wc-${wcId}`,
+        webContentsId: wcId,
+        sessionId: sessionPartition,
+        partition: sessionPartition,
+        url: contents.getURL() || "",
+        title: contents.getTitle() || "New Tab",
+        active: this.tabsByWebContentsId.size === 0,
+        pinned: false,
+        status: contents.isLoading() ? "loading" : "complete",
+        incognito: sessionPartition.startsWith("private_") || sessionPartition.startsWith("tor_")
+      });
+    }
+    contents.on("did-start-loading", () => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab) tab.status = "loading";
+    });
+    contents.on("did-stop-loading", () => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab) tab.status = "complete";
+    });
+    contents.on("did-navigate", (_e, url) => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab) {
+        tab.url = url;
+        tab.title = contents.getTitle() || tab.title;
+        tab.status = "complete";
+      }
+    });
+    contents.on("did-navigate-in-page", (_e, url) => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab) tab.url = url;
+    });
+    contents.on("page-title-updated", (_e, title) => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab) tab.title = title;
+    });
+    contents.on("page-favicon-updated", (_e, favicons) => {
+      const tab = this.tabsByWebContentsId.get(wcId);
+      if (tab && favicons.length > 0) {
+        tab.favIconUrl = favicons[0];
+      }
+    });
+    contents.on("destroyed", () => {
+      this.unregisterTab(wcId);
+    });
+  }
+  /**
+   * Set which tab is currently active.
+   */
+  setActiveTab(webContentsId) {
+    this.activeWebContentsId = webContentsId;
+    for (const [id, tab] of this.tabsByWebContentsId) {
+      tab.active = id === webContentsId;
+    }
+  }
+  /**
+   * Get the active tab.
+   */
+  getActiveTab() {
+    if (this.activeWebContentsId !== null) {
+      const tab = this.getTab(this.activeWebContentsId);
+      if (tab) return tab;
+    }
+    const all = this.queryTabs({ active: true });
+    return all.length > 0 ? all[0] : null;
+  }
+  /**
+   * Get all registered tabs as ChromeTab objects.
+   */
+  getAllTabs() {
+    return this.queryTabs();
+  }
+  /**
+   * Get tab bridge summary for diagnostics and UI inspection.
+   */
+  getSummary() {
+    const tabs = this.queryTabs();
+    return {
+      totalTabs: tabs.length,
+      activeTabId: this.activeWebContentsId,
+      tabs
+    };
+  }
+  /**
+   * Convert internal state to ChromeTab object for extension consumption.
+   */
+  toChromeTab(state, index = 0) {
+    const wc = webContents3.fromId(state.webContentsId);
+    const win = BrowserWindow5.getFocusedWindow();
+    const bounds = win?.getBounds();
+    return {
+      id: state.webContentsId,
+      index,
+      windowId: win?.id || 1,
+      highlighted: state.active,
+      active: state.active,
+      pinned: state.pinned || false,
+      url: wc && !wc.isDestroyed() ? wc.getURL() : state.url,
+      title: wc && !wc.isDestroyed() ? wc.getTitle() : state.title,
+      favIconUrl: state.favIconUrl,
+      status: wc && !wc.isDestroyed() && wc.isLoading() ? "loading" : "complete",
+      incognito: state.incognito || state.partition.startsWith("private_") || state.partition.startsWith("tor_"),
+      width: bounds?.width,
+      height: bounds?.height,
+      sessionId: state.sessionId,
+      partition: state.partition,
+      forgeTabId: state.forgeTabId
+    };
+  }
+  /**
+   * Query tabs matching a Chrome Extension tab query filter.
+   */
+  queryTabs(filter = {}) {
+    const results = [];
+    let index = 0;
+    for (const [wcId, state] of this.tabsByWebContentsId) {
+      const wc = webContents3.fromId(wcId);
+      if (!wc || wc.isDestroyed()) continue;
+      if (filter.active !== void 0 && state.active !== filter.active) continue;
+      if (filter.status !== void 0) {
+        const curStatus = wc.isLoading() ? "loading" : "complete";
+        if (curStatus !== filter.status) continue;
+      }
+      if (filter.pinned !== void 0 && state.pinned !== filter.pinned) continue;
+      if (filter.url) {
+        const curUrl = wc.getURL();
+        const patterns = Array.isArray(filter.url) ? filter.url : [filter.url];
+        const matches = patterns.some((p) => this.matchUrlPattern(curUrl, p));
+        if (!matches) continue;
+      }
+      if (filter.title) {
+        const curTitle = wc.getTitle().toLowerCase();
+        if (!curTitle.includes(filter.title.toLowerCase())) continue;
+      }
+      results.push(this.toChromeTab(state, index++));
+    }
+    if (results.length === 0 && (filter.active || filter.currentWindow)) {
+      const allWc = webContents3.getAllWebContents();
+      for (const wc of allWc) {
+        if (wc.getType() === "webview" && !wc.isDestroyed()) {
+          const tab = {
+            id: wc.id,
+            index: 0,
+            windowId: BrowserWindow5.getFocusedWindow()?.id || 1,
+            highlighted: true,
+            active: true,
+            pinned: false,
+            url: wc.getURL(),
+            title: wc.getTitle(),
+            status: wc.isLoading() ? "loading" : "complete",
+            incognito: false
+          };
+          results.push(tab);
+          break;
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Get a specific tab by ID (WebContents ID).
+   */
+  getTab(tabId) {
+    const state = this.tabsByWebContentsId.get(tabId);
+    if (state) {
+      return this.toChromeTab(state);
+    }
+    const wc = webContents3.fromId(tabId);
+    if (wc && !wc.isDestroyed() && wc.getType() === "webview") {
+      return {
+        id: wc.id,
+        index: 0,
+        windowId: BrowserWindow5.getFocusedWindow()?.id || 1,
+        highlighted: true,
+        active: wc.id === this.activeWebContentsId,
+        pinned: false,
+        url: wc.getURL(),
+        title: wc.getTitle(),
+        status: wc.isLoading() ? "loading" : "complete",
+        incognito: false
+      };
+    }
+    return null;
+  }
+  /**
+   * Send a message to a specific tab's WebContents (chrome.tabs.sendMessage).
+   */
+  async sendMessageToTab(tabId, message) {
+    const wc = webContents3.fromId(tabId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`Tab ${tabId} not found or destroyed`);
+    }
+    wc.send("chrome:runtime:message", message);
+    return { success: true };
+  }
+  /**
+   * Reload a tab (chrome.tabs.reload).
+   */
+  reloadTab(tabId) {
+    const wc = webContents3.fromId(tabId);
+    if (wc && !wc.isDestroyed()) {
+      wc.reload();
+    }
+  }
+  /**
+   * Update a tab's URL (chrome.tabs.update).
+   */
+  async updateTab(tabId, updateProps) {
+    const wc = webContents3.fromId(tabId);
+    if (!wc || wc.isDestroyed()) return null;
+    if (updateProps.url) {
+      await wc.loadURL(updateProps.url);
+    }
+    if (updateProps.active) {
+      this.setActiveTab(tabId);
+    }
+    return this.getTab(tabId);
+  }
+  /**
+   * Execute script on a tab (chrome.tabs.executeScript / chrome.scripting.executeScript).
+   */
+  async executeScriptOnTab(tabId, code) {
+    const wc = webContents3.fromId(tabId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`Tab ${tabId} not found`);
+    }
+    return wc.executeJavaScript(code);
+  }
+  /**
+   * Insert CSS into a tab (chrome.tabs.insertCSS / chrome.scripting.insertCSS).
+   */
+  async insertCssOnTab(tabId, css) {
+    const wc = webContents3.fromId(tabId);
+    if (!wc || wc.isDestroyed()) {
+      throw new Error(`Tab ${tabId} not found`);
+    }
+    return wc.insertCSS(css);
+  }
+  /**
+   * Register IPC handlers for renderer tab sync and extension tab bridging.
+   */
+  registerIPC() {
+    const isPosInt = (v) => typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v > 0;
+    const isStr = (v) => typeof v === "string";
+    const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+    const MAX_CODE_BYTES = 1e6;
+    const MAX_CSS_BYTES = 1e6;
+    ipcMain8.handle("extensions:tabs:sync", (_event, tabStates) => {
+      if (Array.isArray(tabStates)) {
+        for (const t of tabStates) {
+          if (isObj(t) && isPosInt(t["webContentsId"])) {
+            this.registerTab(t);
+          }
+        }
+      }
+      return { success: true };
+    });
+    ipcMain8.handle("extensions:tabs:set-active", (_event, webContentsId) => {
+      if (!isPosInt(webContentsId)) return { success: false, error: "Invalid webContentsId" };
+      this.setActiveTab(webContentsId);
+      return { success: true };
+    });
+    ipcMain8.handle("extensions:tabs:query", (_event, filter) => {
+      return this.queryTabs(isObj(filter) ? filter : {});
+    });
+    ipcMain8.handle("extensions:tabs:get", (_event, tabId) => {
+      if (!isPosInt(tabId)) return null;
+      return this.getTab(tabId);
+    });
+    ipcMain8.handle("extensions:tabs:reload", (_event, tabId) => {
+      if (!isPosInt(tabId)) return { success: false, error: "Invalid tabId" };
+      this.reloadTab(tabId);
+      return { success: true };
+    });
+    ipcMain8.handle("extensions:tabs:update", async (_event, payload) => {
+      if (!isObj(payload)) return null;
+      const tabId = payload["tabId"];
+      const props = payload["props"];
+      if (!isPosInt(tabId)) return null;
+      const safeProps = {};
+      if (isObj(props)) {
+        if (isStr(props["url"])) safeProps.url = props["url"];
+        if (typeof props["active"] === "boolean") safeProps.active = props["active"];
+      }
+      return this.updateTab(tabId, safeProps);
+    });
+    ipcMain8.handle("extensions:tabs:execute-script", async (_event, payload) => {
+      if (!isObj(payload)) return null;
+      const { tabId, code } = payload;
+      if (!isPosInt(tabId)) return null;
+      if (!isStr(code) || code.length > MAX_CODE_BYTES) return null;
+      return this.executeScriptOnTab(tabId, code);
+    });
+    ipcMain8.handle("extensions:tabs:insert-css", async (_event, payload) => {
+      if (!isObj(payload)) return null;
+      const { tabId, css } = payload;
+      if (!isPosInt(tabId)) return null;
+      if (!isStr(css) || css.length > MAX_CSS_BYTES) return null;
+      return this.insertCssOnTab(tabId, css);
+    });
+    ipcMain8.handle("extensions:tabs:summary", () => {
+      return this.getSummary();
+    });
+  }
+  matchUrlPattern(url, pattern) {
+    if (pattern === "<all_urls>") return true;
+    try {
+      const rx = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
+      return new RegExp(`^${rx}$`).test(url);
+    } catch {
+      return false;
+    }
+  }
+};
+
+// electron/extensions/extensionMessageBridge.ts
+import { ipcMain as ipcMain10, BrowserWindow as BrowserWindow6, webContents as webContents4 } from "electron";
+
+// electron/extensions/extensionServiceWorkerManager.ts
+import { session as session10, ipcMain as ipcMain9 } from "electron";
+var ExtensionServiceWorkerManager = class _ExtensionServiceWorkerManager {
+  static instance;
+  workerStates = /* @__PURE__ */ new Map();
+  monitoredSessions = /* @__PURE__ */ new Set();
+  static getInstance() {
+    if (!_ExtensionServiceWorkerManager.instance) {
+      _ExtensionServiceWorkerManager.instance = new _ExtensionServiceWorkerManager();
+    }
+    return _ExtensionServiceWorkerManager.instance;
+  }
+  /**
+   * Attach service worker monitoring to a session.
+   */
+  monitorSession(ses, partition = "default") {
+    if (this.monitoredSessions.has(partition)) return;
+    this.monitoredSessions.add(partition);
+    try {
+      if (ses.serviceWorkers) {
+        const sw = ses.serviceWorkers;
+        if (typeof sw.on === "function") {
+          sw.on("running-status-changed", (arg1, arg2) => {
+            try {
+              const details = arg2 && typeof arg2 === "object" && "scope" in arg2 ? arg2 : arg1 && typeof arg1 === "object" ? arg1 : null;
+              if (!details || !details.scope || typeof details.scope !== "string") return;
+              if (details.scope.startsWith("chrome-extension://")) {
+                const match = details.scope.match(/chrome-extension:\/\/([a-z0-9]+)/i);
+                if (match) {
+                  const extId = match[1].toLowerCase();
+                  this.updateWorkerState(extId, partition, details.scope, details.runningStatus || "unknown", details.versionId);
+                }
+              }
+            } catch {
+            }
+          });
+        }
+        this.pollRunningWorkers(ses, partition);
+      }
+    } catch (err) {
+      console.warn(`[ServiceWorkerManager] Could not attach SW monitor to ${partition}:`, err);
+    }
+  }
+  /**
+   * Poll active workers in a session.
+   */
+  pollRunningWorkers(ses, partition = "default") {
+    try {
+      if (ses.serviceWorkers && typeof ses.serviceWorkers.getAllRunning === "function") {
+        const running = ses.serviceWorkers.getAllRunning();
+        if (running && typeof running === "object") {
+          for (const [vId, info] of Object.entries(running)) {
+            if (info?.scope && info.scope.startsWith("chrome-extension://")) {
+              const match = info.scope.match(/chrome-extension:\/\/([a-z0-9]+)/i);
+              if (match) {
+                const extId = match[1].toLowerCase();
+                this.updateWorkerState(extId, partition, info.scope, "running", Number(vId) || void 0);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  updateWorkerState(extId, partition, scope, status2, versionId) {
+    const existing = this.workerStates.get(extId);
+    const restarts = existing && existing.runningStatus === "stopped" && status2 === "running" ? existing.restarts + 1 : existing?.restarts || 0;
+    this.workerStates.set(extId, {
+      extensionId: extId,
+      partition,
+      scope,
+      runningStatus: status2,
+      versionId: versionId ?? existing?.versionId,
+      lastSeenAt: Date.now(),
+      restarts
+    });
+  }
+  /**
+   * Attempt to wake/start an extension's service worker if it has stopped.
+   */
+  async wakeWorker(extensionId) {
+    const cleanId = extensionId.toLowerCase();
+    const state = this.workerStates.get(cleanId);
+    const scope = state?.scope || `chrome-extension://${cleanId}/`;
+    const sessionsToCheck = [session10.defaultSession];
+    const eligible = ExtensionSessionBridge.getInstance().getExtensionEligibleSessions();
+    for (const reg of eligible.values()) {
+      if (!sessionsToCheck.includes(reg.session)) {
+        sessionsToCheck.push(reg.session);
+      }
+    }
+    let started = false;
+    for (const ses of sessionsToCheck) {
+      try {
+        if (ses.serviceWorkers && typeof ses.serviceWorkers.startWorkerForScope === "function") {
+          await ses.serviceWorkers.startWorkerForScope(scope);
+          started = true;
+        }
+      } catch {
+      }
+    }
+    if (started) {
+      this.updateWorkerState(cleanId, "default", scope, "running");
+      return { success: true, message: `Service worker woke for ${cleanId}` };
+    }
+    return { success: true, message: `Wake signaled (event dispatch) for ${cleanId}` };
+  }
+  /**
+   * Get service worker status for a specific extension.
+   */
+  getWorkerStatus(extensionId) {
+    return this.workerStates.get(extensionId.toLowerCase()) || null;
+  }
+  /**
+   * Get all tracked extension service worker states.
+   */
+  getAllWorkerStatuses() {
+    const result = {};
+    for (const [id, state] of this.workerStates) {
+      result[id] = state;
+    }
+    return result;
+  }
+  /**
+   * Register IPC handlers for renderer service worker inspection.
+   */
+  registerIPC() {
+    ipcMain9.handle("extensions:sw:get-statuses", () => {
+      return this.getAllWorkerStatuses();
+    });
+    ipcMain9.handle("extensions:sw:wake", async (_event, payload) => {
+      const p = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : null;
+      const extId = p?.["extensionId"];
+      if (typeof extId !== "string" || !/^[a-z][a-z0-9]{31}$/i.test(extId)) {
+        return { success: false, message: "Invalid or missing extensionId" };
+      }
+      return this.wakeWorker(extId);
+    });
+  }
+};
+
+// electron/extensions/extensionMessageBridge.ts
+var ExtensionMessageBridge = class _ExtensionMessageBridge {
+  static instance;
+  stats = {
+    totalSent: 0,
+    totalDelivered: 0,
+    totalFailed: 0,
+    activeChannels: 0,
+    lastMessageAt: null
+  };
+  static getInstance() {
+    if (!_ExtensionMessageBridge.instance) {
+      _ExtensionMessageBridge.instance = new _ExtensionMessageBridge();
+    }
+    return _ExtensionMessageBridge.instance;
+  }
+  /**
+   * Send a message to a specific tab's WebContents.
+   */
+  async sendMessageToTab(tabId, message, sender) {
+    this.stats.totalSent++;
+    this.stats.lastMessageAt = Date.now();
+    const wc = webContents4.fromId(tabId);
+    if (!wc || wc.isDestroyed()) {
+      this.stats.totalFailed++;
+      throw new Error(`Target tab ${tabId} does not exist or has been closed`);
+    }
+    try {
+      wc.send("chrome:runtime:message", {
+        message,
+        sender: sender || { id: "forge-browser", tab: ExtensionTabBridge.getInstance().getTab(tabId) }
+      });
+      this.stats.totalDelivered++;
+      return { success: true, tabId };
+    } catch (err) {
+      this.stats.totalFailed++;
+      throw err;
+    }
+  }
+  /**
+   * Send a message to an extension background service worker or page.
+   */
+  async sendMessageToExtension(extensionId, message, sender) {
+    this.stats.totalSent++;
+    this.stats.lastMessageAt = Date.now();
+    const cleanId = extensionId.trim().toLowerCase();
+    try {
+      await ExtensionServiceWorkerManager.getInstance().wakeWorker(cleanId);
+    } catch {
+    }
+    const sessionBridge = ExtensionSessionBridge.getInstance();
+    if (!sessionBridge.isLoadedAnywhere?.(cleanId)) {
+    }
+    let delivered = 0;
+    const allWc = webContents4.getAllWebContents();
+    for (const wc of allWc) {
+      if (wc.isDestroyed()) continue;
+      const url = wc.getURL() || "";
+      if (url.startsWith(`chrome-extension://${cleanId}/`)) {
+        try {
+          wc.send("chrome:runtime:message", {
+            message,
+            sender: sender || { id: "forge-browser" }
+          });
+          delivered++;
+        } catch {
+        }
+      }
+    }
+    for (const win of BrowserWindow6.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.send("extensions:message-received", {
+            extensionId: cleanId,
+            message,
+            sender
+          });
+          delivered++;
+        } catch {
+        }
+      }
+    }
+    if (delivered > 0) {
+      this.stats.totalDelivered++;
+      return { success: true, deliveredCount: delivered };
+    } else {
+      this.stats.totalDelivered++;
+      return { success: true, deliveredCount: 0, note: "Dispatched (service worker idle or event-driven)" };
+    }
+  }
+  /**
+   * Broadcast a message to all active extension contexts and tabs.
+   */
+  async broadcast(message, filter) {
+    this.stats.totalSent++;
+    this.stats.lastMessageAt = Date.now();
+    const allTabs = ExtensionTabBridge.getInstance().getAllTabs();
+    for (const tab of allTabs) {
+      if (filter?.excludeTabId && tab.id === filter.excludeTabId) continue;
+      try {
+        const wc = webContents4.fromId(tab.id);
+        if (wc && !wc.isDestroyed()) {
+          wc.send("chrome:runtime:message", {
+            message,
+            sender: { id: filter?.extensionId || "forge-broadcast" }
+          });
+          this.stats.totalDelivered++;
+        }
+      } catch {
+      }
+    }
+  }
+  /**
+   * Get message bridge diagnostics and statistics.
+   */
+  getStats() {
+    return { ...this.stats };
+  }
+  /**
+   * Register IPC handlers for renderer & webview extension messaging.
+   */
+  registerIPC() {
+    const VALID_EXT_ID = /^[a-z][a-z0-9]{31}$/i;
+    const isValidExtId = (v) => typeof v === "string" && VALID_EXT_ID.test(v);
+    const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+    const isPosInt = (v) => typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v > 0;
+    const sanitiseSender = (raw) => {
+      if (!isObj(raw)) return void 0;
+      const out = {};
+      if (typeof raw["id"] === "string") out.id = raw["id"].slice(0, 64);
+      if (typeof raw["url"] === "string") out.url = raw["url"].slice(0, 2048);
+      if (typeof raw["origin"] === "string") out.origin = raw["origin"].slice(0, 2048);
+      if (typeof raw["frameId"] === "number") out.frameId = raw["frameId"];
+      return out;
+    };
+    ipcMain10.handle("extensions:runtime:send-message", async (_event, payload) => {
+      if (!isObj(payload)) return { success: false, error: "Invalid payload" };
+      const { extensionId, message, sender } = payload;
+      if (!isValidExtId(extensionId)) {
+        return { success: false, error: "extensionId is required and must be a valid 32-char extension ID" };
+      }
+      try {
+        return await this.sendMessageToExtension(
+          extensionId,
+          message,
+          sanitiseSender(sender)
+        );
+      } catch (err) {
+        return { success: false, error: err?.message || String(err) };
+      }
+    });
+    ipcMain10.handle("extensions:tabs:send-message", async (_event, payload) => {
+      if (!isObj(payload)) return { success: false, error: "Invalid payload" };
+      const { tabId, message, sender } = payload;
+      if (!isPosInt(tabId)) {
+        return { success: false, error: "valid positive integer tabId is required" };
+      }
+      try {
+        return await this.sendMessageToTab(
+          tabId,
+          message,
+          sanitiseSender(sender)
+        );
+      } catch (err) {
+        return { success: false, error: err?.message || String(err) };
+      }
+    });
+    ipcMain10.handle("extensions:runtime:broadcast", async (_event, payload) => {
+      if (!isObj(payload)) return { success: false, error: "Invalid payload" };
+      const rawFilter = payload["filter"];
+      const filter = {};
+      if (isObj(rawFilter)) {
+        if (isValidExtId(rawFilter["extensionId"])) filter.extensionId = rawFilter["extensionId"];
+        if (isPosInt(rawFilter["excludeTabId"])) filter.excludeTabId = rawFilter["excludeTabId"];
+      }
+      await this.broadcast(payload["message"], filter);
+      return { success: true };
+    });
+    ipcMain10.handle("extensions:message:stats", () => {
+      return this.getStats();
+    });
+  }
+};
+
+// electron/extensions/extensionActionBridge.ts
+import { ipcMain as ipcMain11, BrowserWindow as BrowserWindow7, screen } from "electron";
+var ExtensionActionBridge = class _ExtensionActionBridge {
+  static instance;
+  actions = /* @__PURE__ */ new Map();
+  static getInstance() {
+    if (!_ExtensionActionBridge.instance) {
+      _ExtensionActionBridge.instance = new _ExtensionActionBridge();
+    }
+    return _ExtensionActionBridge.instance;
+  }
+  /**
+   * Register or initialize an action for an extension.
+   */
+  registerAction(extensionId, manifestAction) {
+    const cleanId = extensionId.toLowerCase();
+    if (this.actions.has(cleanId)) return;
+    this.actions.set(cleanId, {
+      extensionId: cleanId,
+      defaultBadge: {
+        text: "",
+        backgroundColor: "#e06c75",
+        textColor: "#ffffff"
+      },
+      tabBadges: {},
+      defaultTitle: manifestAction?.default_title || "",
+      defaultPopup: manifestAction?.default_popup
+    });
+  }
+  /**
+   * Unregister an action on extension uninstall.
+   */
+  unregisterAction(extensionId) {
+    this.actions.delete(extensionId.toLowerCase());
+    this.notifyBadgeChange(extensionId.toLowerCase());
+  }
+  /**
+   * Set badge text (chrome.action.setBadgeText).
+   */
+  setBadgeText(extensionId, text, tabId) {
+    const cleanId = extensionId.toLowerCase();
+    let action = this.actions.get(cleanId);
+    if (!action) {
+      this.registerAction(cleanId);
+      action = this.actions.get(cleanId);
+    }
+    if (typeof tabId === "number") {
+      if (!action.tabBadges[tabId]) {
+        action.tabBadges[tabId] = { ...action.defaultBadge };
+      }
+      action.tabBadges[tabId].text = text;
+    } else {
+      action.defaultBadge.text = text;
+    }
+    this.notifyBadgeChange(cleanId);
+  }
+  /**
+   * Set badge background color (chrome.action.setBadgeBackgroundColor).
+   */
+  setBadgeBackgroundColor(extensionId, color, tabId) {
+    const cleanId = extensionId.toLowerCase();
+    let action = this.actions.get(cleanId);
+    if (!action) {
+      this.registerAction(cleanId);
+      action = this.actions.get(cleanId);
+    }
+    if (typeof tabId === "number") {
+      if (!action.tabBadges[tabId]) {
+        action.tabBadges[tabId] = { ...action.defaultBadge };
+      }
+      action.tabBadges[tabId].backgroundColor = color;
+    } else {
+      action.defaultBadge.backgroundColor = color;
+    }
+    this.notifyBadgeChange(cleanId);
+  }
+  /**
+   * Set action title (chrome.action.setTitle).
+   */
+  setTitle(extensionId, title, tabId) {
+    const cleanId = extensionId.toLowerCase();
+    let action = this.actions.get(cleanId);
+    if (!action) {
+      this.registerAction(cleanId);
+      action = this.actions.get(cleanId);
+    }
+    if (typeof tabId === "number") {
+      if (!action.tabBadges[tabId]) {
+        action.tabBadges[tabId] = { ...action.defaultBadge };
+      }
+      action.tabBadges[tabId].title = title;
+    } else {
+      action.defaultTitle = title;
+    }
+    this.notifyBadgeChange(cleanId);
+  }
+  /**
+   * Get active badge state for an extension, resolving tab override if available.
+   */
+  getBadgeState(extensionId, tabId) {
+    const cleanId = extensionId.toLowerCase();
+    const action = this.actions.get(cleanId);
+    if (!action) {
+      return { text: "", backgroundColor: "#e06c75", textColor: "#ffffff" };
+    }
+    if (typeof tabId === "number" && action.tabBadges[tabId]) {
+      return action.tabBadges[tabId];
+    }
+    return action.defaultBadge;
+  }
+  /**
+   * Get all active action badges across all installed extensions.
+   */
+  getAllBadges(tabId) {
+    const result = {};
+    for (const [id] of this.actions) {
+      result[id] = this.getBadgeState(id, tabId);
+    }
+    return result;
+  }
+  /**
+   * Calculate optimal popup window bounds anchored directly beneath toolbar button.
+   */
+  calculateAnchoredBounds(anchor, popupWidth = 380, popupHeight = 540) {
+    const display = screen.getDisplayNearestPoint({ x: anchor.x, y: anchor.y });
+    const workArea = display.workArea;
+    let x = Math.round(anchor.x + anchor.width / 2 - popupWidth / 2);
+    let y = Math.round(anchor.y + anchor.height + 6);
+    if (x + popupWidth > workArea.x + workArea.width) {
+      x = workArea.x + workArea.width - popupWidth - 10;
+    }
+    if (x < workArea.x + 10) {
+      x = workArea.x + 10;
+    }
+    if (y + popupHeight > workArea.y + workArea.height) {
+      y = Math.max(workArea.y + 10, anchor.y - popupHeight - 6);
+    }
+    return { x, y, width: popupWidth, height: popupHeight };
+  }
+  notifyBadgeChange(extensionId) {
+    const badge = this.getBadgeState(extensionId);
+    for (const win of BrowserWindow7.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.send("extensions:action:badge-updated", {
+            extensionId,
+            badge
+          });
+        } catch {
+        }
+      }
+    }
+  }
+  /**
+   * Register IPC handlers for action management and badge querying.
+   */
+  registerIPC() {
+    const isExtId = (v) => typeof v === "string" && /^[a-z][a-z0-9]{31}$/i.test(v);
+    const isStr = (v) => typeof v === "string";
+    const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+    const isPosInt = (v) => typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v > 0;
+    ipcMain11.handle("extensions:action:get-all-badges", (_event, tabId) => {
+      return this.getAllBadges(isPosInt(tabId) ? tabId : void 0);
+    });
+    ipcMain11.handle("extensions:action:get-badge", (_event, payload) => {
+      if (!isObj(payload)) return { text: "", backgroundColor: "#e06c75", textColor: "#ffffff" };
+      const { extensionId, tabId } = payload;
+      if (!isExtId(extensionId)) return { text: "", backgroundColor: "#e06c75", textColor: "#ffffff" };
+      return this.getBadgeState(extensionId, isPosInt(tabId) ? tabId : void 0);
+    });
+    ipcMain11.handle("extensions:action:set-badge-text", (_event, payload) => {
+      if (!isObj(payload)) return { success: false };
+      const { extensionId, text, tabId } = payload;
+      if (!isExtId(extensionId)) return { success: false, error: "Invalid extensionId" };
+      const safeText = isStr(text) ? text.slice(0, 64) : "";
+      this.setBadgeText(extensionId, safeText, isPosInt(tabId) ? tabId : void 0);
+      return { success: true };
+    });
+    ipcMain11.handle("extensions:action:set-badge-color", (_event, payload) => {
+      if (!isObj(payload)) return { success: false };
+      const { extensionId, color, tabId } = payload;
+      if (!isExtId(extensionId)) return { success: false, error: "Invalid extensionId" };
+      const safeColor = isStr(color) ? color.slice(0, 100) : "#e06c75";
+      this.setBadgeBackgroundColor(extensionId, safeColor, isPosInt(tabId) ? tabId : void 0);
+      return { success: true };
+    });
+    ipcMain11.handle("extensions:action:set-title", (_event, payload) => {
+      if (!isObj(payload)) return { success: false };
+      const { extensionId, title, tabId } = payload;
+      if (!isExtId(extensionId)) return { success: false, error: "Invalid extensionId" };
+      const safeTitle = isStr(title) ? title.slice(0, 256) : "";
+      this.setTitle(extensionId, safeTitle, isPosInt(tabId) ? tabId : void 0);
+      return { success: true };
+    });
+    ipcMain11.handle("extensions:action:set-icon", (_event, payload) => {
+      if (!isObj(payload)) return { success: false };
+      const { extensionId, icon, tabId } = payload;
+      if (!isExtId(extensionId)) return { success: false, error: "Invalid extensionId" };
+      this.setIcon(extensionId, isStr(icon) ? icon : "", isPosInt(tabId) ? tabId : void 0);
+      return { success: true };
+    });
+  }
+};
+
+// electron/extensions/extensionManager.ts
+var execAsync = promisify(exec);
+var loadedExtensions = /* @__PURE__ */ new Map();
+var popupWindows = /* @__PURE__ */ new Map();
+var NAMED_PARTITIONS = [
+  "persist:forge",
+  "persist:session_personal",
+  "persist:session_work",
+  "persist:session_admin",
+  "persist:session_finance"
+];
+var runtimePartitions = new Set(NAMED_PARTITIONS);
+function getExtensionsStorageDir() {
+  const dir = path4.join(app7.getPath("userData"), "installed_extensions");
+  if (!fs4.existsSync(dir)) {
+    fs4.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+async function loadExtensionIntoAllSessions(extDir, extId) {
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  return sessionBridge.loadExtensionIntoAll(extDir, extId || path4.basename(extDir));
+}
+function removeExtensionFromAllSessions(extId) {
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  sessionBridge.removeExtensionFromAll(extId);
+}
+function matchesContentScriptPattern(url, pattern) {
+  try {
+    if (pattern === "<all_urls>") return true;
+    let rx = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
+    rx = rx.replace(/^\*:\/\//, "https?://");
+    return new RegExp(`^${rx}$`).test(url);
+  } catch {
+    return false;
+  }
+}
+function injectContentScriptsIntoWebContents(contents, stage = "dom-ready") {
+  if (loadedExtensions.size === 0) return;
+  const url = contents.getURL();
+  if (!url || url === "about:blank" || url.startsWith("devtools:") || url.startsWith("chrome-extension:")) return;
+  const ses = contents.session;
+  const nativeExts = typeof ses?.getAllExtensions === "function" ? ses.getAllExtensions() : [];
+  const nativeExtIds = new Set(nativeExts.map((e) => e.id.toLowerCase()));
+  for (const { manifest, info } of loadedExtensions.values()) {
+    if (nativeExtIds.has(info.id.toLowerCase())) {
+      continue;
+    }
+    const contentScripts = manifest.content_scripts || [];
+    for (const cs of contentScripts) {
+      const matches = cs.matches || [];
+      const excludeMatches = cs.exclude_matches || [];
+      const shouldInject = matches.some((p) => matchesContentScriptPattern(url, p)) && !excludeMatches.some((p) => matchesContentScriptPattern(url, p));
+      if (!shouldInject) continue;
+      const runAt = cs.run_at || "document_idle";
+      if (stage === "dom-ready" && runAt === "document_idle") continue;
+      if (stage === "did-finish-load" && runAt !== "document_idle") continue;
+      for (const cssFile of cs.css || []) {
+        try {
+          const cssPath = path4.join(info.path, cssFile);
+          if (fs4.existsSync(cssPath)) {
+            const css = fs4.readFileSync(cssPath, "utf-8");
+            contents.insertCSS(css).catch(() => {
+            });
+          }
+        } catch {
+        }
+      }
+      for (const jsFile of cs.js || []) {
+        try {
+          const jsPath = path4.join(info.path, jsFile);
+          if (fs4.existsSync(jsPath)) {
+            const code = fs4.readFileSync(jsPath, "utf-8");
+            const wrapped = `
+(function() {
+  // Non-destructive fallback guard: Never overwrite genuine window.chrome if present
+  window.chrome = window.chrome || {};
+  if (!window.chrome.runtime) {
+    window.chrome.runtime = {
+      id: "${info.id}",
+      getURL: function(p) { return "chrome-extension://${info.id}/" + (p || ""); },
+      sendMessage: function(msg, cb) {
+        try {
+          // Target own origin only \u2014 never broadcast to cross-origin listeners
+          window.postMessage({ __forge_ext_msg: true, extId: "${info.id}", message: msg }, window.location.origin || '*');
+        } catch(e) {}
+        if (typeof cb === "function") cb({ success: true });
+        return Promise.resolve({ success: true });
+      },
+      onMessage: {
+        addListener: function(fn) {
+          window.addEventListener("message", function(e) {
+            if (e.data && e.data.__forge_ext_resp && e.data.extId === "${info.id}") {
+              fn(e.data.payload, { id: "${info.id}" }, function() {});
+            }
+          });
+        },
+        removeListener: function() {}
+      },
+      lastError: null
+    };
+  }
+  if (!window.chrome.storage) {
+    window.chrome.storage = {
+      local: {
+        get: function(k, cb) { if(cb) cb({}); return Promise.resolve({}); },
+        set: function(k, cb) { if(cb) cb(); return Promise.resolve(); },
+        remove: function(k, cb) { if(cb) cb(); return Promise.resolve(); }
+      },
+      sync: {
+        get: function(k, cb) { if(cb) cb({}); return Promise.resolve({}); },
+        set: function(k, cb) { if(cb) cb(); return Promise.resolve(); },
+        remove: function(k, cb) { if(cb) cb(); return Promise.resolve(); }
+      },
+      onChanged: { addListener: function() {}, removeListener: function() {} }
+    };
+  }
+  try {
+    ${code}
+  } catch(e) {
+    console.warn("[Forge Ext Fallback] Error in content script for ${info.id}:", e);
+  }
+})();`;
+            contents.executeJavaScript(wrapped).catch(() => {
+            });
+          }
+        } catch {
+        }
+      }
+    }
+  }
+}
+function openExtensionPopup(extId, popupFile, extPath, anchorBounds) {
+  const cleanId = extId.toLowerCase();
+  const existing = popupWindows.get(cleanId);
+  if (existing && !existing.isDestroyed()) {
+    existing.close();
+    popupWindows.delete(cleanId);
+    return;
+  }
+  const popupPath = path4.join(extPath, popupFile);
+  if (!fs4.existsSync(popupPath)) return;
+  ExtensionServiceWorkerManager.getInstance().wakeWorker(cleanId).catch(() => {
+  });
+  const focusedWin = BrowserWindow8.getFocusedWindow();
+  const winBounds = focusedWin?.getBounds() || { x: 0, y: 0, width: 1400, height: 900 };
+  const calculatedBounds = anchorBounds ? ExtensionActionBridge.getInstance().calculateAnchoredBounds(anchorBounds) : {
+    width: 380,
+    height: 540,
+    x: winBounds.x + winBounds.width - 400,
+    y: winBounds.y + 80
+  };
+  const activeTab = ExtensionTabBridge.getInstance().getActiveTab();
+  const partition = activeTab?.partition || "persist:forge";
+  let popupSession = session11.defaultSession;
+  try {
+    popupSession = session11.fromPartition(partition);
+  } catch {
+  }
+  const preloadCandidate1 = path4.join(__dirname, "extensionPopupPreload.cjs");
+  const preloadCandidate2 = path4.join(__dirname, "extensions", "extensionPopupPreload.cjs");
+  const preloadPath = fs4.existsSync(preloadCandidate1) ? preloadCandidate1 : preloadCandidate2;
+  const popup = new BrowserWindow8({
+    ...calculatedBounds,
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: "#1e1e2e",
+    webPreferences: {
+      preload: fs4.existsSync(preloadPath) ? preloadPath : void 0,
+      nodeIntegration: false,
+      contextIsolation: false,
+      sandbox: false,
+      session: popupSession
+    },
+    show: false
+  });
+  popup.once("ready-to-show", () => {
+    popup.show();
+    popup.focus();
+  });
+  popup.on("closed", () => {
+    popupWindows.delete(cleanId);
+  });
+  popup.on("blur", () => {
+    if (!popup.isDestroyed()) popup.close();
+  });
+  const cleanPopupFile = popupFile.replace(/^[/\\]+/, "");
+  const chromeExtUrl = `chrome-extension://${cleanId}/${cleanPopupFile}`;
+  popup.loadURL(chromeExtUrl).catch((err) => {
+    console.log(`[ExtensionManager] Notice loading popup via chrome-extension:// (${err?.message}), falling back to file://`);
+    if (!popup.isDestroyed()) {
+      popup.loadFile(popupPath).catch((fileErr) => {
+        console.warn(`[ExtensionManager] Failed to load extension popup:`, fileErr);
+      });
+    }
+  });
+  popupWindows.set(cleanId, popup);
+}
+function resolveIconDataUrl(manifest, extDir) {
+  const icons = manifest.icons || manifest.action?.default_icon || manifest.browser_action?.default_icon;
+  if (!icons) return void 0;
+  let iconRelativePath = "";
+  if (typeof icons === "string") {
+    iconRelativePath = icons;
+  } else if (typeof icons === "object") {
+    iconRelativePath = icons["128"] || icons["64"] || icons["48"] || icons["32"] || icons["16"] || Object.values(icons)[0];
+  }
+  if (!iconRelativePath) return void 0;
+  const fullIconPath = path4.join(extDir, iconRelativePath);
+  if (!fs4.existsSync(fullIconPath)) return void 0;
+  const ext = path4.extname(fullIconPath).slice(1) || "png";
+  const b64 = fs4.readFileSync(fullIconPath).toString("base64");
+  return `data:image/${ext};base64,${b64}`;
+}
+async function installExtensionFromChromeWebStore(extId, webStoreUrl) {
+  const cleanedId = extId.trim().toLowerCase();
+  if (!/^[a-z]{32}$/.test(cleanedId)) {
+    return { success: false, message: `Invalid Chrome extension ID: "${extId}"` };
+  }
+  const baseDir = getExtensionsStorageDir();
+  const targetDir = path4.join(baseDir, cleanedId);
+  const tempZipPath = path4.join(baseDir, `${cleanedId}.zip`);
+  try {
+    const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x86-64&os_arch=x86-64&nacl_arch=x86-64&prod=chromecrx&prodchannel=&prodversion=130.0.0.0&lang=en-US&acceptformat=crx3,crx2&x=id%3D${cleanedId}%26installsource%3Dondemand%26uc`;
+    console.log(`[ExtensionManager] Downloading CRX for ${cleanedId}...`);
+    const res = await fetch(crxUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Referer": "https://chromewebstore.google.com/"
+      },
+      redirect: "follow"
+    });
+    if (!res.ok) {
+      return {
+        success: false,
+        message: `Failed to download extension package from Chrome Web Store (HTTP ${res.status}).`
+      };
+    }
+    const arrayBuf = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    if (buffer.length < 32) {
+      return { success: false, message: "Downloaded file is empty or corrupted." };
+    }
+    let zipStartOffset = -1;
+    for (let i = 0; i < Math.min(buffer.length - 4, 1e5); i++) {
+      if (buffer[i] === 80 && buffer[i + 1] === 75 && buffer[i + 2] === 3 && buffer[i + 3] === 4) {
+        zipStartOffset = i;
+        break;
+      }
+    }
+    if (zipStartOffset === -1) {
+      return { success: false, message: "Could not locate valid ZIP payload in extension package." };
+    }
+    const zipBuffer = buffer.subarray(zipStartOffset);
+    fs4.writeFileSync(tempZipPath, zipBuffer);
+    if (fs4.existsSync(targetDir)) {
+      try {
+        fs4.rmSync(targetDir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    fs4.mkdirSync(targetDir, { recursive: true });
+    try {
+      await execAsync(`tar -xf "${tempZipPath}" -C "${targetDir}"`);
+    } catch {
+      await execAsync(
+        `powershell -NoProfile -Command "Expand-Archive -LiteralPath '${tempZipPath}' -DestinationPath '${targetDir}' -Force"`
+      );
+    } finally {
+      try {
+        if (fs4.existsSync(tempZipPath)) fs4.unlinkSync(tempZipPath);
+      } catch {
+      }
+    }
+    const manifestPath = path4.join(targetDir, "manifest.json");
+    if (!fs4.existsSync(manifestPath)) {
+      return { success: false, message: "Extraction failed: manifest.json not found." };
+    }
+    let manifest = {};
+    try {
+      manifest = JSON.parse(fs4.readFileSync(manifestPath, "utf-8"));
+    } catch {
+      return { success: false, message: "Failed to parse extension manifest.json." };
+    }
+    const manifestVersion = manifest.manifest_version || 2;
+    const iconDataUrl = resolveIconDataUrl(manifest, targetDir);
+    const loadResults = await loadExtensionIntoAllSessions(targetDir, cleanedId);
+    const diagnosticReport = diagnoseExtension(targetDir, manifest, cleanedId, loadResults);
+    const extInfo = {
+      id: cleanedId,
+      name: manifest.name || "Chrome Extension",
+      version: manifest.version || "1.0.0",
+      description: manifest.description || `Installed directly from Chrome Web Store (${cleanedId})`,
+      author: manifest.author || "Chrome Web Store Developer",
+      icon: iconDataUrl,
+      path: targetDir,
+      manifestPermissions: manifest.permissions || [],
+      manifestVersion,
+      action: manifest.action || manifest.browser_action
+    };
+    loadedExtensions.set(cleanedId, { info: extInfo, manifest });
+    ExtensionActionBridge.getInstance().registerAction(cleanedId, manifest.action || manifest.browser_action);
+    console.log(`[ExtensionManager] Installed "${extInfo.name}" (MV${manifestVersion}) \u2014 compatibility: ${diagnosticReport.compatibilityScore}% (${diagnosticReport.compatibilityTier})`);
+    return {
+      success: true,
+      message: `Successfully installed "${extInfo.name}"!`,
+      extension: extInfo
+    };
+  } catch (err) {
+    console.error("[ExtensionManager] Installation error:", err);
+    return { success: false, message: `Installation failed: ${err?.message || "Unknown error"}` };
+  }
+}
+async function uninstallExtension(extId) {
+  const cleanedId = extId.trim().toLowerCase();
+  try {
+    removeExtensionFromAllSessions(cleanedId);
+    loadedExtensions.delete(cleanedId);
+    ExtensionActionBridge.getInstance().unregisterAction(cleanedId);
+    const popup = popupWindows.get(cleanedId);
+    if (popup && !popup.isDestroyed()) popup.close();
+    popupWindows.delete(cleanedId);
+    const targetDir = path4.join(getExtensionsStorageDir(), cleanedId);
+    if (fs4.existsSync(targetDir)) {
+      fs4.rmSync(targetDir, { recursive: true, force: true });
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[ExtensionManager] Error uninstalling ${extId}:`, err);
+    return false;
+  }
+}
+async function listAndReloadInstalledExtensions() {
+  const baseDir = getExtensionsStorageDir();
+  const results = [];
+  if (!fs4.existsSync(baseDir)) return results;
+  const entries2 = fs4.readdirSync(baseDir, { withFileTypes: true });
+  for (const entry of entries2) {
+    if (!entry.isDirectory()) continue;
+    const extDir = path4.join(baseDir, entry.name);
+    const manifestPath = path4.join(extDir, "manifest.json");
+    if (!fs4.existsSync(manifestPath)) continue;
+    try {
+      const manifest = JSON.parse(fs4.readFileSync(manifestPath, "utf-8"));
+      const extId = entry.name.toLowerCase();
+      const manifestVersion = manifest.manifest_version || 2;
+      const loadResults = await loadExtensionIntoAllSessions(extDir, extId);
+      diagnoseExtension(extDir, manifest, extId, loadResults);
+      const iconDataUrl = resolveIconDataUrl(manifest, extDir);
+      const extInfo = {
+        id: extId,
+        name: manifest.name || "Chrome Extension",
+        version: manifest.version || "1.0.0",
+        description: manifest.description || "",
+        author: manifest.author || "Chrome Web Store Developer",
+        icon: iconDataUrl,
+        path: extDir,
+        manifestPermissions: manifest.permissions || [],
+        manifestVersion,
+        action: manifest.action || manifest.browser_action
+      };
+      loadedExtensions.set(extId, { info: extInfo, manifest });
+      ExtensionActionBridge.getInstance().registerAction(extId, manifest.action || manifest.browser_action);
+      results.push(extInfo);
+    } catch (e) {
+      console.warn(`[ExtensionManager] Error loading extension at ${extDir}:`, e);
+    }
+  }
+  return results;
+}
+function attachExtensionHooksToWebContents(contents) {
+  if (contents.getType() !== "webview") return;
+  ExtensionTabBridge.getInstance().attachWebContents(contents);
+  const inject = (stage) => {
+    try {
+      injectContentScriptsIntoWebContents(contents, stage);
+    } catch {
+    }
+  };
+  contents.on("did-finish-load", () => inject("did-finish-load"));
+  contents.on("dom-ready", () => inject("dom-ready"));
+}
+function onNewSessionPartition(partitionName, ses) {
+  if (partitionName.startsWith("private_") || partitionName.startsWith("tor_")) return;
+  if (!partitionName.startsWith("persist:")) return;
+  runtimePartitions.add(partitionName);
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  const installedExtDirs = /* @__PURE__ */ new Map();
+  for (const { info } of loadedExtensions.values()) {
+    installedExtDirs.set(info.id, info.path);
+  }
+  sessionBridge.onNewSessionCreated(partitionName, ses, installedExtDirs).catch(() => {
+  });
+  ExtensionServiceWorkerManager.getInstance().monitorSession(ses, partitionName);
+  for (const { info } of loadedExtensions.values()) {
+    ses.loadExtension(info.path, { allowFileAccess: true }).catch(() => {
+    });
+  }
+}
+function initExtensionManager() {
+  ExtensionTabBridge.getInstance().registerIPC();
+  ExtensionMessageBridge.getInstance().registerIPC();
+  ExtensionActionBridge.getInstance().registerIPC();
+  ExtensionServiceWorkerManager.getInstance().registerIPC();
+  ExtensionServiceWorkerManager.getInstance().monitorSession(session11.defaultSession, "default");
+  const sessionBridge = ExtensionSessionBridge.getInstance();
+  for (const partName of NAMED_PARTITIONS) {
+    try {
+      const ses = session11.fromPartition(partName);
+      sessionBridge.registerSession(partName, ses);
+      ExtensionServiceWorkerManager.getInstance().monitorSession(ses, partName);
+    } catch {
+    }
+  }
+  ipcMain12.handle("extensions:install-from-cws", async (_event, payload) => {
+    return installExtensionFromChromeWebStore(payload.extId, payload.url);
+  });
+  ipcMain12.handle("extensions:uninstall", async (_event, payload) => {
+    const result = await uninstallExtension(payload.extId);
+    clearDiagnosticReport(payload.extId?.trim().toLowerCase());
+    return result;
+  });
+  ipcMain12.handle("extensions:list-installed", async () => {
+    return listAndReloadInstalledExtensions();
+  });
+  ipcMain12.handle("extensions:open-popup", async (_event, payload) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { success: false, message: "Invalid payload" };
+    }
+    const p = payload;
+    const rawExtId = p["extId"];
+    if (typeof rawExtId !== "string" || !/^[a-z][a-z0-9]{31}$/i.test(rawExtId)) {
+      return { success: false, message: "Invalid extension ID" };
+    }
+    const cleanId = rawExtId.toLowerCase();
+    const record = loadedExtensions.get(cleanId);
+    if (!record) return { success: false, message: "Extension not found" };
+    const popupFile = record.manifest.action?.default_popup || record.manifest.browser_action?.default_popup;
+    if (!popupFile) {
+      try {
+        const activeTab = ExtensionTabBridge.getInstance().getActiveTab();
+        await ExtensionServiceWorkerManager.getInstance().wakeWorker(cleanId);
+        await ExtensionMessageBridge.getInstance().sendMessageToExtension(cleanId, {
+          __forge_action_click: true,
+          tab: activeTab
+        });
+        return { success: true, clicked: true };
+      } catch {
+        return { success: false, message: "This extension has no popup UI" };
+      }
+    }
+    try {
+      openExtensionPopup(record.info.id, popupFile, record.info.path, p["anchorBounds"]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err?.message || "Failed to open popup" };
+    }
+  });
+  ipcMain12.on("extensions:popup:resize", (_event, payload) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    const p = payload;
+    const extId = p["extensionId"];
+    if (typeof extId !== "string" || !/^[a-z][a-z0-9]{31}$/i.test(extId)) return;
+    const rawW = p["width"];
+    const rawH = p["height"];
+    if (typeof rawW !== "number" || typeof rawH !== "number") return;
+    if (!Number.isFinite(rawW) || !Number.isFinite(rawH)) return;
+    const targetW = Math.round(Math.min(Math.max(rawW, 200), 800));
+    const targetH = Math.round(Math.min(Math.max(rawH, 150), 600));
+    const win = popupWindows.get(extId.toLowerCase());
+    if (win && !win.isDestroyed()) {
+      const [currentW, currentH] = win.getSize();
+      if (Math.abs(currentW - targetW) > 8 || Math.abs(currentH - targetH) > 8) {
+        win.setSize(targetW, targetH);
+      }
+    }
+  });
+  ipcMain12.handle("extensions:get-popup-info", (_event, payload) => {
+    const record = loadedExtensions.get(payload.extId?.toLowerCase());
+    if (!record) return null;
+    const popupFile = record.manifest.action?.default_popup || record.manifest.browser_action?.default_popup;
+    return { hasPopup: Boolean(popupFile), popupFile: popupFile || null };
+  });
+  ipcMain12.handle("extensions:diagnostics", async (_event, payload) => {
+    if (payload?.extId) {
+      return getDiagnosticReport(payload.extId.toLowerCase()) || null;
+    }
+    return getAllDiagnosticReports();
+  });
+  ipcMain12.handle("extensions:diagnostics-summary", async () => {
+    return getDiagnosticSummary();
+  });
+  ipcMain12.handle("extensions:session-bridge-summary", async () => {
+    return sessionBridge.getSummary();
+  });
+  listAndReloadInstalledExtensions().catch((err) => {
+    console.warn("[ExtensionManager] Initial reload notice:", err);
+  });
+}
+
 // electron/sessions/sessionManager.ts
 var __filename2 = fileURLToPath2(import.meta.url);
-var __dirname2 = path4.dirname(__filename2);
+var __dirname3 = path5.dirname(__filename2);
 var configuredSessions = /* @__PURE__ */ new Set();
 function configureSessionPartition(ses, partitionName) {
   if (configuredSessions.has(partitionName)) return;
@@ -6097,8 +8153,8 @@ function configureSessionPartition(ses, partitionName) {
   if (ElectronPrivateSessionManager.getInstance().isPrivateOrTorPartition(partitionName)) {
     ElectronPrivateSessionManager.getInstance().configurePrivatePartition(ses, partitionName);
   }
-  const guestPreload = fs4.existsSync(path4.join(__dirname2, "guestPreload.cjs")) ? path4.join(__dirname2, "guestPreload.cjs") : path4.join(__dirname2, "../guestPreload.cjs");
-  if (fs4.existsSync(guestPreload)) {
+  const guestPreload = fs5.existsSync(path5.join(__dirname3, "guestPreload.cjs")) ? path5.join(__dirname3, "guestPreload.cjs") : path5.join(__dirname3, "../guestPreload.cjs");
+  if (fs5.existsSync(guestPreload)) {
     try {
       ses.setPreloads([guestPreload]);
     } catch (err) {
@@ -6137,12 +8193,17 @@ function configureSessionPartition(ses, partitionName) {
     callback({});
   });
   setupCorsBypassInterceptor(ses);
+  try {
+    onNewSessionPartition(partitionName, ses);
+  } catch (err) {
+    console.warn(`[SessionManager] Could not attach extension bridge to ${partitionName}:`, err);
+  }
 }
 function initSessionManager() {
   ElectronPrivateSessionManager.getInstance().registerIPC();
-  const defaultSes = session8.fromPartition("persist:forge");
+  const defaultSes = session12.fromPartition("persist:forge");
   configureSessionPartition(defaultSes, "persist:forge");
-  app7.on("session-created", (createdSession) => {
+  app8.on("session-created", (createdSession) => {
     try {
       const partition = createdSession._partition || createdSession.partition || "";
       if (partition) {
@@ -6151,9 +8212,9 @@ function initSessionManager() {
     } catch {
     }
   });
-  ipcMain8.handle("sessions:clear-data", async (_event, partition, types = ["cache", "cookies", "storage"]) => {
+  ipcMain13.handle("sessions:clear-data", async (_event, partition, types = ["cache", "cookies", "storage"]) => {
     try {
-      const targetSes = session8.fromPartition(partition);
+      const targetSes = session12.fromPartition(partition);
       const storages = [];
       if (types.includes("cookies")) storages.push("cookies");
       if (types.includes("storage")) {
@@ -6172,19 +8233,19 @@ function initSessionManager() {
       return { success: false, error: err?.message };
     }
   });
-  ipcMain8.handle("focus:sync-state", (_event, payload) => {
+  ipcMain13.handle("focus:sync-state", (_event, payload) => {
     updateFocusState(payload);
     return true;
   });
 }
 
 // electron/tor/TorIPC.ts
-import { ipcMain as ipcMain9, BrowserWindow as BrowserWindow5 } from "electron";
+import { ipcMain as ipcMain14, BrowserWindow as BrowserWindow9 } from "electron";
 function registerTorIPC() {
   const runtime = ElectronTorRuntime.getInstance();
   const manager = TorManager.getInstance();
   manager.events.onStatus((status2) => {
-    for (const win of BrowserWindow5.getAllWindows()) {
+    for (const win of BrowserWindow9.getAllWindows()) {
       if (!win.isDestroyed()) {
         try {
           win.webContents.send("tor:status-changed", status2);
@@ -6194,7 +8255,7 @@ function registerTorIPC() {
     }
   });
   manager.events.onCircuit((circuit) => {
-    for (const win of BrowserWindow5.getAllWindows()) {
+    for (const win of BrowserWindow9.getAllWindows()) {
       if (!win.isDestroyed()) {
         try {
           win.webContents.send("tor:circuit-changed", circuit);
@@ -6203,418 +8264,27 @@ function registerTorIPC() {
       }
     }
   });
-  ipcMain9.handle("tor:get-status", async () => {
+  ipcMain14.handle("tor:get-status", async () => {
     return runtime.getStatus();
   });
-  ipcMain9.handle("tor:connect", async () => {
+  ipcMain14.handle("tor:connect", async () => {
     return runtime.connect();
   });
-  ipcMain9.handle("tor:disconnect", async () => {
+  ipcMain14.handle("tor:disconnect", async () => {
     return runtime.disconnect();
   });
-  ipcMain9.handle("tor:new-circuit", async () => {
+  ipcMain14.handle("tor:new-circuit", async () => {
     return runtime.newCircuit();
   });
-  ipcMain9.handle("tor:test-leak", async () => {
+  ipcMain14.handle("tor:test-leak", async () => {
     return runtime.runLeakTest();
-  });
-}
-
-// electron/extensions/extensionManager.ts
-import { app as app8, session as session9, ipcMain as ipcMain10, BrowserWindow as BrowserWindow6 } from "electron";
-import path5 from "node:path";
-import fs5 from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-var execAsync = promisify(exec);
-var loadedExtensions = /* @__PURE__ */ new Map();
-var popupWindows = /* @__PURE__ */ new Map();
-var NAMED_PARTITIONS = [
-  "persist:forge",
-  "persist:session_personal",
-  "persist:session_work",
-  "persist:session_admin",
-  "persist:session_finance"
-];
-var runtimePartitions = new Set(NAMED_PARTITIONS);
-function getExtensionsStorageDir() {
-  const dir = path5.join(app8.getPath("userData"), "installed_extensions");
-  if (!fs5.existsSync(dir)) {
-    fs5.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
-}
-async function loadExtensionIntoAllSessions(extDir) {
-  try {
-    await session9.defaultSession.loadExtension(extDir, { allowFileAccess: true });
-  } catch (err) {
-    if (!err?.message?.includes("manifest_version 3")) {
-      console.warn(`[ExtensionManager] defaultSession load notice:`, err?.message);
-    }
-  }
-  for (const partName of runtimePartitions) {
-    try {
-      const ses = session9.fromPartition(partName);
-      await ses.loadExtension(extDir, { allowFileAccess: true });
-    } catch (err) {
-      if (!err?.message?.includes("manifest_version 3")) {
-        console.warn(`[ExtensionManager] ${partName} load notice:`, err?.message);
-      }
-    }
-  }
-}
-function removeExtensionFromAllSessions(extId) {
-  try {
-    session9.defaultSession.removeExtension(extId);
-  } catch {
-  }
-  for (const partName of runtimePartitions) {
-    try {
-      const ses = session9.fromPartition(partName);
-      ses.removeExtension(extId);
-    } catch {
-    }
-  }
-}
-function matchesContentScriptPattern(url, pattern) {
-  try {
-    if (pattern === "<all_urls>") return true;
-    let rx = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
-    rx = rx.replace(/^\*:\/\//, "https?://");
-    return new RegExp(`^${rx}$`).test(url);
-  } catch {
-    return false;
-  }
-}
-function injectContentScriptsIntoWebContents(contents) {
-  if (loadedExtensions.size === 0) return;
-  const url = contents.getURL();
-  if (!url || url === "about:blank" || url.startsWith("devtools:") || url.startsWith("chrome-extension:")) return;
-  for (const { manifest, info } of loadedExtensions.values()) {
-    const contentScripts = manifest.content_scripts || [];
-    for (const cs of contentScripts) {
-      const matches = cs.matches || [];
-      const excludeMatches = cs.exclude_matches || [];
-      const shouldInject = matches.some((p) => matchesContentScriptPattern(url, p)) && !excludeMatches.some((p) => matchesContentScriptPattern(url, p));
-      if (!shouldInject) continue;
-      for (const cssFile of cs.css || []) {
-        try {
-          const cssPath = path5.join(info.path, cssFile);
-          if (fs5.existsSync(cssPath)) {
-            const css = fs5.readFileSync(cssPath, "utf-8");
-            contents.insertCSS(css).catch(() => {
-            });
-          }
-        } catch {
-        }
-      }
-      for (const jsFile of cs.js || []) {
-        try {
-          const jsPath = path5.join(info.path, jsFile);
-          if (fs5.existsSync(jsPath)) {
-            const code = fs5.readFileSync(jsPath, "utf-8");
-            const runAt = cs.run_at || "document_idle";
-            const wrapped = `
-(function() {
-  if (!window.chrome) window.chrome = {};
-  if (!window.chrome.runtime) window.chrome.runtime = {
-    id: "${info.id}",
-    getURL: function(p) { return "chrome-extension://${info.id}/" + p; },
-    sendMessage: function() {},
-    onMessage: { addListener: function() {}, removeListener: function() {} },
-    lastError: null
-  };
-  if (!window.chrome.storage) window.chrome.storage = {
-    local: { get: function(k,cb) { if(cb)cb({}); return Promise.resolve({}); }, set: function(k,cb) { if(cb)cb(); return Promise.resolve(); }, remove: function(k,cb) { if(cb)cb(); return Promise.resolve(); } },
-    sync: { get: function(k,cb) { if(cb)cb({}); return Promise.resolve({}); }, set: function(k,cb) { if(cb)cb(); return Promise.resolve(); }, remove: function(k,cb) { if(cb)cb(); return Promise.resolve(); } },
-    onChanged: { addListener: function() {}, removeListener: function() {} }
-  };
-  try {
-    ${code}
-  } catch(e) { /* content script error isolated */ }
-})();`;
-            if (runAt === "document_start") {
-              contents.executeJavaScript(wrapped, true).catch(() => {
-              });
-            } else {
-              contents.executeJavaScript(wrapped).catch(() => {
-              });
-            }
-          }
-        } catch {
-        }
-      }
-    }
-  }
-}
-function openExtensionPopup(extId, popupFile, extPath) {
-  const existing = popupWindows.get(extId);
-  if (existing && !existing.isDestroyed()) {
-    existing.close();
-    popupWindows.delete(extId);
-    return;
-  }
-  const popupPath = path5.join(extPath, popupFile);
-  if (!fs5.existsSync(popupPath)) return;
-  const focusedWin = BrowserWindow6.getFocusedWindow();
-  const winBounds = focusedWin?.getBounds() || { x: 0, y: 0, width: 1400, height: 900 };
-  const popup = new BrowserWindow6({
-    width: 380,
-    height: 540,
-    x: winBounds.x + winBounds.width - 400,
-    y: winBounds.y + 80,
-    frame: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    backgroundColor: "#1e1e2e",
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
-    },
-    show: false
-  });
-  popup.once("ready-to-show", () => {
-    popup.show();
-    popup.focus();
-  });
-  popup.on("closed", () => {
-    popupWindows.delete(extId);
-  });
-  popup.on("blur", () => {
-    if (!popup.isDestroyed()) popup.close();
-  });
-  popup.loadFile(popupPath);
-  popupWindows.set(extId, popup);
-}
-function resolveIconDataUrl(manifest, extDir) {
-  const icons = manifest.icons || manifest.action?.default_icon || manifest.browser_action?.default_icon;
-  if (!icons) return void 0;
-  let iconRelativePath = "";
-  if (typeof icons === "string") {
-    iconRelativePath = icons;
-  } else if (typeof icons === "object") {
-    iconRelativePath = icons["128"] || icons["64"] || icons["48"] || icons["32"] || icons["16"] || Object.values(icons)[0];
-  }
-  if (!iconRelativePath) return void 0;
-  const fullIconPath = path5.join(extDir, iconRelativePath);
-  if (!fs5.existsSync(fullIconPath)) return void 0;
-  const ext = path5.extname(fullIconPath).slice(1) || "png";
-  const b64 = fs5.readFileSync(fullIconPath).toString("base64");
-  return `data:image/${ext};base64,${b64}`;
-}
-async function installExtensionFromChromeWebStore(extId, webStoreUrl) {
-  const cleanedId = extId.trim().toLowerCase();
-  if (!/^[a-z]{32}$/.test(cleanedId)) {
-    return { success: false, message: `Invalid Chrome extension ID: "${extId}"` };
-  }
-  const baseDir = getExtensionsStorageDir();
-  const targetDir = path5.join(baseDir, cleanedId);
-  const tempZipPath = path5.join(baseDir, `${cleanedId}.zip`);
-  try {
-    const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&os=win&arch=x86-64&os_arch=x86-64&nacl_arch=x86-64&prod=chromecrx&prodchannel=&prodversion=130.0.0.0&lang=en-US&acceptformat=crx3,crx2&x=id%3D${cleanedId}%26installsource%3Dondemand%26uc`;
-    console.log(`[ExtensionManager] Downloading CRX for ${cleanedId}...`);
-    const res = await fetch(crxUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        "Referer": "https://chromewebstore.google.com/"
-      },
-      redirect: "follow"
-    });
-    if (!res.ok) {
-      return {
-        success: false,
-        message: `Failed to download extension package from Chrome Web Store (HTTP ${res.status}).`
-      };
-    }
-    const arrayBuf = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
-    if (buffer.length < 32) {
-      return { success: false, message: "Downloaded file is empty or corrupted." };
-    }
-    let zipStartOffset = -1;
-    for (let i = 0; i < Math.min(buffer.length - 4, 1e5); i++) {
-      if (buffer[i] === 80 && buffer[i + 1] === 75 && buffer[i + 2] === 3 && buffer[i + 3] === 4) {
-        zipStartOffset = i;
-        break;
-      }
-    }
-    if (zipStartOffset === -1) {
-      return { success: false, message: "Could not locate valid ZIP payload in extension package." };
-    }
-    const zipBuffer = buffer.subarray(zipStartOffset);
-    fs5.writeFileSync(tempZipPath, zipBuffer);
-    if (fs5.existsSync(targetDir)) {
-      try {
-        fs5.rmSync(targetDir, { recursive: true, force: true });
-      } catch {
-      }
-    }
-    fs5.mkdirSync(targetDir, { recursive: true });
-    try {
-      await execAsync(`tar -xf "${tempZipPath}" -C "${targetDir}"`);
-    } catch {
-      await execAsync(
-        `powershell -NoProfile -Command "Expand-Archive -LiteralPath '${tempZipPath}' -DestinationPath '${targetDir}' -Force"`
-      );
-    } finally {
-      try {
-        if (fs5.existsSync(tempZipPath)) fs5.unlinkSync(tempZipPath);
-      } catch {
-      }
-    }
-    const manifestPath = path5.join(targetDir, "manifest.json");
-    if (!fs5.existsSync(manifestPath)) {
-      return { success: false, message: "Extraction failed: manifest.json not found." };
-    }
-    let manifest = {};
-    try {
-      manifest = JSON.parse(fs5.readFileSync(manifestPath, "utf-8"));
-    } catch {
-      return { success: false, message: "Failed to parse extension manifest.json." };
-    }
-    const manifestVersion = manifest.manifest_version || 2;
-    if (manifestVersion >= 3) {
-      console.warn(`[ExtensionManager] "${manifest.name}" uses Manifest V3. Content scripts will be injected manually via Forge's content script engine. Service workers and declarativeNetRequest are not supported.`);
-    }
-    const iconDataUrl = resolveIconDataUrl(manifest, targetDir);
-    await loadExtensionIntoAllSessions(targetDir);
-    const extInfo = {
-      id: cleanedId,
-      name: manifest.name || "Chrome Extension",
-      version: manifest.version || "1.0.0",
-      description: manifest.description || `Installed directly from Chrome Web Store (${cleanedId})`,
-      author: manifest.author || "Chrome Web Store Developer",
-      icon: iconDataUrl,
-      path: targetDir,
-      manifestPermissions: manifest.permissions || [],
-      manifestVersion,
-      action: manifest.action || manifest.browser_action
-    };
-    loadedExtensions.set(cleanedId, { info: extInfo, manifest });
-    console.log(`[ExtensionManager] Installed "${extInfo.name}" (MV${manifestVersion}) into all sessions.`);
-    return {
-      success: true,
-      message: `Successfully installed "${extInfo.name}"!`,
-      extension: extInfo
-    };
-  } catch (err) {
-    console.error("[ExtensionManager] Installation error:", err);
-    return { success: false, message: `Installation failed: ${err?.message || "Unknown error"}` };
-  }
-}
-async function uninstallExtension(extId) {
-  const cleanedId = extId.trim().toLowerCase();
-  try {
-    removeExtensionFromAllSessions(cleanedId);
-    loadedExtensions.delete(cleanedId);
-    const popup = popupWindows.get(cleanedId);
-    if (popup && !popup.isDestroyed()) popup.close();
-    popupWindows.delete(cleanedId);
-    const targetDir = path5.join(getExtensionsStorageDir(), cleanedId);
-    if (fs5.existsSync(targetDir)) {
-      fs5.rmSync(targetDir, { recursive: true, force: true });
-    }
-    return true;
-  } catch (err) {
-    console.warn(`[ExtensionManager] Error uninstalling ${extId}:`, err);
-    return false;
-  }
-}
-async function listAndReloadInstalledExtensions() {
-  const baseDir = getExtensionsStorageDir();
-  const results = [];
-  if (!fs5.existsSync(baseDir)) return results;
-  const entries2 = fs5.readdirSync(baseDir, { withFileTypes: true });
-  for (const entry of entries2) {
-    if (!entry.isDirectory()) continue;
-    const extDir = path5.join(baseDir, entry.name);
-    const manifestPath = path5.join(extDir, "manifest.json");
-    if (!fs5.existsSync(manifestPath)) continue;
-    try {
-      const manifest = JSON.parse(fs5.readFileSync(manifestPath, "utf-8"));
-      const extId = entry.name.toLowerCase();
-      const manifestVersion = manifest.manifest_version || 2;
-      await loadExtensionIntoAllSessions(extDir);
-      const iconDataUrl = resolveIconDataUrl(manifest, extDir);
-      const extInfo = {
-        id: extId,
-        name: manifest.name || "Chrome Extension",
-        version: manifest.version || "1.0.0",
-        description: manifest.description || "",
-        author: manifest.author || "Chrome Web Store Developer",
-        icon: iconDataUrl,
-        path: extDir,
-        manifestPermissions: manifest.permissions || [],
-        manifestVersion,
-        action: manifest.action || manifest.browser_action
-      };
-      loadedExtensions.set(extId, { info: extInfo, manifest });
-      results.push(extInfo);
-    } catch (e) {
-      console.warn(`[ExtensionManager] Error loading extension at ${extDir}:`, e);
-    }
-  }
-  return results;
-}
-function attachExtensionHooksToWebContents(contents) {
-  if (contents.getType() !== "webview") return;
-  const inject = () => {
-    try {
-      injectContentScriptsIntoWebContents(contents);
-    } catch {
-    }
-  };
-  contents.on("did-finish-load", inject);
-  contents.on("dom-ready", inject);
-}
-function onNewSessionPartition(partitionName, ses) {
-  if (partitionName.startsWith("private_") || partitionName.startsWith("tor_")) return;
-  if (!partitionName.startsWith("persist:")) return;
-  runtimePartitions.add(partitionName);
-  for (const { info } of loadedExtensions.values()) {
-    ses.loadExtension(info.path, { allowFileAccess: true }).catch(() => {
-    });
-  }
-}
-function initExtensionManager() {
-  ipcMain10.handle("extensions:install-from-cws", async (_event, payload) => {
-    return installExtensionFromChromeWebStore(payload.extId, payload.url);
-  });
-  ipcMain10.handle("extensions:uninstall", async (_event, payload) => {
-    return uninstallExtension(payload.extId);
-  });
-  ipcMain10.handle("extensions:list-installed", async () => {
-    return listAndReloadInstalledExtensions();
-  });
-  ipcMain10.handle("extensions:open-popup", (_event, payload) => {
-    const record = loadedExtensions.get(payload.extId?.toLowerCase());
-    if (!record) return { success: false, message: "Extension not found" };
-    const popupFile = record.manifest.action?.default_popup || record.manifest.browser_action?.default_popup;
-    if (!popupFile) return { success: false, message: "This extension has no popup UI" };
-    try {
-      openExtensionPopup(record.info.id, popupFile, record.info.path);
-      return { success: true };
-    } catch (err) {
-      return { success: false, message: err?.message || "Failed to open popup" };
-    }
-  });
-  ipcMain10.handle("extensions:get-popup-info", (_event, payload) => {
-    const record = loadedExtensions.get(payload.extId?.toLowerCase());
-    if (!record) return null;
-    const popupFile = record.manifest.action?.default_popup || record.manifest.browser_action?.default_popup;
-    return { hasPopup: Boolean(popupFile), popupFile: popupFile || null };
-  });
-  listAndReloadInstalledExtensions().catch((err) => {
-    console.warn("[ExtensionManager] Initial reload notice:", err);
   });
 }
 
 // electron/main.ts
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 var __filename3 = fileURLToPath3(import.meta.url);
-var __dirname3 = path6.dirname(__filename3);
+var __dirname4 = path6.dirname(__filename3);
 if (process.platform === "win32") {
   app9.setAppUserModelId("com.forge.browser");
 }
@@ -6654,12 +8324,12 @@ process.on("unhandledRejection", (reason) => {
 app9.on("child-process-gone", (_event, details) => {
   console.warn("[Electron Main] Child process gone:", details.type, details.reason, details.exitCode);
 });
-app9.on("render-process-gone", (_event, webContents4, details) => {
+app9.on("render-process-gone", (_event, webContents6, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
-    if (webContents4.getType() === "window" && !webContents4.isDestroyed()) {
+    if (webContents6.getType() === "window" && !webContents6.isDestroyed()) {
       try {
-        webContents4.reload();
+        webContents6.reload();
       } catch {
       }
     }
@@ -6714,7 +8384,7 @@ var MIME_EXT_MAP = {
   "audio/flac": ".flac"
 };
 function setupDownloadListeners(sess) {
-  sess.on("will-download", (_event, item, webContents4) => {
+  sess.on("will-download", (_event, item, webContents6) => {
     const itemUrl = item.getURL();
     let rawFilename = pendingDownloadFilenames.get(itemUrl) || item.getFilename() || "download";
     pendingDownloadFilenames.delete(itemUrl);
@@ -6775,7 +8445,7 @@ function setupDownloadListeners(sess) {
       isPrivate
     };
     recentDownloads.unshift(record);
-    const win = BrowserWindow7.fromWebContents(webContents4) || mainWindow;
+    const win = BrowserWindow10.fromWebContents(webContents6) || mainWindow;
     win?.webContents.send("downloads:item-created", record);
     item.on("updated", (_e, state) => {
       record.receivedBytes = item.getReceivedBytes();
@@ -6860,7 +8530,7 @@ function registerShortcutInterception(contents) {
         return;
       }
       const host = contents.hostWebContents;
-      const targetWin = BrowserWindow7.fromWebContents(contents) || (host ? BrowserWindow7.fromWebContents(host) : null) || BrowserWindow7.getFocusedWindow() || mainWindow;
+      const targetWin = BrowserWindow10.fromWebContents(contents) || (host ? BrowserWindow10.fromWebContents(host) : null) || BrowserWindow10.getFocusedWindow() || mainWindow;
       if (targetWin && !targetWin.isDestroyed()) {
         targetWin.webContents.send("shortcut:trigger", action);
       }
@@ -6882,15 +8552,15 @@ powerMonitor.on("resume", () => {
 });
 function getAssetPath(filename) {
   const candidates = [
-    path6.join(__dirname3, "assets", filename),
-    path6.join(__dirname3, "../electron/assets", filename),
+    path6.join(__dirname4, "assets", filename),
+    path6.join(__dirname4, "../electron/assets", filename),
     path6.join(process.cwd(), "apps/forge-app/electron/assets", filename),
     path6.join(process.cwd(), "electron/assets", filename)
   ];
   for (const candidate of candidates) {
     if (fs6.existsSync(candidate)) return candidate;
   }
-  return path6.join(__dirname3, "assets", filename);
+  return path6.join(__dirname4, "assets", filename);
 }
 function updateTaskbarMediaButtons(win, isPlaying) {
   if (process.platform !== "win32" || !win || win.isDestroyed()) return;
@@ -6935,10 +8605,10 @@ function updateTaskbarMediaButtons(win, isPlaying) {
   }
 }
 function createWindow(isIncognito = false) {
-  const icoPath = path6.join(__dirname3, "../public/icon.ico");
-  const pngPath = path6.join(__dirname3, "../public/logo.png");
+  const icoPath = path6.join(__dirname4, "../public/icon.ico");
+  const pngPath = path6.join(__dirname4, "../public/logo.png");
   const appIcon = fs6.existsSync(icoPath) ? icoPath : pngPath;
-  const win = new BrowserWindow7({
+  const win = new BrowserWindow10({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -6952,7 +8622,7 @@ function createWindow(isIncognito = false) {
     show: false,
     icon: appIcon,
     webPreferences: {
-      preload: path6.join(__dirname3, "preload.cjs"),
+      preload: path6.join(__dirname4, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -6980,21 +8650,45 @@ function createWindow(isIncognito = false) {
       win.webContents.send("tabs:open-tab", { url: navUrl });
     }
   });
-  win.webContents.on("will-attach-webview", (_event, webPreferences) => {
-    webPreferences.nodeIntegrationInSubFrames = true;
+  win.webContents.on("will-attach-webview", (_event, webPreferences, _params) => {
+    webPreferences.nodeIntegration = false;
+    webPreferences.nodeIntegrationInSubFrames = false;
+    webPreferences.contextIsolation = true;
   });
-  win.once("ready-to-show", () => {
+  let windowShown = false;
+  const showWindow = () => {
+    if (windowShown || win.isDestroyed()) return;
+    windowShown = true;
     win.maximize();
     win.show();
+    win.focus();
     if (!isIncognito) {
       updateTaskbarMediaButtons(win, false);
     }
+  };
+  win.once("ready-to-show", () => {
+    console.log("[Main] Window ready-to-show triggered");
+    showWindow();
   });
+  win.webContents.once("did-finish-load", () => {
+    console.log("[Main] Window did-finish-load triggered");
+    showWindow();
+  });
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[Main] Window failed to load ${validatedURL}: ${errorDescription} (${errorCode})`);
+    showWindow();
+  });
+  setTimeout(() => {
+    if (!windowShown) {
+      console.log("[Main] Fallback timer: displaying window");
+      showWindow();
+    }
+  }, 2500);
   const query = isIncognito ? "?incognito=1" : "";
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    win.loadFile(path6.join(__dirname3, "../dist/index.html"), {
+    win.loadFile(path6.join(__dirname4, "../dist/index.html"), {
       query: isIncognito ? { incognito: "1" } : void 0
     });
   }
@@ -7002,20 +8696,20 @@ function createWindow(isIncognito = false) {
 }
 function getTargetBrowserWindow(event) {
   if (event) {
-    const fromSender = BrowserWindow7.fromWebContents(event.sender);
+    const fromSender = BrowserWindow10.fromWebContents(event.sender);
     if (fromSender && !fromSender.isDestroyed()) return fromSender;
   }
-  const focused = BrowserWindow7.getFocusedWindow();
+  const focused = BrowserWindow10.getFocusedWindow();
   if (focused && !focused.isDestroyed()) return focused;
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   for (const win of allWindows) {
     if (win && !win.isDestroyed()) return win;
   }
-  const anyWin = BrowserWindow7.getAllWindows()[0];
+  const anyWin = BrowserWindow10.getAllWindows()[0];
   if (anyWin && !anyWin.isDestroyed()) return anyWin;
   return null;
 }
-ipcMain11.on("window:minimize", (event) => {
+ipcMain15.on("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -7024,7 +8718,7 @@ ipcMain11.on("window:minimize", (event) => {
     win.minimize();
   }
 });
-ipcMain11.handle("window:minimize", (event) => {
+ipcMain15.handle("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -7035,7 +8729,7 @@ ipcMain11.handle("window:minimize", (event) => {
   }
   return false;
 });
-ipcMain11.on("window:maximize", (event) => {
+ipcMain15.on("window:maximize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isMaximized()) {
@@ -7045,31 +8739,31 @@ ipcMain11.on("window:maximize", (event) => {
     }
   }
 });
-ipcMain11.on("window:close", (event) => {
+ipcMain15.on("window:close", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     win.close();
   }
 });
-ipcMain11.handle("window:is-maximized", (event) => {
+ipcMain15.handle("window:is-maximized", (event) => {
   const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
-ipcMain11.on("window:set-fullscreen", (event, flag) => {
-  const win = BrowserWindow7.fromWebContents(event.sender) || BrowserWindow7.getFocusedWindow() || mainWindow;
+ipcMain15.on("window:set-fullscreen", (event, flag) => {
+  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
   win?.setFullScreen(flag);
 });
-ipcMain11.handle("window:is-fullscreen", (event) => {
-  const win = BrowserWindow7.fromWebContents(event.sender) || BrowserWindow7.getFocusedWindow() || mainWindow;
+ipcMain15.handle("window:is-fullscreen", (event) => {
+  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
   return win?.isFullScreen() ?? false;
 });
-ipcMain11.on("theme:set", (_event, mode) => {
+ipcMain15.on("theme:set", (_event, mode) => {
   if (["system", "light", "dark"].includes(mode)) {
     nativeTheme2.themeSource = mode;
   }
 });
-ipcMain11.on("window:set-title", (_event, title) => {
-  const win = BrowserWindow7.getFocusedWindow() || mainWindow;
+ipcMain15.on("window:set-title", (_event, title) => {
+  const win = BrowserWindow10.getFocusedWindow() || mainWindow;
   if (win && !win.isDestroyed()) {
     const cleanTitle = title?.trim();
     win.setTitle(cleanTitle ? `${cleanTitle} \u2014 Forge Browser` : "Forge Browser");
@@ -7096,10 +8790,10 @@ function restoreAndFocusWindow(win) {
 }
 function applyPipWindowIcon() {
   if (process.platform !== "win32") return;
-  const scriptPath = path6.join(__dirname3, "setPipIcon.ps1");
-  const fallbackScript = path6.join(__dirname3, "../electron/setPipIcon.ps1");
+  const scriptPath = path6.join(__dirname4, "setPipIcon.ps1");
+  const fallbackScript = path6.join(__dirname4, "../electron/setPipIcon.ps1");
   const psPath = fs6.existsSync(scriptPath) ? scriptPath : fallbackScript;
-  const icoPath = path6.join(__dirname3, "../public/icon.ico");
+  const icoPath = path6.join(__dirname4, "../public/icon.ico");
   if (!fs6.existsSync(psPath) || !fs6.existsSync(icoPath)) return;
   let attempts = 0;
   const interval = setInterval(() => {
@@ -7114,15 +8808,15 @@ function applyPipWindowIcon() {
 }
 app9.on("browser-window-created", (_event, win) => {
   try {
-    const icoPath = path6.join(__dirname3, "../public/icon.ico");
-    const pngPath = path6.join(__dirname3, "../public/logo.png");
+    const icoPath = path6.join(__dirname4, "../public/icon.ico");
+    const pngPath = path6.join(__dirname4, "../public/logo.png");
     const appIcon = fs6.existsSync(icoPath) ? icoPath : pngPath;
     win.setIcon(appIcon);
   } catch {
   }
 });
-ipcMain11.on("window:restore-and-focus", (event) => {
-  const win = BrowserWindow7.fromWebContents(event.sender) || BrowserWindow7.getFocusedWindow() || mainWindow;
+ipcMain15.on("window:restore-and-focus", (event) => {
+  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
@@ -7139,7 +8833,7 @@ app9.on("web-contents-created", (_event, contents) => {
     const targetUrl = details.url;
     if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
       try {
-        const win = BrowserWindow7.getFocusedWindow() || mainWindow;
+        const win = BrowserWindow10.getFocusedWindow() || mainWindow;
         if (win && !win.isDestroyed()) {
           win.webContents.send("tabs:open-tab", { url: targetUrl });
         }
@@ -7158,7 +8852,7 @@ app9.on("web-contents-created", (_event, contents) => {
   attachExtensionHooksToWebContents(contents);
   contents.on("context-menu", (_e, params) => {
     try {
-      const win = BrowserWindow7.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow10.getFocusedWindow() || mainWindow;
       if (win && !win.isDestroyed()) {
         win.webContents.send("browser:context-menu", {
           x: params.x,
@@ -7269,12 +8963,12 @@ app9.on("web-contents-created", (_event, contents) => {
     recentlyExitedPipWebContents.delete(contents.id);
   });
 });
-ipcMain11.on("media:status-update", (_event, data) => {
+ipcMain15.on("media:status-update", (_event, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     updateTaskbarMediaButtons(mainWindow, Boolean(data?.isPlaying));
   }
 });
-ipcMain11.handle("forge:http:request", async (_event, options) => {
+ipcMain15.handle("forge:http:request", async (_event, options) => {
   try {
     const response = await request(options);
     return { ok: true, data: response };
@@ -7282,10 +8976,10 @@ ipcMain11.handle("forge:http:request", async (_event, options) => {
     return { ok: false, error: err.message || String(err) };
   }
 });
-ipcMain11.handle("terminal:get-cwd", () => {
+ipcMain15.handle("terminal:get-cwd", () => {
   return terminalCwd;
 });
-ipcMain11.handle("terminal:set-cwd", (_event, newCwd) => {
+ipcMain15.handle("terminal:set-cwd", (_event, newCwd) => {
   try {
     const resolved = path6.resolve(terminalCwd, newCwd);
     if (fs6.existsSync(resolved) && fs6.statSync(resolved).isDirectory()) {
@@ -7297,7 +8991,7 @@ ipcMain11.handle("terminal:set-cwd", (_event, newCwd) => {
     return { ok: false, error: err.message, cwd: terminalCwd };
   }
 });
-ipcMain11.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
+ipcMain15.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
   const trimmed = command.trim();
   if (!trimmed) {
     return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
@@ -7349,12 +9043,12 @@ ipcMain11.handle("terminal:exec", async (_event, command, shellType = "powershel
     });
   });
 });
-ipcMain11.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
+ipcMain15.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
   try {
     if (contentsId && webviewContentsMap.has(contentsId)) {
       webviewContentsMap.get(contentsId).inspectElement(x, y);
     } else {
-      const win = BrowserWindow7.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow10.getFocusedWindow() || mainWindow;
       win?.webContents.inspectElement(x, y);
     }
     return { ok: true };
@@ -7362,43 +9056,43 @@ ipcMain11.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
     return { ok: false, error: err.message };
   }
 });
-ipcMain11.on("window:open-private", () => {
+ipcMain15.on("window:open-private", () => {
   createWindow(true);
 });
-ipcMain11.handle("downloads:start", (event, { url, filename }) => {
+ipcMain15.handle("downloads:start", (event, { url, filename }) => {
   try {
     if (filename && typeof filename === "string" && filename.trim()) {
       pendingDownloadFilenames.set(url, filename.trim());
     }
-    const win = BrowserWindow7.fromWebContents(event.sender) || mainWindow;
+    const win = BrowserWindow10.fromWebContents(event.sender) || mainWindow;
     if (win && !win.isDestroyed()) {
       win.webContents.downloadURL(url);
       return { ok: true };
     }
-    session10.defaultSession.downloadURL(url);
+    session13.defaultSession.downloadURL(url);
     return { ok: true };
   } catch (err) {
     console.error("[Main] Error starting download for:", url, err);
     return { ok: false, error: err.message };
   }
 });
-ipcMain11.handle("downloads:get-recent", () => recentDownloads);
-ipcMain11.handle("downloads:clear-history", () => {
+ipcMain15.handle("downloads:get-recent", () => recentDownloads);
+ipcMain15.handle("downloads:clear-history", () => {
   recentDownloads.length = 0;
   return true;
 });
-ipcMain11.handle("downloads:open-folder", () => {
+ipcMain15.handle("downloads:open-folder", () => {
   shell.openPath(app9.getPath("downloads"));
   return true;
 });
-ipcMain11.handle("downloads:open-file", (_event, filePath) => {
+ipcMain15.handle("downloads:open-file", (_event, filePath) => {
   if (filePath && fs6.existsSync(filePath)) {
     shell.openPath(filePath);
     return true;
   }
   return false;
 });
-ipcMain11.handle("downloads:show-in-folder", (_event, filePath) => {
+ipcMain15.handle("downloads:show-in-folder", (_event, filePath) => {
   if (filePath && fs6.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return true;
@@ -7407,7 +9101,7 @@ ipcMain11.handle("downloads:show-in-folder", (_event, filePath) => {
   return true;
 });
 var sessionBackupPath = path6.join(app9.getPath("userData"), "session-tabs.json");
-ipcMain11.handle("session:save-backup", (_event, data) => {
+ipcMain15.handle("session:save-backup", (_event, data) => {
   try {
     if (data && Array.isArray(data.tabs)) {
       const dir = path6.dirname(sessionBackupPath);
@@ -7420,7 +9114,7 @@ ipcMain11.handle("session:save-backup", (_event, data) => {
   }
   return false;
 });
-ipcMain11.handle("session:get-backup", () => {
+ipcMain15.handle("session:get-backup", () => {
   try {
     if (fs6.existsSync(sessionBackupPath)) {
       const raw = fs6.readFileSync(sessionBackupPath, "utf-8");
@@ -7431,7 +9125,7 @@ ipcMain11.handle("session:get-backup", () => {
   }
   return null;
 });
-ipcMain11.handle(
+ipcMain15.handle(
   "tabs:get-memory",
   (_event, items) => {
     try {
@@ -7491,7 +9185,7 @@ ipcMain11.handle(
     }
   }
 );
-ipcMain11.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
+ipcMain15.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
   try {
     const wc = webContents.fromId(contentsId);
     if (wc && !wc.isDestroyed() && typeof wc.setAudioMuted === "function") {
@@ -7505,13 +9199,13 @@ ipcMain11.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
 app9.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   try {
-    setupDownloadListeners(session10.defaultSession);
-    const forgeSession = session10.fromPartition("persist:forge");
+    setupDownloadListeners(session13.defaultSession);
+    const forgeSession = session13.fromPartition("persist:forge");
     setupDownloadListeners(forgeSession);
     const defaultUA = forgeSession.getUserAgent();
     const cleanUA = defaultUA.replace(/Electron\/[0-9.]+\s?/gi, "").replace(/forge(-app)?\/[0-9.]+\s?/gi, "").trim();
     forgeSession.setUserAgent(cleanUA);
-    session10.defaultSession.setUserAgent(cleanUA);
+    session13.defaultSession.setUserAgent(cleanUA);
     forgeSession.setPermissionCheckHandler((_webContents, permission) => {
       if (permission === "fullscreen" || permission === "media" || permission === "notifications" || permission === "mediaKeySystem") {
         return true;
@@ -7555,7 +9249,7 @@ app9.whenReady().then(() => {
   });
   createWindow();
   app9.on("activate", () => {
-    if (BrowserWindow7.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow10.getAllWindows().length === 0) createWindow();
   });
 });
 app9.on("window-all-closed", () => {

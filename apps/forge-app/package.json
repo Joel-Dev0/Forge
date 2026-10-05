@@ -9,7 +9,7 @@
     "dev:electron": "wait-on tcp:5173 && pnpm run build:electron && cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build": "pnpm run build:vite && pnpm run build:electron",
     "build:vite": "tsc -b && vite build",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-electron/main.js --external:electron && esbuild electron/preload.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-electron/preload.cjs --external:electron && esbuild electron/guestPreload.ts --bundle --platform=browser --target=es2022 --format=iife --outfile=dist-electron/guestPreload.cjs",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-electron/main.js --external:electron && esbuild electron/preload.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-electron/preload.cjs --external:electron && esbuild electron/guestPreload.ts --bundle --platform=browser --target=es2022 --format=iife --outfile=dist-electron/guestPreload.cjs && esbuild electron/extensions/extensionPopupPreload.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-electron/extensionPopupPreload.cjs --external:electron",
     "lint": "eslint .",
     "preview": "vite preview"
   },

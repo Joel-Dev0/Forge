@@ -268,6 +268,9 @@ const initialTab = saved ? null : makeTab("about:blank", isIncognitoWindow ? "pr
 const initialTabs = saved ? saved.tabs : [initialTab!];
 const initialActiveId = saved ? saved.activeTabId : initialTab!.id;
 
+let lastOpenedTabUrl = "";
+let lastOpenedTabTime = 0;
+
 export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: initialTabs,
   activeTabId: initialActiveId,
@@ -313,6 +316,13 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openTab(url, sessionId) {
+    const now = Date.now();
+    if (url && url !== "about:blank" && url === lastOpenedTabUrl && now - lastOpenedTabTime < 600) {
+      return get().activeTabId;
+    }
+    lastOpenedTabUrl = url || "";
+    lastOpenedTabTime = now;
+
     const tab = makeTab(url, sessionId);
     const isPrivateOrTor =
       tab.sessionId === "private" ||

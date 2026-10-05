@@ -190,7 +190,7 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     clearLogs: () => import_electron.ipcRenderer.invoke("adblock:clear-logs"),
     getCosmeticCSS: (url) => import_electron.ipcRenderer.invoke("adblock:get-cosmetic-css", url),
     getScriptlet: (url) => import_electron.ipcRenderer.invoke("adblock:get-scriptlet", url),
-    evaluateRequest: (url) => import_electron.ipcRenderer.invoke("adblock:evaluate-request", url),
+    evaluateRequest: (url, referrer) => import_electron.ipcRenderer.invoke("adblock:evaluate-request", { url, referrer }),
     updateLists: () => import_electron.ipcRenderer.invoke("adblock:update-lists"),
     getGuestPreloadPath: () => import_electron.ipcRenderer.invoke("adblock:get-guest-preload-path"),
     onRequestEntry: (callback) => {

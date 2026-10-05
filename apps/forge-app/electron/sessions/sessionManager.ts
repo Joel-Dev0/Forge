@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { app, session, ipcMain, type Session as ElectronSession } from "electron";
-import { evaluateAdBlockRequest } from "../adblock/adblockAdapter.js";
+import { evaluateAdBlockRequest, getAdBlockShieldHtml } from "../adblock/adblockAdapter.js";
 import { evaluateFocusRequest, updateFocusState, getFocusShieldHtml, type FocusStatePayload } from "../focus/socialFilterEngine.js";
 import { setupCorsBypassInterceptor } from "../compat/compatManager.js";
 import { ElectronPrivateSessionManager } from "../privacy/privateSessionManager.js";
@@ -69,8 +69,18 @@ export function configureSessionPartition(ses: ElectronSession, partitionName: s
       });
 
       if (adblock.cancel) {
-        callback({ cancel: true });
-        return;
+        if (details.resourceType === "mainFrame") {
+          const html = getAdBlockShieldHtml(
+            details.url,
+            adblock.decision.category || "ad",
+            adblock.decision.rule?.raw
+          );
+          callback({ redirectURL: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
+          return;
+        } else {
+          callback({ cancel: true });
+          return;
+        }
       }
     } catch {
       // Fail-open on unexpected parsing errors to avoid bricking normal page loads

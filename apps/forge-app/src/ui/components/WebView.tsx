@@ -394,18 +394,25 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       }
 
       const urlLower = targetUrl.toLowerCase();
+      const currentUrl = (typeof (ref.current as any)?.getURL === "function" ? (ref.current as any).getURL() : url) || "";
 
       // Quick filter for known ad networks & popunder patterns
       const isKnownAd = [
         "doubleclick", "googlesyndication", "adservice", "popads", "popcash",
-        "adcash", "adroll", "trafficjunky", "exoclick", "adnxs", "criteo",
-        "taboola", "outbrain", "adsterra", "propellerads", "monetag", "hilltopads",
-        "richads", "clickadu", "trafficstars", "onclickprediction", "onclickalgo",
-        "onclickbright", "onclickperformance", "ad2up", "ero-advertising", "juicyads",
-        "yllix", "bidvertiser", "bet365", "1xbet", "redirect", "click.php",
-        "track/click", "serving/ad", "adserver", "clksite", "revenuehits",
-        "rotator", "popunder", "fastclick", "go.ad2up", "ad-maven", "directrev",
-        "clkmon", "bestadbid", "adclicker", "trafficfactory"
+        "adcash", "adroll", "trafficjunky", "trafficfactory", "exoclick", "adnxs",
+        "criteo", "taboola", "outbrain", "adsterra", "propellerads", "monetag",
+        "hilltopads", "richads", "clickadu", "trafficstars", "onclickprediction",
+        "onclickalgo", "onclickbright", "onclickperformance", "ad2up", "ero-advertising",
+        "juicyads", "yllix", "bidvertiser", "bet365", "1xbet", "redirect", "click.php",
+        "track/click", "serving/ad", "adserver", "clksite", "revenuehits", "rotator",
+        "popunder", "fastclick", "go.ad2up", "ad-maven", "directrev", "clkmon",
+        "bestadbid", "adclicker", "runative", "syndicate", "casino", "casinon",
+        "spelpaus", "zilla-networks", "zeroad", "pushsdk", "redirect-ad",
+        "profitablecpmrate", "profitablegatetocontent", "highperformancegate", "highcpmgate",
+        "effectivecpmgate", "realsrv", "magsrv", "xlviirdr", "pukegoocha", "whomeeno",
+        "voomau", "oortous", "whounsoo", "dooloust", "shoumou", "deloplen", "grootso",
+        "shukriya", "slytherin", "short.ink", "direct-link", "shrinkme", "linkvertise",
+        "videobin", "clicknupload", "streamwish", "filemoon", "mixdrop", "streamvid", "mp4upload"
       ].some((k) => urlLower.includes(k));
 
       if (isKnownAd) {
@@ -413,11 +420,41 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
         return;
       }
 
-      // Check against AdBlock Engine
+      // Check for suspicious ad redirect paths
+      const isSuspiciousPath = [
+        "/click.php", "/out.php", "/track.php", "/redirect.php", "/goto.php",
+        "/jump.php", "/redir.php", "/traffic/", "/rotator/", "/adclick",
+        "/ad_click", "/ad-click", "/pop/click", "/clk/", "/zone/", "/dispatcher.php",
+        "/serving/ad", "/track/click", "/delivery/", "/go.php", "/ad.php", "/adv.php",
+        "/link.php", "/count.php", "/click/"
+      ].some((p) => urlLower.includes(p));
+
+      if (isSuspiciousPath) {
+        console.warn(`[Forge Shield] Dropped suspicious ad redirect tab: ${targetUrl}`);
+        return;
+      }
+
+      // Check for suspicious tracking parameters on third-party links
+      try {
+        const parsed = new URL(targetUrl);
+        const hasTracking = [
+          "click_id", "clickid", "aff_id", "affid", "subid", "sub_id",
+          "zoneid", "zone_id", "banner_id", "campaign_id", "popunder"
+        ].some((key) => parsed.searchParams.has(key));
+        if (hasTracking && currentUrl) {
+          const parsedCurrent = new URL(currentUrl);
+          if (parsedCurrent.hostname !== parsed.hostname) {
+            console.warn(`[Forge Shield] Dropped third-party ad click tracking tab: ${targetUrl}`);
+            return;
+          }
+        }
+      } catch {}
+
+      // Check against AdBlock Engine with current page as referrer
       try {
         const forgeAdblock = (window as any).forge?.adblock;
         if (forgeAdblock?.evaluateRequest) {
-          const result = await forgeAdblock.evaluateRequest(targetUrl);
+          const result = await forgeAdblock.evaluateRequest(targetUrl, currentUrl);
           if (result?.cancel) {
             console.warn(`[Forge Shield] Dropped blocked ad tab: ${targetUrl}`);
             return;
@@ -439,12 +476,17 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
         "accounts.google.com",
         "appleid.apple.com",
         "github.com/login",
+        "github.com/sessions",
         "login.microsoftonline.com",
         "facebook.com/dialog",
+        "facebook.com/v",
         "twitter.com/i/oauth2",
         "x.com/i/oauth2",
         "discord.com/oauth2",
-        "paypal.com"
+        "paypal.com",
+        "auth0.com",
+        "okta.com",
+        "checkout.stripe.com"
       ].some((domain) => urlLower.includes(domain));
 
       if (isMiniPopupWindow && !isLegitimateAuth) {

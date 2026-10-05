@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { executeHttpRequest } from "./engine/http/index.js";
 import type { HttpRequestOptions } from "./engine/http/types.js";
 import { initNetworkMonitor } from "./network/networkMonitor.js";
-import { initAdBlockAdapter } from "./adblock/adblockAdapter.js";
+import { initAdBlockAdapter, handleWindowOpenRequest, isAdOrRedirectUrl } from "./adblock/adblockAdapter.js";
 import { initSecureNetworkAdapter } from "./network/secureNetworkAdapter.js";
 import { initVpnAdapter } from "./network/vpnAdapter.js";
 import { initPrivacyCleanerAdapter } from "./privacy/privacyCleanerAdapter.js";
@@ -472,7 +472,11 @@ function createWindow(isIncognito = false) {
       Boolean(process.env.VITE_DEV_SERVER_URL && navUrl.startsWith(process.env.VITE_DEV_SERVER_URL));
     if (!isAppShell) {
       event.preventDefault();
-      win.webContents.send("tabs:open-tab", { url: navUrl });
+      if (!isAdOrRedirectUrl(navUrl)) {
+        win.webContents.send("tabs:open-tab", { url: navUrl });
+      } else {
+        console.warn("[Forge Shield] Dropped ad/redirect from main window will-navigate:", navUrl);
+      }
     }
   });
 
@@ -691,20 +695,9 @@ app.on("web-contents-created", (_event, contents) => {
   registerShortcutInterception(contents);
 
   // CRITICAL: NEVER allow any WebContents in Forge to spawn a native OS BrowserWindow popup!
-  // Instead, route legitimate target="_blank" links into a new tab in Forge UI.
+  // Instead, filter ads/popunders via Forge Shield and route legitimate links into a new tab in Forge UI.
   contents.setWindowOpenHandler((details) => {
-    const targetUrl = details.url;
-    if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
-      try {
-        const win = BrowserWindow.getFocusedWindow() || mainWindow;
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("tabs:open-tab", { url: targetUrl });
-        }
-      } catch (err) {
-        console.error("[Main] Error routing link to tab:", err);
-      }
-    }
-    return { action: "deny" };
+    return handleWindowOpenRequest(contents, details, () => BrowserWindow.getFocusedWindow() || mainWindow);
   });
 
   if (contents.getType() !== "webview") return;

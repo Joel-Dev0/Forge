@@ -195,7 +195,7 @@ contextBridge.exposeInMainWorld("forge", {
     clearLogs: () => ipcRenderer.invoke("adblock:clear-logs"),
     getCosmeticCSS: (url: string) => ipcRenderer.invoke("adblock:get-cosmetic-css", url),
     getScriptlet: (url: string) => ipcRenderer.invoke("adblock:get-scriptlet", url),
-    evaluateRequest: (url: string) => ipcRenderer.invoke("adblock:evaluate-request", url),
+    evaluateRequest: (url: string, referrer?: string) => ipcRenderer.invoke("adblock:evaluate-request", { url, referrer }),
     updateLists: () => ipcRenderer.invoke("adblock:update-lists"),
     getGuestPreloadPath: () => ipcRenderer.invoke("adblock:get-guest-preload-path"),
     onRequestEntry: (callback: (entry: any) => void) => {

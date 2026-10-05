@@ -326,23 +326,76 @@
         return;
       }
 
-      // Universal Ad / Popunder Keywords (declared in parent scope so all handlers can access)
+      // Universal Ad / Popunder Keywords & Networks
       const adUrlKeywords = [
+        // Popunder & Pop-up Ad Networks
         'popads', 'popcash', 'adcash', 'propellerads', 'monetag', 'hilltopads',
-        'adsterra', 'richads', 'clickadu', 'trafficstars', 'onclickprediction',
-        'onclickalgo', 'onclickbright', 'onclickperformance', 'ad2up', 'ero-advertising',
-        'juicyads', 'yllix', 'bidvertiser', 'doubleclick', 'googlesyndication',
-        'adnxs', 'criteo', 'taboola', 'outbrain', 'bet365', '1xbet',
-        'click.php', 'track/click', 'serving/ad', 'adserver', 'clksite', 'revenuehits',
-        'rotator', 'popunder', 'fastclick', 'adservice', 'runative', 'syndicate',
-        'casino', 'casinon', 'spelpaus', 'zilla-networks'
+        'adsterra', 'richads', 'clickadu', 'trafficstars', 'trafficjunky', 'trafficfactory',
+        'runative', 'ad2up', 'juicyads', 'yllix', 'bidvertiser', 'exoclick', 'zeropark',
+        'plugrush', 'adxad', 'clickaine', 'ad-maven', 'active8', 'daftads', 'twinred',
+        'adkernel', 'galaksion', 'ezmob', 'clickadilla', 'rollerads', 'pushground', 'evadav',
+        'coinhive', 'cryptoloot', 'crypto-loot',
+
+        // Video Streaming Ad Networks & Redirect Gates
+        'profitablecpmrate', 'profitablegatetocontent', 'highperformancegate', 'highcpmgate',
+        'effectivecpmgate', 'realsrv', 'magsrv', 'xlviirdr', 'pukegoocha', 'whomeeno',
+        'voomau', 'oortous', 'whounsoo', 'dooloust', 'shoumou', 'deloplen', 'grootso',
+        'shukriya', 'slytherin', 'fastclick', 'short.ink', 'direct-link', 'shrinkme',
+        'linkvertise', 'alwingulla', 'eastsour', 'cloutho', 'agacelebir', 'wheretheissomething',
+        'onclick', 'adcontent', 'syndication', 'videobin', 'clicknupload',
+        'streamwish', 'filemoon', 'mixdrop', 'streamvid', 'mp4upload',
+
+        // Major Ad Servers & Exchanges
+        'doubleclick', 'googlesyndication', 'adservice', 'adnxs', 'criteo', 'taboola',
+        'outbrain', 'revenuehits', 'fastclick', 'directrev', 'clkmon', 'bestadbid',
+        'adclicker', 'clksite', 'rotator', 'popunder', 'syndicate', 'realsrv',
+        'tsyndicate', 'adtrue', 'adthrive', 'mediavine', 'infolinks', 'conversant',
+        'rubiconproject', 'pubmatic', 'openx', 'casalemedia', 'yieldmo', 'smartadserver',
+        'sovrn', 'revcontent', 'mgid', 'media.net', 'bidswitch', 'adroll', 'rubicon',
+        'adform', 'zedo', 'aniview', 'springserve', 'connatix', 'spotxchange', 'spotx.tv',
+        'adtech', 'quantserve', 'adcolony', 'admob', 'unityads', 'applovin', 'ironsrc',
+        'vungle', 'chartboost', 'adpushup', 'adblade', 'adbutler', 'carbonads', 'zergnet',
+        'raptive', 'yieldlove', 'snigelweb', 'shemedia', 'playwire', 'ezoic', 'a-ads',
+        'coinzilla', 'bitmedia', 'cointraffic', 'popmyads', 'clicksor', 'buysellads',
+        'zilla-networks', 'onclickprediction', 'onclickalgo', 'onclickbright', 'onclickperformance',
+        'ad-rotator', 'traffic-media', 'zeroad', 'redirect-ad', 'pushsdk', 'push-notification',
+
+        // Gambling / Betting Popups
+        'bet365', '1xbet', 'betway', 'parimatch', 'mostbet', 'pin-up', 'vulkan',
+        'casino', 'casinon', 'spelpaus', 'jackpotcity', 'spinpalace', 'betwinner',
+        'megapari', 'melbet'
+      ];
+
+      const adRedirectPaths = [
+        '/click.php', '/out.php', '/track.php', '/redirect.php', '/goto.php',
+        '/jump.php', '/redir.php', '/traffic/', '/rotator/', '/adclick',
+        '/ad_click', '/ad-click', '/pop/click', '/clk/', '/zone/', '/dispatcher.php',
+        '/serving/ad', '/track/click', '/delivery/', '/go.php', '/ad.php', '/adv.php',
+        '/link.php', '/count.php', '/click/'
+      ];
+
+      const adTrackingParams = [
+        'click_id=', 'clickid=', 'aff_id=', 'affid=', 'subid=', 'sub_id=',
+        'zoneid=', 'zone_id=', 'banner_id=', 'campaign_id=', 'pub_id=',
+        'ref_id=', 'track_id=', 'popunder=', 'target_url=', 'redirect_url=',
+        'ad_id=', 'adid='
+      ];
+
+      const legitimateAuthDomains = [
+        'accounts.google.com', 'appleid.apple.com', 'github.com/login',
+        'login.microsoftonline.com', 'facebook.com/dialog', 'facebook.com/v',
+        'twitter.com/i/oauth2', 'x.com/i/oauth2', 'discord.com/oauth2',
+        'paypal.com', 'auth0.com', 'okta.com', 'checkout.stripe.com', 'shopify.com'
       ];
 
       const isAdUrlString = function(url) {
         try {
           if (!url || typeof url !== 'string') return false;
           const str = url.toLowerCase();
-          return adUrlKeywords.some(k => str.includes(k));
+          if (adUrlKeywords.some(k => str.includes(k))) return true;
+          if (adRedirectPaths.some(p => str.includes(p))) return true;
+          if (adTrackingParams.some(q => str.includes(q))) return true;
+          return false;
         } catch {
           return false;
         }
@@ -399,11 +452,22 @@
             return createDummyWindow();
           }
 
-          // Block if matches known ad/popunder keywords
+          // Block if matches known ad/popunder keywords, paths or tracking params
           if (isAdUrlString(urlStr)) {
             console.warn('[Forge Shield] Blocked ad popunder URL:', url);
             return createDummyWindow();
           }
+
+          // Check if third-party to current window
+          let isThirdParty = false;
+          try {
+            if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+              const parsedTarget = new URL(url);
+              isThirdParty = parsedTarget.hostname !== window.location.hostname;
+            }
+          } catch {}
+
+          const isAuth = legitimateAuthDomains.some(d => urlStr.includes(d));
 
           // Block unprompted / programmatic window.open without genuine user gesture
           if (!isUserInitiated) {
@@ -411,8 +475,16 @@
             return createDummyWindow();
           }
 
-          // Block rapid-fire popunder spam (max 1 window open per 2.5 seconds)
-          if (now - lastOpenTime < 2500) {
+          // Block suspicious third-party popup windows with dimensions that are not OAuth
+          const featStr = String(features || '').toLowerCase();
+          const isMiniPopup = featStr.includes('width=') || featStr.includes('height=') || featStr.includes('location=0');
+          if (isThirdParty && isMiniPopup && !isAuth) {
+            console.warn('[Forge Shield] Blocked suspicious third-party miniature popup:', url);
+            return createDummyWindow();
+          }
+
+          // Block rapid-fire popunder spam (max 1 window open per 2.0 seconds)
+          if (now - lastOpenTime < 2000) {
             console.warn('[Forge Shield] Blocked rapid-fire popup spam:', url);
             return createDummyWindow();
           }
@@ -422,11 +494,122 @@
         };
       } catch {}
 
+      // Helper to detect transparent/invisible click-trap overlays positioned over video players or iframes
+      function isOverlayOverPlayerOrVideo(el) {
+        if (!el || !(el instanceof HTMLElement)) return false;
+        if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') return false;
+        if (el.id && el.id.startsWith('__forge_')) return false;
+
+        const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+        if (!style) return false;
+        const isPos = style.position === 'absolute' || style.position === 'fixed';
+        if (!isPos) return false;
+
+        const z = parseInt(style.zIndex || '0', 10);
+        const isTransparent =
+          parseFloat(style.opacity || '1') < 0.15 ||
+          style.backgroundColor === 'transparent' ||
+          style.backgroundColor === 'rgba(0, 0, 0, 0)';
+
+        // If not transparent and not elevated z-index, not a click-trap overlay
+        if (!isTransparent && z < 10) return false;
+
+        // Check text content: click traps are invisible click catchers with no text or trivial text
+        const text = (el.innerText || el.textContent || '').trim();
+        if (text.length > 20) return false;
+
+        // Check if inside a player or covering a video or iframe
+        const parentPlayer = el.closest ? el.closest('.player, #player, .jwplayer, .video-js, [class*="player" i], [id*="player" i]') : null;
+        if (parentPlayer && parentPlayer !== el) {
+          if (!el.querySelector('video')) {
+            return true;
+          }
+        }
+
+        const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+        if (!rect || rect.width < 40 || rect.height < 40) return false;
+
+        // Full-screen or large overlay
+        if (rect.width >= window.innerWidth * 0.65 && rect.height >= window.innerHeight * 0.65) {
+          return true;
+        }
+
+        // Overlap with any <video> element
+        const videos = document.querySelectorAll('video');
+        for (const v of videos) {
+          const vr = v.getBoundingClientRect();
+          if (vr.width >= 80 && vr.height >= 80) {
+            const xOverlap = Math.max(0, Math.min(rect.right, vr.right) - Math.max(rect.left, vr.left));
+            const yOverlap = Math.max(0, Math.min(rect.bottom, vr.bottom) - Math.max(rect.top, vr.top));
+            const overlap = xOverlap * yOverlap;
+            const vArea = vr.width * vr.height;
+            if (overlap / vArea > 0.4) {
+              return true;
+            }
+          }
+        }
+
+        // Overlap with any embedded iframe
+        const iframes = document.querySelectorAll('iframe');
+        for (const f of iframes) {
+          const fr = f.getBoundingClientRect();
+          if (fr.width >= 120 && fr.height >= 120) {
+            const xOverlap = Math.max(0, Math.min(rect.right, fr.right) - Math.max(rect.left, fr.left));
+            const yOverlap = Math.max(0, Math.min(rect.bottom, fr.bottom) - Math.max(rect.top, fr.top));
+            const overlap = xOverlap * yOverlap;
+            const fArea = fr.width * fr.height;
+            if (overlap / fArea > 0.4) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      function attemptPlayVideo() {
+        try {
+          const video = document.querySelector('video');
+          if (video && video.paused) {
+            video.play().catch(() => {});
+          }
+        } catch {}
+      }
+
       // 3. Synthetic Link Click, Form Submit & Event Dispatch Interceptor
       try {
-        // Capture-phase click interceptor to catch ad link clicks before handlers fire
-        window.addEventListener('click', function(e) {
+        const interceptClickTrap = function(e) {
           if (window.__forge_adblock_enabled === false) return;
+
+          // 1. Defuse video click-traps & overlays
+          try {
+            const el = e.target;
+            if (el && el instanceof HTMLElement && isOverlayOverPlayerOrVideo(el)) {
+              console.warn('[Forge Shield] Neutralized click-trap overlay over video player:', el);
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              try { el.remove(); } catch {}
+              attemptPlayVideo();
+              return;
+            }
+          } catch {}
+
+          // 2. Block untrusted synthetic clicks generated by scripts on new-tab links
+          if (!e.isTrusted) {
+            try {
+              const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
+              if (anchor && (anchor.target === '_blank' || isAdUrlString(anchor.href))) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.warn('[Forge Shield] Blocked untrusted synthetic click on link:', anchor.href);
+                return;
+              }
+            } catch {}
+          }
+
+          // 3. Prevent clicks on identified ad links & ad redirectors
           try {
             const target = e.target && e.target.closest ? e.target.closest('a') : null;
             if (target && target.href && isAdUrlString(target.href)) {
@@ -434,9 +617,38 @@
               e.stopPropagation();
               e.stopImmediatePropagation();
               console.warn('[Forge Shield] Prevented click on ad link:', target.href);
+              attemptPlayVideo();
+              return;
             }
           } catch {}
-        }, true);
+        };
+
+        window.addEventListener('click', interceptClickTrap, true);
+        window.addEventListener('pointerdown', interceptClickTrap, true);
+
+        // Guard programmatic navigation methods
+        try {
+          const origAssign = window.location.assign;
+          if (typeof origAssign === 'function') {
+            window.location.assign = function(url) {
+              if (window.__forge_adblock_enabled !== false && isAdUrlString(url)) {
+                console.warn('[Forge Shield] Blocked location.assign to ad:', url);
+                return;
+              }
+              return origAssign.apply(this, arguments);
+            };
+          }
+          const origReplace = window.location.replace;
+          if (typeof origReplace === 'function') {
+            window.location.replace = function(url) {
+              if (window.__forge_adblock_enabled !== false && isAdUrlString(url)) {
+                console.warn('[Forge Shield] Blocked location.replace to ad:', url);
+                return;
+              }
+              return origReplace.apply(this, arguments);
+            };
+          }
+        } catch {}
 
         const originalAnchorClick = HTMLAnchorElement.prototype.click;
         HTMLAnchorElement.prototype.click = function() {
@@ -523,27 +735,15 @@
         if (window.__forge_adblock_enabled === false) return;
         try {
           const allDivs = document.querySelectorAll('div, a, span');
-          const w = window.innerWidth;
-          const h = window.innerHeight;
           for (const el of allDivs) {
-            if (el.id && el.id.startsWith('__forge_')) continue;
-            const style = window.getComputedStyle(el);
-            if (style.position === 'fixed' || style.position === 'absolute') {
-              const rect = el.getBoundingClientRect();
-              if (rect.width >= w * 0.7 && rect.height >= h * 0.7) {
-                const z = parseInt(style.zIndex, 10);
-                if (z > 100 && (style.opacity === '0' || style.backgroundColor === 'rgba(0, 0, 0, 0)' || style.backgroundColor === 'transparent')) {
-                  if (!el.querySelector('video') && !el.textContent?.trim()) {
-                    el.style.pointerEvents = 'none';
-                    el.remove();
-                  }
-                }
-              }
+            if (isOverlayOverPlayerOrVideo(el)) {
+              el.style.pointerEvents = 'none';
+              el.remove();
             }
           }
         } catch {}
       }
-      setInterval(removeClickTraps, 800);
+      setInterval(removeClickTraps, 600);
 
       // 6. Neutralize Google IMA SDK on video players
       try {

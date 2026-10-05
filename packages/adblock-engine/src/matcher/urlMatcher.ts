@@ -116,6 +116,8 @@ export function matchRule(rule: BlockRule, request: RequestDetails): boolean {
     if (opts.resourceTypes && opts.resourceTypes.length > 0) {
       const matchesType = opts.resourceTypes.some((t) => {
         if (t === "xhr" && (reqType === "fetch" || reqType === "xmlhttprequest")) return true;
+        if ((t === "document" || t === "doc") && (reqType === "mainframe" || reqType === "document")) return true;
+        if (t === "popup" && (reqType === "popup" || reqType === "subdocument" || reqType === "mainframe")) return true;
         return t === reqType;
       });
       if (!matchesType) return false;
@@ -124,6 +126,8 @@ export function matchRule(rule: BlockRule, request: RequestDetails): boolean {
     if (opts.invertedResourceTypes && opts.invertedResourceTypes.length > 0) {
       const matchesInverted = opts.invertedResourceTypes.some((t) => {
         if (t === "xhr" && (reqType === "fetch" || reqType === "xmlhttprequest")) return true;
+        if ((t === "document" || t === "doc") && (reqType === "mainframe" || reqType === "document")) return true;
+        if (t === "popup" && (reqType === "popup" || reqType === "subdocument" || reqType === "mainframe")) return true;
         return t === reqType;
       });
       if (matchesInverted) return false;

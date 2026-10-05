@@ -87,6 +87,7 @@ export function parseOptions(optionsStr: string): RuleOptions {
 function normalizeResourceType(type: string): string {
   if (type === "xhr" || type === "xmlhttprequest") return "xhr";
   if (type === "subdocument") return "subdocument";
+  if (type === "doc" || type === "document") return "document";
   return type;
 }
 
@@ -94,7 +95,7 @@ let ruleSeq = 0;
 
 /**
  * Parses a single Adblock Plus / EasyList format rule.
- * Returns null if the line is a comment, empty, or cosmetic rule.
+ * Returns null if the line is a comment, empty, cosmetic rule, or dangerously broad.
  */
 export function parseRule(rawLine: string): BlockRule | null {
   const line = rawLine.trim();
@@ -115,7 +116,7 @@ export function parseRule(rawLine: string): BlockRule | null {
   // 3. Exception rule (@@)
   if (content.startsWith("@@")) {
     type = "exception";
-    content = content.slice(2);
+    content = content.slice(2).trim();
   }
 
   // 4. Options ($...)
@@ -123,11 +124,65 @@ export function parseRule(rawLine: string): BlockRule | null {
   const dollarIndex = content.lastIndexOf("$");
   if (dollarIndex !== -1 && !content.slice(dollarIndex).includes("/")) {
     const optionsStr = content.slice(dollarIndex + 1);
-    content = content.slice(0, dollarIndex);
+    content = content.slice(0, dollarIndex).trim();
     options = parseOptions(optionsStr);
   }
 
-  // 5. Anchors
+  // 5. User input normalization for plain domains and URLs (e.g. "example.com", "https://example.com/page")
+  if (/^https?:\/\//i.test(content)) {
+    try {
+      const parsed = new URL(content);
+      const pathname = parsed.pathname === "/" ? "" : parsed.pathname;
+      const search = parsed.search || "";
+      if (!pathname && !search) {
+        // Plain URL domain like https://example.com/ -> domain anchor ||example.com^
+        content = `||${parsed.hostname}^`;
+      } else {
+        // Exact URL with path or query
+        content = `|${parsed.origin}${pathname}${search}|`;
+      }
+    } catch {
+      // Keep content as-is if URL parsing fails
+    }
+  } else if (
+    /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:\d+)?(\/.*)?$/.test(content) &&
+    !content.startsWith("|") &&
+    !content.startsWith("/")
+  ) {
+    if (!content.includes("/") && !content.includes("*") && !content.includes("^")) {
+      // Pure domain: "example.com" -> "||example.com^"
+      content = `||${content}^`;
+    } else if (content.includes("/")) {
+      // Domain with path: "example.com/path" -> "||example.com/path"
+      content = `||${content}`;
+    }
+  }
+
+  // 6. Reject empty or dangerously broad patterns that would brick browsing or match all URLs
+  const bare = content.replace(/[|@^]/g, "").trim();
+  if (
+    !content ||
+    !bare ||
+    content === "*" ||
+    content === "/*" ||
+    content === "/" ||
+    content === "^" ||
+    content === ".*" ||
+    content === "||" ||
+    content === "||*" ||
+    content === "||^" ||
+    content === "|" ||
+    content === "|||" ||
+    content === "http://" ||
+    content === "https://" ||
+    content === "www." ||
+    bare === "*" ||
+    bare === "/"
+  ) {
+    return null;
+  }
+
+  // 7. Anchors
   let isDomainAnchor = false;
   let isExactStart = false;
   let isExactEnd = false;
@@ -150,6 +205,12 @@ export function parseRule(rawLine: string): BlockRule | null {
   if (content.endsWith("|") && !content.endsWith("||")) {
     isExactEnd = true;
     content = content.slice(0, -1);
+  }
+
+  // Ensure content after anchor stripping is valid
+  const trimmedAfterAnchors = content.trim();
+  if (!trimmedAfterAnchors || trimmedAfterAnchors === "*" || trimmedAfterAnchors === "^") {
+    return null;
   }
 
   const id = `rule_${++ruleSeq}_${Math.random().toString(36).slice(2, 7)}`;

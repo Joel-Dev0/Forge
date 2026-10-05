@@ -464,6 +464,7 @@ function parseOptions(optionsStr) {
 function normalizeResourceType(type) {
   if (type === "xhr" || type === "xmlhttprequest") return "xhr";
   if (type === "subdocument") return "subdocument";
+  if (type === "doc" || type === "document") return "document";
   return type;
 }
 var ruleSeq = 0;
@@ -479,14 +480,37 @@ function parseRule(rawLine) {
   let content = line;
   if (content.startsWith("@@")) {
     type = "exception";
-    content = content.slice(2);
+    content = content.slice(2).trim();
   }
   let options;
   const dollarIndex = content.lastIndexOf("$");
   if (dollarIndex !== -1 && !content.slice(dollarIndex).includes("/")) {
     const optionsStr = content.slice(dollarIndex + 1);
-    content = content.slice(0, dollarIndex);
+    content = content.slice(0, dollarIndex).trim();
     options = parseOptions(optionsStr);
+  }
+  if (/^https?:\/\//i.test(content)) {
+    try {
+      const parsed = new URL(content);
+      const pathname = parsed.pathname === "/" ? "" : parsed.pathname;
+      const search = parsed.search || "";
+      if (!pathname && !search) {
+        content = `||${parsed.hostname}^`;
+      } else {
+        content = `|${parsed.origin}${pathname}${search}|`;
+      }
+    } catch {
+    }
+  } else if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:\d+)?(\/.*)?$/.test(content) && !content.startsWith("|") && !content.startsWith("/")) {
+    if (!content.includes("/") && !content.includes("*") && !content.includes("^")) {
+      content = `||${content}^`;
+    } else if (content.includes("/")) {
+      content = `||${content}`;
+    }
+  }
+  const bare = content.replace(/[|@^]/g, "").trim();
+  if (!content || !bare || content === "*" || content === "/*" || content === "/" || content === "^" || content === ".*" || content === "||" || content === "||*" || content === "||^" || content === "|" || content === "|||" || content === "http://" || content === "https://" || content === "www." || bare === "*" || bare === "/") {
+    return null;
   }
   let isDomainAnchor = false;
   let isExactStart = false;
@@ -506,6 +530,10 @@ function parseRule(rawLine) {
   if (content.endsWith("|") && !content.endsWith("||")) {
     isExactEnd = true;
     content = content.slice(0, -1);
+  }
+  const trimmedAfterAnchors = content.trim();
+  if (!trimmedAfterAnchors || trimmedAfterAnchors === "*" || trimmedAfterAnchors === "^") {
+    return null;
   }
   const id = `rule_${++ruleSeq}_${Math.random().toString(36).slice(2, 7)}`;
   const regex = patternToRegex(content, isDomainAnchor, isExactStart, isExactEnd);
@@ -666,6 +694,8 @@ function matchRule(rule, request2) {
     if (opts.resourceTypes && opts.resourceTypes.length > 0) {
       const matchesType = opts.resourceTypes.some((t) => {
         if (t === "xhr" && (reqType === "fetch" || reqType === "xmlhttprequest")) return true;
+        if ((t === "document" || t === "doc") && (reqType === "mainframe" || reqType === "document")) return true;
+        if (t === "popup" && (reqType === "popup" || reqType === "subdocument" || reqType === "mainframe")) return true;
         return t === reqType;
       });
       if (!matchesType) return false;
@@ -673,6 +703,8 @@ function matchRule(rule, request2) {
     if (opts.invertedResourceTypes && opts.invertedResourceTypes.length > 0) {
       const matchesInverted = opts.invertedResourceTypes.some((t) => {
         if (t === "xhr" && (reqType === "fetch" || reqType === "xmlhttprequest")) return true;
+        if ((t === "document" || t === "doc") && (reqType === "mainframe" || reqType === "document")) return true;
+        if (t === "popup" && (reqType === "popup" || reqType === "subdocument" || reqType === "mainframe")) return true;
         return t === reqType;
       });
       if (matchesInverted) return false;
@@ -1136,6 +1168,80 @@ var MALVERTISING_PRESET_RULES = `
 ||*casino*^$popup
 ||*casinon*^$popup
 ||*spelpaus*^$popup
+||*popunder*^$popup
+||*popads*^$popup
+||*onclick*^$popup
+||*syndication*^$popup
+||*ad-maven*^$popup
+||*propellerads*^$popup
+||*monetag*^$popup
+||*adsterra*^$popup
+||*clickadu*^$popup
+||*richads*^$popup
+||*hilltopads*^$popup
+||*trafficstars*^$popup
+||*trafficjunky*^$popup
+||*runative*^$popup
+||*juicyads*^$popup
+||*exoclick*^$popup
+||*bet365*^$popup
+||*1xbet*^$popup
+||profitablecpmrate.com^
+||profitablecpmrate.com^$popup
+||profitablegatetocontent.com^
+||profitablegatetocontent.com^$popup
+||highperformancegate.com^
+||highperformancegate.com^$popup
+||highcpmgate.com^
+||highcpmgate.com^$popup
+||effectivecpmgate.com^
+||effectivecpmgate.com^$popup
+||realsrv.com^
+||realsrv.com^$popup
+||magsrv.com^
+||magsrv.com^$popup
+||xlviirdr.com^
+||xlviirdr.com^$popup
+||pukegoocha.com^
+||pukegoocha.com^$popup
+||whomeeno.com^
+||whomeeno.com^$popup
+||voomau.com^
+||voomau.com^$popup
+||oortous.com^
+||oortous.com^$popup
+||whounsoo.net^
+||whounsoo.net^$popup
+||dooloust.net^
+||dooloust.net^$popup
+||shoumou.net^
+||shoumou.net^$popup
+||deloplen.com^
+||deloplen.com^$popup
+||grootso.com^
+||grootso.com^$popup
+||shukriya.pro^
+||shukriya.pro^$popup
+||slytherin.top^
+||slytherin.top^$popup
+||fastclick.pro^
+||fastclick.pro^$popup
+||short.ink^
+||short.ink^$popup
+||direct-link.net^
+||direct-link.net^$popup
+||shrinkme.io^
+||shrinkme.io^$popup
+||linkvertise.com^
+||linkvertise.com^$popup
+/click.php$popup
+/out.php$popup
+/track.php$popup
+/redirect.php$popup
+/goto.php$popup
+/jump.php$popup
+/redir.php$popup
+
 
 ! --- Push Notification Spam, Fake Captchas & Click-Hijackers ---
 ||pushsdk.com^
@@ -1611,36 +1717,14 @@ var AdBlockEngine = class {
     }
   }
   initPresets() {
-    const easyList = new FilterList(
-      "easylist",
-      "EasyList Core",
-      "ad",
-      "Blocks popular advertising networks, banners, and video ads",
-      true,
-      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_general_block.txt"
+    const userList = new FilterList(
+      "user",
+      "User Rules",
+      "custom",
+      "Custom user-defined blocking and allowlist rules",
+      true
     );
-    easyList.loadFromText(EASYLIST_PRESET_RULES);
-    this.addFilterListInstance(easyList);
-    const privacyList = new FilterList(
-      "easyprivacy",
-      "EasyPrivacy",
-      "tracker",
-      "Blocks tracking scripts, web analytics, and telemetry endpoints",
-      true,
-      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easyprivacy_general_block.txt"
-    );
-    privacyList.loadFromText(EASYPRIVACY_PRESET_RULES);
-    this.addFilterListInstance(privacyList);
-    const quickFixesList = new FilterList(
-      "quickfixes",
-      "uBlock Quick Fixes",
-      "ad",
-      "Rapid-response fixes for YouTube video ads and anti-adblock countermeasures",
-      true,
-      "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt"
-    );
-    quickFixesList.loadFromText(QUICKFIXES_PRESET_RULES);
-    this.addFilterListInstance(quickFixesList);
+    this.addFilterListInstance(userList);
     const malvertisingList = new FilterList(
       "malvertising",
       "Malvertising & Threats",
@@ -1651,14 +1735,36 @@ var AdBlockEngine = class {
     );
     malvertisingList.loadFromText(MALVERTISING_PRESET_RULES);
     this.addFilterListInstance(malvertisingList);
-    const userList = new FilterList(
-      "user",
-      "User Rules",
-      "custom",
-      "Custom user-defined blocking and allowlist rules",
-      true
+    const quickFixesList = new FilterList(
+      "quickfixes",
+      "uBlock Quick Fixes",
+      "ad",
+      "Rapid-response fixes for YouTube video ads and anti-adblock countermeasures",
+      true,
+      "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt"
     );
-    this.addFilterListInstance(userList);
+    quickFixesList.loadFromText(QUICKFIXES_PRESET_RULES);
+    this.addFilterListInstance(quickFixesList);
+    const privacyList = new FilterList(
+      "easyprivacy",
+      "EasyPrivacy",
+      "tracker",
+      "Blocks tracking scripts, web analytics, and telemetry endpoints",
+      true,
+      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easyprivacy_general_block.txt"
+    );
+    privacyList.loadFromText(EASYPRIVACY_PRESET_RULES);
+    this.addFilterListInstance(privacyList);
+    const easyList = new FilterList(
+      "easylist",
+      "EasyList Core",
+      "ad",
+      "Blocks popular advertising networks, banners, and video ads",
+      true,
+      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_general_block.txt"
+    );
+    easyList.loadFromText(EASYLIST_PRESET_RULES);
+    this.addFilterListInstance(easyList);
   }
   /**
    * Rebuilds search indices across all currently enabled filter lists.
@@ -1823,6 +1929,16 @@ var AdBlockEngine = class {
       return { blocked: false };
     }
     const hostname = extractHostname(request2.url);
+    const reqType = request2.resourceType?.toLowerCase();
+    const isMainDoc = reqType === "mainframe" || reqType === "document";
+    const canBlockMainDoc = (rule, category) => {
+      if (!isMainDoc) return true;
+      if (category === "custom" || category === "malvertising") return true;
+      if (rule.options?.resourceTypes && (rule.options.resourceTypes.includes("document") || rule.options.resourceTypes.includes("doc") || rule.options.resourceTypes.includes("popup"))) {
+        return true;
+      }
+      return false;
+    };
     if (hostname) {
       const candidates = this.domainExceptionIndex.getCandidateRules(hostname);
       for (const rule of candidates) {
@@ -1857,6 +1973,9 @@ var AdBlockEngine = class {
         if (!this.isCategoryEnabled(category)) {
           continue;
         }
+        if (!canBlockMainDoc(rule, category)) {
+          continue;
+        }
         if (matchRule(rule, request2)) {
           this.blockedCount++;
           this.categoryCounts[category] = (this.categoryCounts[category] || 0) + 1;
@@ -1878,6 +1997,9 @@ var AdBlockEngine = class {
       const list = this.lists.get(listId);
       const category = rule.category || list?.category || "ad";
       if (!this.isCategoryEnabled(category)) {
+        continue;
+      }
+      if (!canBlockMainDoc(rule, category)) {
         continue;
       }
       if (matchRule(rule, request2)) {
@@ -2232,8 +2354,10 @@ function initAdBlockAdapter(mainWindowGetter) {
     broadcastEvent("adblock:state-changed", getFullBroadcastState());
     return result;
   });
-  ipcMain.handle("adblock:evaluate-request", (_event, url) => {
-    return evaluateAdBlockRequest({ url });
+  ipcMain.handle("adblock:evaluate-request", (_event, data) => {
+    const targetUrl = typeof data === "string" ? data : data?.url || "";
+    const referrer = typeof data === "object" ? data?.referrer : void 0;
+    return evaluateAdBlockRequest({ url: targetUrl, referrer, resourceType: "popup" });
   });
   ipcMain.handle("adblock:get-guest-preload-path", () => {
     const guestPreload2 = path2.join(__dirname2, "guestPreload.cjs");
@@ -2265,105 +2389,51 @@ function initAdBlockAdapter(mainWindowGetter) {
       activeWebviewContents.delete(contents);
     });
     contents.setWindowOpenHandler((details) => {
-      const targetUrl = details.url || "";
-      const urlLower = targetUrl.toLowerCase();
-      if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
-        console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
-        return { action: "deny" };
+      return handleWindowOpenRequest(contents, details, mainWindowGetter);
+    });
+    contents.on("will-navigate", (event, navUrl) => {
+      if (!engine.isEnabled()) return;
+      const currentUrl = !contents.isDestroyed() ? contents.getURL() : "";
+      if (!currentUrl || currentUrl === "about:blank") return;
+      const isThirdParty = isThirdPartyRequest(navUrl, currentUrl);
+      if (!isThirdParty) {
+        try {
+          const pathname = new URL(navUrl).pathname.toLowerCase();
+          if (SUSPICIOUS_AD_REDIRECT_PATHS.some((p) => pathname.includes(p))) {
+            console.warn("[Forge Shield] Blocked same-origin ad redirect path:", navUrl);
+            event.preventDefault();
+            return;
+          }
+        } catch {
+        }
+        return;
       }
-      if (engine.isEnabled()) {
-        const { cancel } = evaluateAdBlockRequest({ url: targetUrl });
-        if (cancel) {
-          console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl);
-          return { action: "deny" };
-        }
-        const isAdOrPopunder = [
-          "popads",
-          "popcash",
-          "adcash",
-          "propellerads",
-          "monetag",
-          "hilltopads",
-          "adsterra",
-          "richads",
-          "clickadu",
-          "trafficstars",
-          "onclickprediction",
-          "onclickalgo",
-          "onclickbright",
-          "onclickperformance",
-          "ad2up",
-          "ero-advertising",
-          "juicyads",
-          "yllix",
-          "bidvertiser",
-          "doubleclick",
-          "googlesyndication",
-          "adnxs",
-          "criteo",
-          "taboola",
-          "outbrain",
-          "bet365",
-          "1xbet",
-          "redirect",
-          "click.php",
-          "track/click",
-          "serving/ad",
-          "adserver",
-          "clksite",
-          "revenuehits",
-          "rotator",
-          "popunder",
-          "fastclick",
-          "adservice",
-          "go.ad2up",
-          "ad-maven",
-          "directrev",
-          "clkmon",
-          "bestadbid",
-          "adclicker",
-          "trafficjunky",
-          "trafficfactory",
-          "runative",
-          "syndicate",
-          "casino",
-          "casinon",
-          "spelpaus",
-          "zilla-networks"
-        ].some((k) => urlLower.includes(k));
-        if (isAdOrPopunder) {
-          console.warn("[Forge Shield] Denied popunder by network filter:", targetUrl);
-          return { action: "deny" };
-        }
-        const isPopupWindow = details.features && (details.features.includes("width=") || details.features.includes("height=") || details.features.includes("location=0") || details.features.includes("menubar=0") || details.features.includes("toolbar=0"));
-        const isLegitimateAuth = [
-          "accounts.google.com",
-          "appleid.apple.com",
-          "github.com/login",
-          "login.microsoftonline.com",
-          "facebook.com/dialog",
-          "facebook.com/v",
-          "twitter.com/i/oauth2",
-          "x.com/i/oauth2",
-          "discord.com/oauth2",
-          "paypal.com/signin",
-          "auth0.com",
-          "okta.com"
-        ].some((domain) => urlLower.includes(domain));
-        if (isPopupWindow && !isLegitimateAuth) {
-          console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
-          return { action: "deny" };
+      if (isSearchEngineUrl(currentUrl)) return;
+      const isAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some(
+        (d) => navUrl.toLowerCase().includes(d)
+      );
+      if (isAuthOrPayment) return;
+      if (isAdOrRedirectUrl(navUrl, currentUrl)) {
+        console.warn("[Forge Shield] Blocked third-party ad navigation redirect:", navUrl, "from:", currentUrl);
+        event.preventDefault();
+        return;
+      }
+    });
+    contents.on("will-frame-navigate", (event) => {
+      if (event.isMainFrame && !event.frame?.isDestroyed?.() && event.frame?.parent) {
+        const currentUrl = !contents.isDestroyed() ? contents.getURL() : "";
+        if (currentUrl && currentUrl !== "about:blank") {
+          const isThirdParty = isThirdPartyRequest(event.url, currentUrl);
+          const isAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some(
+            (d) => event.url.toLowerCase().includes(d)
+          );
+          if (isThirdParty && !isAuthOrPayment && isAdOrRedirectUrl(event.url, currentUrl)) {
+            console.warn("[Forge Shield] Blocked frame-busting top-level ad redirect:", event.url);
+            event.preventDefault();
+            return;
+          }
         }
       }
-      try {
-        const win = getWin ? getWin() : null;
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("tabs:open-tab", { url: targetUrl });
-        }
-      } catch (err) {
-        console.error("[Forge Shield] Error routing link to tab:", err);
-      }
-      return { action: "deny" };
     });
     const injectCosmeticsAndScriptlets = async () => {
       try {
@@ -2424,6 +2494,492 @@ function evaluateAdBlockRequest(details) {
 }
 function getEngineInstance() {
   return engine;
+}
+function getAdBlockShieldHtml(url, category, ruleRaw) {
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    hostname = url;
+  }
+  const categoryLabel = category === "malvertising" ? "Security Threat Shield" : category === "custom" ? "Custom User Filter Rule" : "Forge Shield";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Blocked by Forge Shield</title>
+  <style>
+    :root {
+      --bg: #090A0F;
+      --card: #13151F;
+      --border: #232736;
+      --primary: #FF6B00;
+      --red: #EF4444;
+      --text: #F3F4F6;
+      --text-muted: #9CA3AF;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: radial-gradient(ellipse at 50% 30%, #1e1014 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7), 0 0 40px rgba(239, 68, 68, 0.15);
+      animation: popIn 0.25s ease-out;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .icon-badge {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #F87171;
+      font-size: 28px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .site {
+      color: var(--primary);
+      word-break: break-all;
+    }
+    .desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .rule-box {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #F87171;
+      margin-bottom: 24px;
+      word-break: break-all;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-back {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-back:hover {
+      background: #e05e00;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-badge">\u{1F6E1}\uFE0F</div>
+    <h1>Blocked by <span class="site">Forge Shield</span></h1>
+    <p class="desc">
+      Navigation to <strong>${hostname}</strong> was blocked by your <strong>${categoryLabel}</strong> settings.
+    </p>
+    ${ruleRaw ? `<div class="rule-box">Rule: ${ruleRaw}</div>` : ""}
+    <div class="actions">
+      <button class="btn btn-back" onclick="history.back()">Go Back</button>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+var KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS = [
+  // Popunder & Pop-up Ad Networks
+  "popads",
+  "popcash",
+  "adcash",
+  "propellerads",
+  "monetag",
+  "hilltopads",
+  "adsterra",
+  "richads",
+  "clickadu",
+  "trafficstars",
+  "trafficjunky",
+  "trafficfactory",
+  "runative",
+  "ad2up",
+  "juicyads",
+  "yllix",
+  "bidvertiser",
+  "exoclick",
+  "zeropark",
+  "plugrush",
+  "adxad",
+  "clickaine",
+  "ad-maven",
+  "active8",
+  "daftads",
+  "twinred",
+  "adkernel",
+  "galaksion",
+  "ezmob",
+  "clickadilla",
+  "rollerads",
+  "pushground",
+  "evadav",
+  "coinhive",
+  "cryptoloot",
+  "crypto-loot",
+  // Video Streaming Ad Networks & Redirect Gates
+  "profitablecpmrate",
+  "profitablegatetocontent",
+  "highperformancegate",
+  "highcpmgate",
+  "effectivecpmgate",
+  "realsrv",
+  "magsrv",
+  "xlviirdr",
+  "pukegoocha",
+  "whomeeno",
+  "voomau",
+  "oortous",
+  "whounsoo",
+  "dooloust",
+  "shoumou",
+  "deloplen",
+  "grootso",
+  "shukriya",
+  "slytherin",
+  "fastclick",
+  "short.ink",
+  "direct-link",
+  "shrinkme",
+  "linkvertise",
+  "alwingulla",
+  "eastsour",
+  "cloutho",
+  "agacelebir",
+  "wheretheissomething",
+  "onclick",
+  "adcontent",
+  "syndication",
+  "videobin",
+  "clicknupload",
+  "streamwish",
+  "filemoon",
+  "mixdrop",
+  "streamvid",
+  "mp4upload",
+  // Major Ad Servers & Exchanges
+  "doubleclick",
+  "googlesyndication",
+  "adservice",
+  "adnxs",
+  "criteo",
+  "taboola",
+  "outbrain",
+  "revenuehits",
+  "directrev",
+  "clkmon",
+  "bestadbid",
+  "adclicker",
+  "clksite",
+  "rotator",
+  "popunder",
+  "syndicate",
+  "tsyndicate",
+  "adtrue",
+  "adthrive",
+  "mediavine",
+  "infolinks",
+  "conversant",
+  "rubiconproject",
+  "pubmatic",
+  "openx",
+  "casalemedia",
+  "yieldmo",
+  "smartadserver",
+  "sovrn",
+  "revcontent",
+  "mgid",
+  "media.net",
+  "bidswitch",
+  "adroll",
+  "rubicon",
+  "adform",
+  "zedo",
+  "aniview",
+  "springserve",
+  "connatix",
+  "spotxchange",
+  "spotx.tv",
+  "adtech",
+  "quantserve",
+  "adcolony",
+  "admob",
+  "unityads",
+  "applovin",
+  "ironsrc",
+  "vungle",
+  "chartboost",
+  "adpushup",
+  "adblade",
+  "adbutler",
+  "carbonads",
+  "zergnet",
+  "raptive",
+  "yieldlove",
+  "snigelweb",
+  "shemedia",
+  "playwire",
+  "ezoic",
+  "a-ads",
+  "coinzilla",
+  "bitmedia",
+  "cointraffic",
+  "popmyads",
+  "clicksor",
+  "buysellads",
+  "zilla-networks",
+  "onclickprediction",
+  "onclickalgo",
+  "onclickbright",
+  "onclickperformance",
+  "ad-rotator",
+  "traffic-media",
+  "zeroad",
+  "redirect-ad",
+  "pushsdk",
+  "push-notification",
+  // Gambling / Betting Popups (frequent popunder targets)
+  "bet365",
+  "1xbet",
+  "betway",
+  "parimatch",
+  "mostbet",
+  "pin-up",
+  "vulkan",
+  "casino",
+  "casinon",
+  "spelpaus",
+  "jackpotcity",
+  "spinpalace",
+  "betwinner",
+  "megapari",
+  "melbet"
+];
+var SUSPICIOUS_AD_REDIRECT_PATHS = [
+  "/click.php",
+  "/out.php",
+  "/track.php",
+  "/redirect.php",
+  "/goto.php",
+  "/jump.php",
+  "/redir.php",
+  "/traffic/",
+  "/rotator/",
+  "/adclick",
+  "/ad_click",
+  "/ad-click",
+  "/pop/click",
+  "/clk/",
+  "/zone/",
+  "/dispatcher.php",
+  "/serving/ad",
+  "/track/click",
+  "/delivery/",
+  "/go.php",
+  "/ad.php",
+  "/adv.php",
+  "/link.php",
+  "/count.php",
+  "/click/"
+];
+var SUSPICIOUS_AFFILIATE_QUERY_KEYS = [
+  "click_id",
+  "clickid",
+  "aff_id",
+  "affid",
+  "subid",
+  "sub_id",
+  "sub1",
+  "sub2",
+  "zoneid",
+  "zone_id",
+  "banner_id",
+  "bannerid",
+  "campaign_id",
+  "campaignid",
+  "pub_id",
+  "publisher_id",
+  "ref_id",
+  "refid",
+  "track_id",
+  "tracking_id",
+  "popunder",
+  "target_url",
+  "redirect_url",
+  "traffic_source",
+  "ad_id",
+  "adid"
+];
+var LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS = [
+  "accounts.google.com",
+  "appleid.apple.com",
+  "github.com/login",
+  "github.com/sessions",
+  "login.microsoftonline.com",
+  "facebook.com/dialog",
+  "facebook.com/v",
+  "twitter.com/i/oauth2",
+  "x.com/i/oauth2",
+  "discord.com/oauth2",
+  "paypal.com",
+  "auth0.com",
+  "okta.com",
+  "steamcommunity.com/openid",
+  "id.twitch.tv",
+  "gitlab.com/oauth",
+  "bitbucket.org/site/oauth2",
+  "login.yahoo.com",
+  "checkout.stripe.com",
+  "pay.google.com",
+  "pay.amazon.com",
+  "klarna.com",
+  "shopify.com"
+];
+function isSearchEngineUrl(urlStr) {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    return host.includes("google.") || host.includes("bing.com") || host.includes("duckduckgo.com") || host.includes("ecosia.org") || host.includes("brave.com") || host.includes("yahoo.com") || host.includes("yandex.") || host.includes("baidu.com") || host.includes("startpage.com");
+  } catch {
+    return false;
+  }
+}
+function isAdOrRedirectUrl(targetUrl, sourceUrl) {
+  if (!targetUrl || targetUrl === "about:blank") return false;
+  const urlLower = targetUrl.toLowerCase();
+  if (urlLower.startsWith("javascript:") || urlLower.startsWith("data:")) return true;
+  if (KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS.some((k) => urlLower.includes(k))) return true;
+  try {
+    const parsed = new URL(targetUrl);
+    const pathname = parsed.pathname.toLowerCase();
+    if (SUSPICIOUS_AD_REDIRECT_PATHS.some((p) => pathname.includes(p))) return true;
+    const isThirdParty = sourceUrl ? isThirdPartyRequest(targetUrl, sourceUrl) : true;
+    if (isThirdParty) {
+      if (SUSPICIOUS_AFFILIATE_QUERY_KEYS.some((k) => parsed.searchParams.has(k))) {
+        return true;
+      }
+    }
+  } catch {
+  }
+  if (engine.isEnabled()) {
+    const popupEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "popup"
+    });
+    if (popupEval.blocked) return true;
+    const subdocEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "subdocument"
+    });
+    if (subdocEval.blocked) return true;
+  }
+  return false;
+}
+var lastWindowOpenTimes = /* @__PURE__ */ new Map();
+function handleWindowOpenRequest(contents, details, getWin3) {
+  const targetUrl = details.url || "";
+  const urlLower = targetUrl.toLowerCase();
+  if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
+    console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
+    return { action: "deny" };
+  }
+  const topPageUrl = !contents.isDestroyed() ? contents.getURL() : "";
+  const referrerUrl = details.referrer?.url || "";
+  const sourceUrl = referrerUrl || topPageUrl || "";
+  const isThirdParty = isThirdPartyRequest(targetUrl, sourceUrl);
+  const isLegitimateAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some(
+    (domain) => urlLower.includes(domain)
+  );
+  const isFromEmbeddedSubframe = Boolean(
+    referrerUrl && topPageUrl && topPageUrl !== "about:blank" && isThirdPartyRequest(referrerUrl, topPageUrl)
+  );
+  if (isFromEmbeddedSubframe && isThirdParty && !isLegitimateAuthOrPayment) {
+    console.warn("[Forge Shield] Denied third-party popup from embedded subframe:", targetUrl, "subframe:", referrerUrl);
+    return { action: "deny" };
+  }
+  if (engine.isEnabled()) {
+    if (isAdOrRedirectUrl(targetUrl, sourceUrl)) {
+      console.warn("[Forge Shield] Denied ad/redirect popup by URL heuristics/rules:", targetUrl);
+      return { action: "deny" };
+    }
+    const popupEval = evaluateAdBlockRequest({
+      url: targetUrl,
+      referrer: sourceUrl,
+      resourceType: "popup"
+    });
+    if (popupEval.cancel) {
+      console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl, popupEval.decision.rule?.raw);
+      return { action: "deny" };
+    }
+    const isPopupWindow = Boolean(
+      details.features && (details.features.includes("width=") || details.features.includes("height=") || details.features.includes("location=0") || details.features.includes("menubar=0") || details.features.includes("toolbar=0") || details.features.includes("status=0"))
+    );
+    if (isPopupWindow && !isLegitimateAuthOrPayment) {
+      console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
+      return { action: "deny" };
+    }
+    const now = Date.now();
+    const lastOpen = lastWindowOpenTimes.get(contents.id) || 0;
+    if (now - lastOpen < 800) {
+      console.warn("[Forge Shield] Denied rapid-fire popunder spam:", targetUrl);
+      return { action: "deny" };
+    }
+    lastWindowOpenTimes.set(contents.id, now);
+  }
+  try {
+    const win = getWin3 ? getWin3() : null;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("tabs:open-tab", { url: targetUrl });
+    }
+  } catch (err) {
+    console.error("[Forge Shield] Error routing link to tab:", err);
+  }
+  return { action: "deny" };
 }
 
 // electron/network/vpnAdapter.ts
@@ -8185,8 +8741,18 @@ function configureSessionPartition(ses, partitionName) {
         referrer: details.referrer
       });
       if (adblock.cancel) {
-        callback({ cancel: true });
-        return;
+        if (details.resourceType === "mainFrame") {
+          const html = getAdBlockShieldHtml(
+            details.url,
+            adblock.decision.category || "ad",
+            adblock.decision.rule?.raw
+          );
+          callback({ redirectURL: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
+          return;
+        } else {
+          callback({ cancel: true });
+          return;
+        }
       }
     } catch {
     }
@@ -8647,7 +9213,11 @@ function createWindow(isIncognito = false) {
     const isAppShell = navUrl.startsWith("http://localhost:5173") || navUrl.startsWith("file://") || Boolean(process.env.VITE_DEV_SERVER_URL && navUrl.startsWith(process.env.VITE_DEV_SERVER_URL));
     if (!isAppShell) {
       event.preventDefault();
-      win.webContents.send("tabs:open-tab", { url: navUrl });
+      if (!isAdOrRedirectUrl(navUrl)) {
+        win.webContents.send("tabs:open-tab", { url: navUrl });
+      } else {
+        console.warn("[Forge Shield] Dropped ad/redirect from main window will-navigate:", navUrl);
+      }
     }
   });
   win.webContents.on("will-attach-webview", (_event, webPreferences, _params) => {
@@ -8830,18 +9400,7 @@ app9.on("web-contents-created", (_event, contents) => {
   }
   registerShortcutInterception(contents);
   contents.setWindowOpenHandler((details) => {
-    const targetUrl = details.url;
-    if (targetUrl && targetUrl !== "about:blank" && !targetUrl.startsWith("javascript:") && !targetUrl.startsWith("data:")) {
-      try {
-        const win = BrowserWindow10.getFocusedWindow() || mainWindow;
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("tabs:open-tab", { url: targetUrl });
-        }
-      } catch (err) {
-        console.error("[Main] Error routing link to tab:", err);
-      }
-    }
-    return { action: "deny" };
+    return handleWindowOpenRequest(contents, details, () => BrowserWindow10.getFocusedWindow() || mainWindow);
   });
   if (contents.getType() !== "webview") return;
   webviewContentsMap.set(contents.id, contents);

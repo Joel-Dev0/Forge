@@ -216,3 +216,89 @@ test("AdBlockEngine - uBlock Quick Fixes and dynamic list content updates", () =
   assert.equal(res2.listId, "quickfixes");
 });
 
+test("AdBlockEngine - Normalization and safety for user-added site/page rules", () => {
+  const engine = new AdBlockEngine(false);
+
+  // 1. Plain domain input "badsite.com" should be normalized to domain rule
+  const domainRule = engine.addUserRule("badsite.com");
+  assert.ok(domainRule);
+  assert.equal(domainRule.domain, "badsite.com");
+
+  // Should block badsite.com
+  assert.equal(engine.match({ url: "https://badsite.com/home" }).blocked, true);
+  assert.equal(engine.match({ url: "https://sub.badsite.com/api" }).blocked, true);
+  // Should NOT block other sites like goodsite.com
+  assert.equal(engine.match({ url: "https://goodsite.com/home" }).blocked, false);
+
+  // 2. Overly broad / dangerous rules should be REJECTED (return null)
+  assert.equal(engine.addUserRule("*"), null);
+  assert.equal(engine.addUserRule("/*"), null);
+  assert.equal(engine.addUserRule("/"), null);
+  assert.equal(engine.addUserRule("^"), null);
+  assert.equal(engine.addUserRule("||"), null);
+  assert.equal(engine.addUserRule("||*"), null);
+  assert.equal(engine.addUserRule("||^"), null);
+  assert.equal(engine.addUserRule("|"), null);
+  assert.equal(engine.addUserRule("https://"), null);
+  assert.equal(engine.addUserRule("www."), null);
+
+  // 3. Specific URL blocking: should block ONLY that page, NOT other pages on the site
+  const specificRule = engine.addUserRule("|https://mysite.com/blocked-page|");
+  assert.ok(specificRule);
+
+  // Blocked page
+  assert.equal(engine.match({ url: "https://mysite.com/blocked-page" }).blocked, true);
+  // Allowed page on the same domain
+  assert.equal(engine.match({ url: "https://mysite.com/allowed-page" }).blocked, false);
+  assert.equal(engine.match({ url: "https://mysite.com/" }).blocked, false);
+});
+
+test("AdBlockEngine - General ad rules do not block mainFrame page loads", () => {
+  const engine = new AdBlockEngine(true);
+
+  // A page URL containing "ads" in its path (e.g. news article about advertising)
+  // Should NOT be blocked when navigated as mainFrame
+  const mainDocRes = engine.match({
+    url: "https://news.example.com/tech/2026/ads-trends-report.html",
+    resourceType: "mainFrame",
+  });
+  assert.equal(mainDocRes.blocked, false);
+
+  // But an embedded ad banner or script on that page IS blocked
+  const subresourceRes = engine.match({
+    url: "https://ad.doubleclick.net/ad.js",
+    resourceType: "script",
+    sourceUrl: "https://news.example.com/tech/2026/ads-trends-report.html",
+  });
+  assert.equal(subresourceRes.blocked, true);
+});
+
+test("AdBlockEngine - Popup and new tab ad blocking ($popup)", () => {
+  const engine = new AdBlockEngine(true);
+
+  // Popunder / popup ad network rule
+  const popupMatch = engine.match({
+    url: "https://adsterra.com/click.php?zoneid=123",
+    resourceType: "popup",
+    sourceUrl: "https://free-movies.stream/watch",
+  });
+  assert.equal(popupMatch.blocked, true);
+
+  // Even if it navigates as mainFrame in a new tab, $popup rules and malvertising rules catch it
+  const navMatch = engine.match({
+    url: "https://monetag.com/out.php?id=999",
+    resourceType: "mainFrame",
+    sourceUrl: "https://free-movies.stream/watch",
+  });
+  assert.equal(navMatch.blocked, true);
+
+  // Normal non-ad link opened in a new tab is allowed
+  const normalMatch = engine.match({
+    url: "https://en.wikipedia.org/wiki/Open-source_software",
+    resourceType: "popup",
+    sourceUrl: "https://tech-blog.com/post/1",
+  });
+  assert.equal(normalMatch.blocked, false);
+});
+
+

@@ -99,6 +99,7 @@ interface AdBlockState {
   exportRules: () => Promise<string>;
   quickAllowDomain: (domain: string) => Promise<void>;
   quickBlockDomain: (domain: string) => Promise<void>;
+  quickBlockUrl: (url: string) => Promise<void>;
   isSiteProtected: (urlOrDomain: string) => boolean;
   toggleSiteProtection: (urlOrDomain: string) => Promise<boolean>;
   getBlockedCountForDomain: (urlOrDomain: string) => number;
@@ -299,13 +300,31 @@ export const useAdBlockStore = create<AdBlockState>((set, get) => ({
     const isCurrentlyAllowlisted = currentAllowlisted.includes(domain);
 
     if (isCurrentlyAllowlisted) {
-      // Re-enable protection for this site
+      // Re-enable protection for this site:
+      // 1. Remove domain from allowlisted list
       const nextAllowlisted = currentAllowlisted.filter((d) => d !== domain);
       set({ allowlistedDomains: nextAllowlisted });
-      await get().quickBlockDomain(domain);
+
+      // 2. Remove any allowlist exception rules for this domain
+      const rules = get().customRules;
+      const allowRules = rules.filter(
+        (r) => r.raw === `@@||${domain}^` || r.raw === `@@||${domain}` || r.raw.startsWith(`@@||${domain}`)
+      );
+      for (const rule of allowRules) {
+        await get().removeUserRule(rule.id);
+      }
+
+      // 3. Remove any accidental block rules for this site's root domain if previously added
+      const blockRules = rules.filter(
+        (r) => r.raw === `||${domain}^` || r.raw === `||${domain}`
+      );
+      for (const rule of blockRules) {
+        await get().removeUserRule(rule.id);
+      }
+
       return true;
     } else {
-      // Disable protection for this site
+      // Disable protection for this site (allow ads on this site)
       set({ allowlistedDomains: [...currentAllowlisted, domain] });
       await get().quickAllowDomain(domain);
       return false;
@@ -396,8 +415,21 @@ export const useAdBlockStore = create<AdBlockState>((set, get) => ({
 
   quickBlockDomain: async (domain: string) => {
     if (!domain) return;
-    const ruleStr = `||${domain}^`;
+    const clean = domain.trim().toLowerCase();
+    const ruleStr = `||${clean}^`;
     await get().addUserRule(ruleStr);
+  },
+
+  quickBlockUrl: async (url: string) => {
+    if (!url) return;
+    try {
+      const parsed = new URL(url);
+      const cleanPath = `${parsed.origin}${parsed.pathname}`;
+      const ruleStr = `|${cleanPath}|`;
+      await get().addUserRule(ruleStr);
+    } catch {
+      await get().addUserRule(`|${url}|`);
+    }
   },
 
   clearLogs: async () => {

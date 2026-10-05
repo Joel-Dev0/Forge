@@ -56,6 +56,7 @@ export function BlockedRequestsInspector() {
     exportRules,
     quickAllowDomain,
     quickBlockDomain,
+    quickBlockUrl,
     clearLogs,
     updateLists,
     fetchDetailedStats,
@@ -487,7 +488,7 @@ export function BlockedRequestsInspector() {
 
                     {/* Right: Actions */}
                     <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-                      {/* Quick Domain Allow / Block */}
+                      {/* Quick Domain Allow / Block & URL Block */}
                       {req.domain && (
                         <>
                           {isBlocked ? (
@@ -502,16 +503,28 @@ export function BlockedRequestsInspector() {
                               Allow Domain
                             </button>
                           ) : (
-                            <button
-                              onClick={async () => {
-                                await quickBlockDomain(req.domain);
-                                showNotification(`Blocked domain: ${req.domain}`);
-                              }}
-                              className="px-1.5 py-0.5 rounded bg-red-500/15 hover:bg-red-500/30 text-red-400 text-[8px] font-sans font-bold cursor-pointer transition-colors"
-                              title={`Block domain: ${req.domain} (adds ||${req.domain}^)`}
-                            >
-                              Block Domain
-                            </button>
+                            <>
+                              <button
+                                onClick={async () => {
+                                  await quickBlockUrl(req.url);
+                                  showNotification(`Blocked specific URL: ${req.name}`);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/30 text-amber-400 text-[8px] font-sans font-bold cursor-pointer transition-colors"
+                                title={`Block this specific URL/page without blocking the whole domain`}
+                              >
+                                Block URL
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  await quickBlockDomain(req.domain);
+                                  showNotification(`Blocked domain: ${req.domain}`);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-red-500/15 hover:bg-red-500/30 text-red-400 text-[8px] font-sans font-bold cursor-pointer transition-colors"
+                                title={`Block entire domain: ${req.domain} (adds ||${req.domain}^)`}
+                              >
+                                Block Domain
+                              </button>
+                            </>
                           )}
                         </>
                       )}

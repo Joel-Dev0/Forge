@@ -84,29 +84,27 @@ export class AdBlockEngine {
   }
 
   private initPresets(): void {
-    // 1. EasyList Core (Advertising)
-    const easyList = new FilterList(
-      "easylist",
-      "EasyList Core",
-      "ad",
-      "Blocks popular advertising networks, banners, and video ads",
-      true,
-      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_general_block.txt"
+    // 1. User Custom Rules (User rules have top priority)
+    const userList = new FilterList(
+      "user",
+      "User Rules",
+      "custom",
+      "Custom user-defined blocking and allowlist rules",
+      true
     );
-    easyList.loadFromText(EASYLIST_PRESET_RULES);
-    this.addFilterListInstance(easyList);
+    this.addFilterListInstance(userList);
 
-    // 2. EasyPrivacy (Trackers & Analytics)
-    const privacyList = new FilterList(
-      "easyprivacy",
-      "EasyPrivacy",
-      "tracker",
-      "Blocks tracking scripts, web analytics, and telemetry endpoints",
+    // 2. Malvertising & Threat Shield (Security threats have second priority)
+    const malvertisingList = new FilterList(
+      "malvertising",
+      "Malvertising & Threats",
+      "malvertising",
+      "Blocks in-browser cryptominers, malicious ad redirectors, phishing and scam domains",
       true,
-      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easyprivacy_general_block.txt"
+      "https://raw.githubusercontent.com/Joel-Dev0/Forge/master/filters/malvertising.txt"
     );
-    privacyList.loadFromText(EASYPRIVACY_PRESET_RULES);
-    this.addFilterListInstance(privacyList);
+    malvertisingList.loadFromText(MALVERTISING_PRESET_RULES);
+    this.addFilterListInstance(malvertisingList);
 
     // 3. uBlock Quick Fixes (YouTube & Anti-Adblock Live Fixes)
     const quickFixesList = new FilterList(
@@ -120,27 +118,29 @@ export class AdBlockEngine {
     quickFixesList.loadFromText(QUICKFIXES_PRESET_RULES);
     this.addFilterListInstance(quickFixesList);
 
-    // 4. Malvertising & Threat Shield (Cryptominers, Phishing Ads & Scam Redirects)
-    const malvertisingList = new FilterList(
-      "malvertising",
-      "Malvertising & Threats",
-      "malvertising",
-      "Blocks in-browser cryptominers, malicious ad redirectors, phishing and scam domains",
+    // 4. EasyPrivacy (Trackers & Analytics)
+    const privacyList = new FilterList(
+      "easyprivacy",
+      "EasyPrivacy",
+      "tracker",
+      "Blocks tracking scripts, web analytics, and telemetry endpoints",
       true,
-      "https://raw.githubusercontent.com/Joel-Dev0/Forge/master/filters/malvertising.txt"
+      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easyprivacy_general_block.txt"
     );
-    malvertisingList.loadFromText(MALVERTISING_PRESET_RULES);
-    this.addFilterListInstance(malvertisingList);
+    privacyList.loadFromText(EASYPRIVACY_PRESET_RULES);
+    this.addFilterListInstance(privacyList);
 
-    // 5. User Custom Rules
-    const userList = new FilterList(
-      "user",
-      "User Rules",
-      "custom",
-      "Custom user-defined blocking and allowlist rules",
-      true
+    // 5. EasyList Core (Advertising)
+    const easyList = new FilterList(
+      "easylist",
+      "EasyList Core",
+      "ad",
+      "Blocks popular advertising networks, banners, and video ads",
+      true,
+      "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_general_block.txt"
     );
-    this.addFilterListInstance(userList);
+    easyList.loadFromText(EASYLIST_PRESET_RULES);
+    this.addFilterListInstance(easyList);
   }
 
   /**
@@ -346,6 +346,27 @@ export class AdBlockEngine {
     }
 
     const hostname = extractHostname(request.url);
+    const reqType = request.resourceType?.toLowerCase();
+    const isMainDoc = reqType === "mainframe" || reqType === "document";
+
+    // Top-level document navigations (mainFrame) should only ever be blocked by:
+    // 1. User custom rules
+    // 2. Malvertising & security threat protection
+    // 3. Rules explicitly specifying $document / $doc
+    // General ad & tracker patterns must never block the user's active webpage.
+    const canBlockMainDoc = (rule: BlockRule, category: RuleCategory): boolean => {
+      if (!isMainDoc) return true;
+      if (category === "custom" || category === "malvertising") return true;
+      if (
+        rule.options?.resourceTypes &&
+        (rule.options.resourceTypes.includes("document") ||
+         rule.options.resourceTypes.includes("doc") ||
+         rule.options.resourceTypes.includes("popup"))
+      ) {
+        return true;
+      }
+      return false;
+    };
 
     // 1. Check Domain Exception Rules (@@)
     if (hostname) {
@@ -390,6 +411,11 @@ export class AdBlockEngine {
           continue;
         }
 
+        // Avoid blocking top-level pages by general ad/tracker filters
+        if (!canBlockMainDoc(rule, category)) {
+          continue;
+        }
+
         if (matchRule(rule, request)) {
           this.blockedCount++;
           this.categoryCounts[category] = (this.categoryCounts[category] || 0) + 1;
@@ -420,6 +446,11 @@ export class AdBlockEngine {
 
       // Check if this functional module is active
       if (!this.isCategoryEnabled(category)) {
+        continue;
+      }
+
+      // Avoid blocking top-level pages by general ad/tracker filters
+      if (!canBlockMainDoc(rule, category)) {
         continue;
       }
 

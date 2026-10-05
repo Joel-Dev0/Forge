@@ -10,7 +10,9 @@ import {
   type ShieldFeatures,
   type DetailedBlockStats,
   type RuleCategory,
+  isThirdPartyRequest,
 } from "@forge/adblock-engine";
+import type { WebContents, HandlerDetails } from "electron";
 import { initListUpdater, updateFilterLists, getListUpdaterStatus } from "./listUpdater.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -199,8 +201,10 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
     return result;
   });
 
-  ipcMain.handle("adblock:evaluate-request", (_event, url: string) => {
-    return evaluateAdBlockRequest({ url });
+  ipcMain.handle("adblock:evaluate-request", (_event, data: string | { url: string; referrer?: string }) => {
+    const targetUrl = typeof data === "string" ? data : data?.url || "";
+    const referrer = typeof data === "object" ? data?.referrer : undefined;
+    return evaluateAdBlockRequest({ url: targetUrl, referrer, resourceType: "popup" });
   });
 
   ipcMain.handle("adblock:get-guest-preload-path", () => {
@@ -241,83 +245,62 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
 
     // Block popup ad windows & popunders with extreme vigilance
     contents.setWindowOpenHandler((details) => {
-      const targetUrl = details.url || "";
-      const urlLower = targetUrl.toLowerCase();
+      return handleWindowOpenRequest(contents, details, mainWindowGetter);
+    });
 
-      // 1. Instantly deny blank, javascript or data popunders
-      if (!targetUrl || targetUrl === "about:blank" || targetUrl.startsWith("javascript:") || targetUrl.startsWith("data:")) {
-        console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
-        return { action: "deny" };
+    // Guard webview from top-level redirects to ad networks, rotators and frame-busting popunders
+    contents.on("will-navigate", (event, navUrl) => {
+      if (!engine.isEnabled()) return;
+      const currentUrl = !contents.isDestroyed() ? contents.getURL() : "";
+      if (!currentUrl || currentUrl === "about:blank") return;
+
+      // Allow same-origin navigations unless matching suspicious ad redirect paths
+      const isThirdParty = isThirdPartyRequest(navUrl, currentUrl);
+      if (!isThirdParty) {
+        try {
+          const pathname = new URL(navUrl).pathname.toLowerCase();
+          if (SUSPICIOUS_AD_REDIRECT_PATHS.some((p) => pathname.includes(p))) {
+            console.warn("[Forge Shield] Blocked same-origin ad redirect path:", navUrl);
+            event.preventDefault();
+            return;
+          }
+        } catch {}
+        return;
       }
 
-      if (engine.isEnabled()) {
-        // 2. Evaluate with AdBlock Engine
-        const { cancel } = evaluateAdBlockRequest({ url: targetUrl });
-        if (cancel) {
-          console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl);
-          return { action: "deny" };
-        }
+      // Check if current page is a search engine (results clicks must be allowed)
+      if (isSearchEngineUrl(currentUrl)) return;
 
-        // 3. Deny known ad/popunder keywords & networks
-        const isAdOrPopunder = [
-          "popads", "popcash", "adcash", "propellerads", "monetag", "hilltopads",
-          "adsterra", "richads", "clickadu", "trafficstars", "onclickprediction",
-          "onclickalgo", "onclickbright", "onclickperformance", "ad2up", "ero-advertising",
-          "juicyads", "yllix", "bidvertiser", "doubleclick", "googlesyndication",
-          "adnxs", "criteo", "taboola", "outbrain", "bet365", "1xbet", "redirect",
-          "click.php", "track/click", "serving/ad", "adserver", "clksite", "revenuehits",
-          "rotator", "popunder", "fastclick", "adservice", "go.ad2up", "ad-maven",
-          "directrev", "clkmon", "bestadbid", "adclicker", "trafficjunky", "trafficfactory",
-          "runative", "syndicate", "casino", "casinon", "spelpaus", "zilla-networks"
-        ].some((k) => urlLower.includes(k));
+      // Check if target is legitimate auth or payment
+      const isAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some((d) =>
+        navUrl.toLowerCase().includes(d)
+      );
+      if (isAuthOrPayment) return;
 
-        if (isAdOrPopunder) {
-          console.warn("[Forge Shield] Denied popunder by network filter:", targetUrl);
-          return { action: "deny" };
-        }
+      // Block if identified as ad or popunder redirect
+      if (isAdOrRedirectUrl(navUrl, currentUrl)) {
+        console.warn("[Forge Shield] Blocked third-party ad navigation redirect:", navUrl, "from:", currentUrl);
+        event.preventDefault();
+        return;
+      }
+    });
 
-        // 4. If features indicate a popup window (dimensions or hidden navigation), only allow legitimate OAuth logins
-        const isPopupWindow = details.features && (
-          details.features.includes("width=") ||
-          details.features.includes("height=") ||
-          details.features.includes("location=0") ||
-          details.features.includes("menubar=0") ||
-          details.features.includes("toolbar=0")
-        );
-
-        const isLegitimateAuth = [
-          "accounts.google.com",
-          "appleid.apple.com",
-          "github.com/login",
-          "login.microsoftonline.com",
-          "facebook.com/dialog",
-          "facebook.com/v",
-          "twitter.com/i/oauth2",
-          "x.com/i/oauth2",
-          "discord.com/oauth2",
-          "paypal.com/signin",
-          "auth0.com",
-          "okta.com"
-        ].some((domain) => urlLower.includes(domain));
-
-        if (isPopupWindow && !isLegitimateAuth) {
-          console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
-          return { action: "deny" };
+    contents.on("will-frame-navigate", (event: any) => {
+      // If a subframe tries to hijack or navigate the top-level main frame
+      if (event.isMainFrame && !event.frame?.isDestroyed?.() && event.frame?.parent) {
+        const currentUrl = !contents.isDestroyed() ? contents.getURL() : "";
+        if (currentUrl && currentUrl !== "about:blank") {
+          const isThirdParty = isThirdPartyRequest(event.url, currentUrl);
+          const isAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some((d) =>
+            event.url.toLowerCase().includes(d)
+          );
+          if (isThirdParty && !isAuthOrPayment && isAdOrRedirectUrl(event.url, currentUrl)) {
+            console.warn("[Forge Shield] Blocked frame-busting top-level ad redirect:", event.url);
+            event.preventDefault();
+            return;
+          }
         }
       }
-
-      // Route legitimate navigation into a new tab in Forge UI
-      try {
-        const win = (getWin ? getWin() : null);
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("tabs:open-tab", { url: targetUrl });
-        }
-      } catch (err) {
-        console.error("[Forge Shield] Error routing link to tab:", err);
-      }
-
-      // CRITICAL: STRICTLY ALWAYS return { action: "deny" } so Electron NEVER spawns a native OS BrowserWindow!
-      return { action: "deny" };
     });
 
     const injectCosmeticsAndScriptlets = async () => {
@@ -401,3 +384,395 @@ export function evaluateAdBlockRequest(details: {
 export function getEngineInstance(): AdBlockEngine {
   return engine;
 }
+
+export function getAdBlockShieldHtml(url: string, category: string, ruleRaw?: string): string {
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    hostname = url;
+  }
+
+  const categoryLabel =
+    category === "malvertising"
+      ? "Security Threat Shield"
+      : category === "custom"
+      ? "Custom User Filter Rule"
+      : "Forge Shield";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Blocked by Forge Shield</title>
+  <style>
+    :root {
+      --bg: #090A0F;
+      --card: #13151F;
+      --border: #232736;
+      --primary: #FF6B00;
+      --red: #EF4444;
+      --text: #F3F4F6;
+      --text-muted: #9CA3AF;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: radial-gradient(ellipse at 50% 30%, #1e1014 0%, var(--bg) 70%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7), 0 0 40px rgba(239, 68, 68, 0.15);
+      animation: popIn 0.25s ease-out;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .icon-badge {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #F87171;
+      font-size: 28px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .site {
+      color: var(--primary);
+      word-break: break-all;
+    }
+    .desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .rule-box {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #F87171;
+      margin-bottom: 24px;
+      word-break: break-all;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-back {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-back:hover {
+      background: #e05e00;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-badge">🛡️</div>
+    <h1>Blocked by <span class="site">Forge Shield</span></h1>
+    <p class="desc">
+      Navigation to <strong>${hostname}</strong> was blocked by your <strong>${categoryLabel}</strong> settings.
+    </p>
+    ${ruleRaw ? `<div class="rule-box">Rule: ${ruleRaw}</div>` : ""}
+    <div class="actions">
+      <button class="btn btn-back" onclick="history.back()">Go Back</button>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export const KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS = [
+  // Popunder & Pop-up Ad Networks
+  "popads", "popcash", "adcash", "propellerads", "monetag", "hilltopads",
+  "adsterra", "richads", "clickadu", "trafficstars", "trafficjunky", "trafficfactory",
+  "runative", "ad2up", "juicyads", "yllix", "bidvertiser", "exoclick", "zeropark",
+  "plugrush", "adxad", "clickaine", "ad-maven", "active8", "daftads", "twinred",
+  "adkernel", "galaksion", "ezmob", "clickadilla", "rollerads", "pushground", "evadav",
+  "coinhive", "cryptoloot", "crypto-loot",
+
+  // Video Streaming Ad Networks & Redirect Gates
+  "profitablecpmrate", "profitablegatetocontent", "highperformancegate", "highcpmgate",
+  "effectivecpmgate", "realsrv", "magsrv", "xlviirdr", "pukegoocha", "whomeeno",
+  "voomau", "oortous", "whounsoo", "dooloust", "shoumou", "deloplen", "grootso",
+  "shukriya", "slytherin", "fastclick", "short.ink", "direct-link", "shrinkme",
+  "linkvertise", "alwingulla", "eastsour", "cloutho", "agacelebir", "wheretheissomething",
+  "onclick", "adcontent", "syndication", "videobin", "clicknupload",
+  "streamwish", "filemoon", "mixdrop", "streamvid", "mp4upload",
+
+  // Major Ad Servers & Exchanges
+  "doubleclick", "googlesyndication", "adservice", "adnxs", "criteo", "taboola",
+  "outbrain", "revenuehits", "directrev", "clkmon", "bestadbid",
+  "adclicker", "clksite", "rotator", "popunder", "syndicate",
+  "tsyndicate", "adtrue", "adthrive", "mediavine", "infolinks", "conversant",
+  "rubiconproject", "pubmatic", "openx", "casalemedia", "yieldmo", "smartadserver",
+  "sovrn", "revcontent", "mgid", "media.net", "bidswitch", "adroll", "rubicon",
+  "adform", "zedo", "aniview", "springserve", "connatix", "spotxchange", "spotx.tv",
+  "adtech", "quantserve", "adcolony", "admob", "unityads", "applovin", "ironsrc",
+  "vungle", "chartboost", "adpushup", "adblade", "adbutler", "carbonads", "zergnet",
+  "raptive", "yieldlove", "snigelweb", "shemedia", "playwire", "ezoic", "a-ads",
+  "coinzilla", "bitmedia", "cointraffic", "popmyads", "clicksor", "buysellads",
+  "zilla-networks", "onclickprediction", "onclickalgo", "onclickbright", "onclickperformance",
+  "ad-rotator", "traffic-media", "zeroad", "redirect-ad", "pushsdk", "push-notification",
+
+  // Gambling / Betting Popups (frequent popunder targets)
+  "bet365", "1xbet", "betway", "parimatch", "mostbet", "pin-up", "vulkan",
+  "casino", "casinon", "spelpaus", "jackpotcity", "spinpalace", "betwinner",
+  "megapari", "melbet"
+];
+
+export const SUSPICIOUS_AD_REDIRECT_PATHS = [
+  "/click.php", "/out.php", "/track.php", "/redirect.php", "/goto.php",
+  "/jump.php", "/redir.php", "/traffic/", "/rotator/", "/adclick",
+  "/ad_click", "/ad-click", "/pop/click", "/clk/", "/zone/", "/dispatcher.php",
+  "/serving/ad", "/track/click", "/delivery/", "/go.php", "/ad.php", "/adv.php",
+  "/link.php", "/count.php", "/click/"
+];
+
+export const SUSPICIOUS_AFFILIATE_QUERY_KEYS = [
+  "click_id", "clickid", "aff_id", "affid", "subid", "sub_id", "sub1", "sub2",
+  "zoneid", "zone_id", "banner_id", "bannerid", "campaign_id", "campaignid",
+  "pub_id", "publisher_id", "ref_id", "refid", "track_id", "tracking_id",
+  "popunder", "target_url", "redirect_url", "traffic_source", "ad_id", "adid"
+];
+
+export const LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS = [
+  "accounts.google.com",
+  "appleid.apple.com",
+  "github.com/login",
+  "github.com/sessions",
+  "login.microsoftonline.com",
+  "facebook.com/dialog",
+  "facebook.com/v",
+  "twitter.com/i/oauth2",
+  "x.com/i/oauth2",
+  "discord.com/oauth2",
+  "paypal.com",
+  "auth0.com",
+  "okta.com",
+  "steamcommunity.com/openid",
+  "id.twitch.tv",
+  "gitlab.com/oauth",
+  "bitbucket.org/site/oauth2",
+  "login.yahoo.com",
+  "checkout.stripe.com",
+  "pay.google.com",
+  "pay.amazon.com",
+  "klarna.com",
+  "shopify.com"
+];
+
+export function isSearchEngineUrl(urlStr: string): boolean {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    return (
+      host.includes("google.") ||
+      host.includes("bing.com") ||
+      host.includes("duckduckgo.com") ||
+      host.includes("ecosia.org") ||
+      host.includes("brave.com") ||
+      host.includes("yahoo.com") ||
+      host.includes("yandex.") ||
+      host.includes("baidu.com") ||
+      host.includes("startpage.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Centrally evaluates whether a target URL is an ad, popunder, or ad redirector.
+ */
+export function isAdOrRedirectUrl(targetUrl: string, sourceUrl?: string): boolean {
+  if (!targetUrl || targetUrl === "about:blank") return false;
+  const urlLower = targetUrl.toLowerCase();
+
+  // 1. Script/data schemes
+  if (urlLower.startsWith("javascript:") || urlLower.startsWith("data:")) return true;
+
+  // 2. Known ad networks & popunder keywords
+  if (KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS.some((k) => urlLower.includes(k))) return true;
+
+  // 3. Known ad redirect paths
+  try {
+    const parsed = new URL(targetUrl);
+    const pathname = parsed.pathname.toLowerCase();
+    if (SUSPICIOUS_AD_REDIRECT_PATHS.some((p) => pathname.includes(p))) return true;
+
+    // 4. Third-party affiliate / click query keys
+    const isThirdParty = sourceUrl ? isThirdPartyRequest(targetUrl, sourceUrl) : true;
+    if (isThirdParty) {
+      if (SUSPICIOUS_AFFILIATE_QUERY_KEYS.some((k) => parsed.searchParams.has(k))) {
+        return true;
+      }
+    }
+  } catch {}
+
+  // 5. Evaluate against engine
+  if (engine.isEnabled()) {
+    const popupEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "popup",
+    });
+    if (popupEval.blocked) return true;
+
+    const subdocEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "subdocument",
+    });
+    if (subdocEval.blocked) return true;
+  }
+
+  return false;
+}
+
+const lastWindowOpenTimes = new Map<number, number>();
+
+/**
+ * Centrally intercepts window open requests from any WebContents in Forge,
+ * evaluates AdBlock rules with full referrer/origin context, blocks popunders
+ * and ad redirectors, and safely routes legitimate tabs to the Forge browser UI.
+ */
+export function handleWindowOpenRequest(
+  contents: WebContents,
+  details: HandlerDetails,
+  getWin?: () => BrowserWindow | null
+): { action: "deny" } {
+  const targetUrl = details.url || "";
+  const urlLower = targetUrl.toLowerCase();
+
+  // 1. Instantly deny blank, javascript or data popunders
+  if (
+    !targetUrl ||
+    targetUrl === "about:blank" ||
+    targetUrl.startsWith("javascript:") ||
+    targetUrl.startsWith("data:")
+  ) {
+    console.warn("[Forge Shield] Denied blank/script popunder:", targetUrl);
+    return { action: "deny" };
+  }
+
+  const topPageUrl = !contents.isDestroyed() ? contents.getURL() : "";
+  const referrerUrl = details.referrer?.url || "";
+  const sourceUrl = referrerUrl || topPageUrl || "";
+  const isThirdParty = isThirdPartyRequest(targetUrl, sourceUrl);
+
+  const isLegitimateAuthOrPayment = LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS.some((domain) =>
+    urlLower.includes(domain)
+  );
+
+  // If a cross-origin embedded subframe (e.g. an embedded video player) attempts to open
+  // any third-party target that is not legitimate OAuth/payment: BLOCK IMMEDIATELY!
+  const isFromEmbeddedSubframe = Boolean(
+    referrerUrl &&
+    topPageUrl &&
+    topPageUrl !== "about:blank" &&
+    isThirdPartyRequest(referrerUrl, topPageUrl)
+  );
+
+  if (isFromEmbeddedSubframe && isThirdParty && !isLegitimateAuthOrPayment) {
+    console.warn("[Forge Shield] Denied third-party popup from embedded subframe:", targetUrl, "subframe:", referrerUrl);
+    return { action: "deny" };
+  }
+
+  if (engine.isEnabled()) {
+    // 2. Evaluate with isAdOrRedirectUrl
+    if (isAdOrRedirectUrl(targetUrl, sourceUrl)) {
+      console.warn("[Forge Shield] Denied ad/redirect popup by URL heuristics/rules:", targetUrl);
+      return { action: "deny" };
+    }
+
+    // 3. Evaluate with AdBlock Engine as popup
+    const popupEval = evaluateAdBlockRequest({
+      url: targetUrl,
+      referrer: sourceUrl,
+      resourceType: "popup",
+    });
+    if (popupEval.cancel) {
+      console.warn("[Forge Shield] Denied ad popup by rule:", targetUrl, popupEval.decision.rule?.raw);
+      return { action: "deny" };
+    }
+
+    // 4. Check popup window features (miniature window dimensions or disabled chrome)
+    const isPopupWindow = Boolean(
+      details.features && (
+        details.features.includes("width=") ||
+        details.features.includes("height=") ||
+        details.features.includes("location=0") ||
+        details.features.includes("menubar=0") ||
+        details.features.includes("toolbar=0") ||
+        details.features.includes("status=0")
+      )
+    );
+
+    if (isPopupWindow && !isLegitimateAuthOrPayment) {
+      console.warn("[Forge Shield] Denied suspicious non-OAuth popup window:", targetUrl);
+      return { action: "deny" };
+    }
+
+    // 5. Defuse rapid-fire popunder spam per contents (< 800ms)
+    const now = Date.now();
+    const lastOpen = lastWindowOpenTimes.get(contents.id) || 0;
+    if (now - lastOpen < 800) {
+      console.warn("[Forge Shield] Denied rapid-fire popunder spam:", targetUrl);
+      return { action: "deny" };
+    }
+    lastWindowOpenTimes.set(contents.id, now);
+  }
+
+  // Route legitimate navigation into a new tab in Forge UI
+  try {
+    const win = (getWin ? getWin() : null);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("tabs:open-tab", { url: targetUrl });
+    }
+  } catch (err) {
+    console.error("[Forge Shield] Error routing link to tab:", err);
+  }
+
+  // STRICTLY ALWAYS return { action: "deny" } so Electron NEVER spawns a native OS BrowserWindow!
+  return { action: "deny" };
+}
+

@@ -23,6 +23,7 @@ import { SearchEngineDropdown } from "./SearchEngineDropdown";
 import { useWallpaperStore } from "../../core/wallpaper/useWallpaperStore";
 import { WallpaperModal } from "./newtab/WallpaperModal";
 import { DevNewsFeed } from "./newtab/DevNewsFeed";
+import { TopSitesSection } from "./newtab/TopSitesSection";
 import { DevIdeExtensionsFeed } from "./newtab/DevIdeExtensionsFeed";
 import { PrivateNewTabHome } from "./newtab/PrivateNewTabHome";
 import { TorNewTabHome } from "./newtab/TorNewTabHome";
@@ -298,6 +299,9 @@ function StandardNewTabHome({ onNavigate }: Props) {
             </div>
           </div>
         </div>
+
+        {/* ================= MOST VISITED (LIVE) ================= */}
+        <TopSitesSection onNavigate={onNavigate} />
 
         {/* ================= CONTENT FEED: DEVELOPER PULSE & IDE EXTENSIONS ================= */}
         <div

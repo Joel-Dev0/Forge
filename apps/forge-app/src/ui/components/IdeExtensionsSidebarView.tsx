@@ -76,6 +76,8 @@ export function IdeExtensionsSidebarView({
     toggleExtension,
     installFromUrlOrId,
     searchOnlineMarketplace,
+    checkForUpdates,
+    updateExtension,
     selectedExtensionId: storeSelectedId,
     setSelectedExtension,
   } = useIdeExtensionsStore();
@@ -207,11 +209,21 @@ export function IdeExtensionsSidebarView({
         <div className="flex items-center gap-1 text-[#cccccc]">
           <button
             type="button"
-            onClick={() => {
-              setFeedback("Refreshing extension catalog...");
-              setTimeout(() => setFeedback(null), 1200);
+            onClick={async () => {
+              setFeedback("Checking for extension updates...");
+              try {
+                const count = await checkForUpdates();
+                if (count > 0) {
+                  setFeedback(`Found ${count} extension update${count > 1 ? "s" : ""}!`);
+                } else {
+                  setFeedback("All extensions are up to date!");
+                }
+              } catch {
+                setFeedback("All extensions are up to date!");
+              }
+              setTimeout(() => setFeedback(null), 3000);
             }}
-            title="Refresh Extensions"
+            title="Check for Extension Updates"
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
           >
             <RotateCw size={13} />
@@ -360,6 +372,21 @@ export function IdeExtensionsSidebarView({
                           <h4 className="text-[12px] font-bold text-[#ffffff] truncate leading-tight">
                             {ext.name}
                           </h4>
+                          {ext.hasUpdate && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateExtension(ext.id);
+                                setFeedback(`Updated "${ext.name}"!`);
+                                setTimeout(() => setFeedback(null), 2500);
+                              }}
+                              className="text-[9px] px-1.5 py-0.2 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-0.5 cursor-pointer shadow-xs transition-colors shrink-0"
+                              title={`Update to ${ext.latestVersion || "latest version"}`}
+                            >
+                              Update
+                            </button>
+                          )}
                           {!ext.enabled && (
                             <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">
                               Disabled

@@ -387,8 +387,8 @@ export function TabBar() {
         );
       })}
 
-      {/* New tab button and browsing mode quick opener */}
-      <div ref={newTabDropdownRef} className="relative flex items-center mx-1 shrink-0 gap-0.5">
+      {/* New tab button (+) immediately following tabs */}
+      <div className="flex items-center mx-1 shrink-0">
         <button
           type="button"
           onClick={() => openTab()}
@@ -399,7 +399,19 @@ export function TabBar() {
         >
           <Plus size={13} />
         </button>
+      </div>
 
+      {/* Flexible trailing spacer to absorb remaining width and support double-click to open new tab or drop to move to end */}
+      <div
+        className="flex-1 h-full min-w-0 cursor-default"
+        onDoubleClick={() => openTab()}
+        onDragOver={handleSpacerDragOver}
+        onDrop={handleSpacerDrop}
+        title="Double click to open a new tab"
+      />
+
+      {/* Fixed to the right: Private Tab shortcut & Browsing Modes / Containers dropdown */}
+      <div ref={newTabDropdownRef} className="relative flex items-center px-1.5 mr-1 shrink-0 gap-0.5">
         <button
           type="button"
           onClick={() => openPrivateTab()}
@@ -419,7 +431,7 @@ export function TabBar() {
         </button>
 
         {isNewTabDropdownOpen && (
-          <div className="absolute left-0 top-full mt-1 w-64 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl p-1.5 z-50 text-xs font-sans animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--forge-surface)] border border-[var(--forge-border)] rounded-xl shadow-2xl p-1.5 z-50 text-xs font-sans animate-in fade-in zoom-in-95 duration-100">
             <div className="px-2 py-1 text-[9px] font-mono text-[var(--forge-text-muted)] border-b border-[var(--forge-border)] mb-1 uppercase tracking-wider">
               New Browsing Mode
             </div>
@@ -513,15 +525,6 @@ export function TabBar() {
           </div>
         )}
       </div>
-
-      {/* Flexible trailing spacer to absorb remaining width and support double-click to open new tab or drop to move to end */}
-      <div
-        className="flex-1 h-full min-w-0 cursor-default"
-        onDoubleClick={() => openTab()}
-        onDragOver={handleSpacerDragOver}
-        onDrop={handleSpacerDrop}
-        title="Double click to open a new tab"
-      />
 
       {/* Rich Tab Hover Card Preview */}
       <TabHoverCard

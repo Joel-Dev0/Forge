@@ -5,6 +5,8 @@ export interface IdeExtension {
   name: string;
   publisher: string;
   version: string;
+  latestVersion?: string;
+  hasUpdate?: boolean;
   description: string;
   tagline?: string;
   imageUrl?: string;
@@ -41,6 +43,9 @@ interface IdeExtensionsState {
   toggleExtension: (id: string) => void;
   installFromUrlOrId: (urlOrId: string) => { success: boolean; message: string };
   searchOnlineMarketplace: (query: string) => Promise<IdeExtension[]>;
+  checkForUpdates: () => Promise<number>;
+  updateExtension: (id: string) => void;
+  updateAllExtensions: () => void;
 }
 
 // Curated catalog of VS Code / Open VSX extensions matching Antigravity IDE
@@ -676,5 +681,100 @@ export const useIdeExtensionsStore = create<IdeExtensionsState>((set, get) => ({
     }
 
     return localMatches;
+  },
+
+  updateExtension: (id) => {
+    set((s) => {
+      const updated = s.extensions.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              version: e.latestVersion || e.version,
+              hasUpdate: false,
+              latestVersion: undefined,
+            }
+          : e
+      );
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      const updatedSelected =
+        s.selectedExtension && s.selectedExtension.id === id
+          ? {
+              ...s.selectedExtension,
+              version: s.selectedExtension.latestVersion || s.selectedExtension.version,
+              hasUpdate: false,
+              latestVersion: undefined,
+            }
+          : s.selectedExtension;
+      return { extensions: updated, selectedExtension: updatedSelected };
+    });
+  },
+
+  updateAllExtensions: () => {
+    set((s) => {
+      const updated = s.extensions.map((e) =>
+        e.installed && e.hasUpdate
+          ? {
+              ...e,
+              version: e.latestVersion || e.version,
+              hasUpdate: false,
+              latestVersion: undefined,
+            }
+          : e
+      );
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return { extensions: updated };
+    });
+  },
+
+  checkForUpdates: async () => {
+    const installed = get().extensions.filter((e) => e.installed);
+    if (installed.length === 0) return 0;
+
+    let updatesFound = 0;
+    const current = [...get().extensions];
+
+    for (const ext of installed) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`https://open-vsx.org/api/-/search?query=${encodeURIComponent(ext.id)}&size=1`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (res.ok) {
+          const data = await res.json();
+          const match = (data.extensions || []).find(
+            (item: any) => `${item.namespace}.${item.name}`.toLowerCase() === ext.id.toLowerCase()
+          );
+          if (match && match.version && match.version !== ext.version) {
+            const idx = current.findIndex((e) => e.id === ext.id);
+            if (idx !== -1) {
+              current[idx] = {
+                ...current[idx],
+                hasUpdate: true,
+                latestVersion: match.version,
+              };
+              updatesFound++;
+            }
+          }
+        }
+      } catch {
+        // Network timeout / offline
+      }
+    }
+
+    if (updatesFound > 0) {
+      set({ extensions: current });
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      } catch {}
+    }
+
+    return updatesFound;
   },
 }));

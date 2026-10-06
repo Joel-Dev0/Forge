@@ -10,6 +10,7 @@ import { DEVICE_PRESETS, getPresetById } from "../../core/inspector/devicePreset
 import { useCompatStore } from "../../core/compat/useCompatStore";
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { useSessionsStore } from "../../core/sessions/useSessionsStore";
+import { useTopSitesStore } from "../../core/topsites/useTopSitesStore";
 import { NewTabHome } from "./NewTabHome";
 
 const getInitialGuestPreload = (): string | undefined => {
@@ -74,6 +75,15 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       : sessionId !== "default"
       ? `persist:session_${sessionId}`
       : "persist:forge");
+
+  // Private & Tor sessions must never leave a trace in the Top Sites list.
+  const isEphemeralSession =
+    currentSession?.mode === "private" ||
+    currentSession?.mode === "tor" ||
+    partition.startsWith("private_") ||
+    partition.startsWith("tor_");
+  const isEphemeralSessionRef = useRef(isEphemeralSession);
+  isEphemeralSessionRef.current = isEphemeralSession;
 
   // Synchronize mount URL if tab goes to sleep so when waking up it loads the latest URL
   useEffect(() => {
@@ -313,6 +323,15 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
         setUrlBarValue(targetUrl);
       }
 
+      // Count a Top Sites visit only for real page loads (not SPA in-page route changes)
+      if (e.type === "did-navigate" && !isEphemeralSessionRef.current) {
+        let pageTitle: string | undefined;
+        try {
+          pageTitle = el.getTitle?.();
+        } catch {}
+        useTopSitesStore.getState().recordVisit(targetUrl, pageTitle);
+      }
+
       syncTitleAndFavicon();
       syncCwsExtensions();
     };
@@ -329,6 +348,9 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
           const currentUrl = el.getURL();
           if (currentUrl && currentUrl !== "about:blank") {
             addEntry(rawTitle, currentUrl);
+            if (!isEphemeralSessionRef.current) {
+              useTopSitesStore.getState().updateMeta(currentUrl, { title: rawTitle });
+            }
           }
         } catch {}
       } else {
@@ -344,6 +366,9 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
           const currentUrl = el.getURL();
           if (currentUrl && currentUrl !== "about:blank") {
             addEntry(el.getTitle() || "New Tab", currentUrl, icon);
+            if (!isEphemeralSessionRef.current) {
+              useTopSitesStore.getState().updateMeta(currentUrl, { favicon: icon });
+            }
           }
         } catch {}
       }

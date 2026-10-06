@@ -47,6 +47,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const { setIdeModalOpen, extensions: ideExtensions } = useIdeExtensionsStore();
   const activeProcessesCount = Object.keys(runningProcesses).length;
   const enabledIdeCount = ideExtensions.filter((e) => e.installed && e.enabled).length;
+  const ideUpdatesCount = ideExtensions.filter((e) => e.installed && Boolean(e.hasUpdate)).length;
 
   useEffect(() => {
     const handleOpenHistory = () => {
@@ -181,7 +182,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             setActiveSidebarTab("extensions");
             setExpanded(true);
           }}
-          title={`IDE Extensions — Open VSX & Marketplace (${enabledIdeCount} active)`}
+          title={
+            ideUpdatesCount > 0
+              ? `IDE Extensions — ${ideUpdatesCount} update${ideUpdatesCount > 1 ? "s" : ""} available`
+              : `IDE Extensions — Open VSX & Marketplace (${enabledIdeCount} active)`
+          }
           className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all cursor-pointer relative ${
             activeSidebarTab === "extensions"
               ? "text-blue-400 bg-blue-500/10"
@@ -192,9 +197,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-blue-500 rounded-r-full" />
           )}
           <Boxes size={15} />
-          {enabledIdeCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-xs">
-              {enabledIdeCount}
+          {ideUpdatesCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 bg-blue-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center shadow-xs">
+              {ideUpdatesCount}
             </span>
           )}
         </button>
@@ -259,9 +264,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           >
             <Boxes size={11} />
             Extensions
-            <span className="px-1 rounded-full bg-blue-500/20 text-blue-400 text-[9px] font-mono">
-              {ideExtensions.filter((e) => e.installed).length}
-            </span>
+            {ideUpdatesCount > 0 && (
+              <span
+                title={`${ideUpdatesCount} update${ideUpdatesCount > 1 ? "s" : ""} available`}
+                className="px-1.5 py-0.2 rounded-full bg-blue-500 text-white text-[9px] font-mono font-bold"
+              >
+                {ideUpdatesCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveSidebarTab("notes")}
@@ -465,8 +475,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           >
             <Boxes size={13} />
             <span className="text-[9px] font-medium">Extensions</span>
-            {enabledIdeCount > 0 && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full" />
+            {ideUpdatesCount > 0 && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
             )}
           </button>
 

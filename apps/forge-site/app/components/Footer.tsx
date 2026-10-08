@@ -38,6 +38,7 @@ export function Footer() {
     Company: [
       { name: "About", href: "#" },
       { name: "Careers", href: "#" },
+      { name: "License (GPLv3)", href: "https://github.com/Joel-Dev0/Forge/blob/main/LICENSE" },
       { name: "Privacy Policy", href: "#" },
       { name: "Terms of Service", href: "#" },
     ],
@@ -108,7 +109,7 @@ export function Footer() {
         {/* Bottom row */}
         <div className="border-t border-surface-2 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-foreground/40">
-            &copy; {new Date().getFullYear()} Forge. All rights reserved.
+            &copy; {new Date().getFullYear()} Forge. Licensed under GNU GPLv3.
           </p>
           <div className="flex items-center gap-2 text-xs text-foreground/40">
             <span>Built with</span>

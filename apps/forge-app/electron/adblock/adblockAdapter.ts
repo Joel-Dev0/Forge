@@ -100,6 +100,7 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
   });
 
   const activeWebviewContents = new Set<Electron.WebContents>();
+  const insertedCssKeys = new Map<Electron.WebContents, Set<string>>();
 
   ipcMain.handle("adblock:set-enabled", (_event, enabled: boolean) => {
     engine.setEnabled(enabled);
@@ -115,11 +116,30 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
           }
         `).catch(() => {});
 
-        if (enabled) {
+        if (!enabled) {
+          const keys = insertedCssKeys.get(contents);
+          if (keys) {
+            for (const key of keys) {
+              contents.removeInsertedCSS(key).catch(() => {});
+            }
+            keys.clear();
+          }
+        } else {
           const url = contents.getURL();
           if (url && url !== "about:blank") {
             const css = engine.getCosmeticCSS(url);
-            if (css) contents.insertCSS(css).catch(() => {});
+            if (css) {
+              contents.insertCSS(css).then((key) => {
+                if (key) {
+                  let keys = insertedCssKeys.get(contents);
+                  if (!keys) {
+                    keys = new Set();
+                    insertedCssKeys.set(contents, keys);
+                  }
+                  keys.add(key);
+                }
+              }).catch(() => {});
+            }
             const scriptlet = engine.getScriptlet(url);
             if (scriptlet) contents.executeJavaScript(scriptlet).catch(() => {});
           }
@@ -241,6 +261,7 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
     activeWebviewContents.add(contents);
     contents.on("destroyed", () => {
       activeWebviewContents.delete(contents);
+      insertedCssKeys.delete(contents);
     });
 
     // Block popup ad windows & popunders with extreme vigilance
@@ -316,7 +337,15 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
 
         const css = engine.getCosmeticCSS(url);
         if (css) {
-          await contents.insertCSS(css);
+          const key = await contents.insertCSS(css);
+          if (key) {
+            let keys = insertedCssKeys.get(contents);
+            if (!keys) {
+              keys = new Set();
+              insertedCssKeys.set(contents, keys);
+            }
+            keys.add(key);
+          }
         }
 
         const scriptlet = engine.getScriptlet(url);

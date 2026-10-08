@@ -110,11 +110,35 @@ export function getCosmeticCSS(urlStr?: string): string {
       display: none !important;
       height: 0 !important;
       max-height: 0 !important;
+      min-height: 0 !important;
+      width: 0 !important;
+      max-width: 0 !important;
+      min-width: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
       opacity: 0 !important;
+      cursor: default !important;
+    }
+
+    /* Neutralize hover styles and pointer interaction on generic ad wrappers */
+    .ad-container:hover,
+    .ad-banner:hover,
+    .ad-placeholder:hover,
+    .ad-slot:hover,
+    .ad-box:hover,
+    .ad-wrapper:hover,
+    .banner-ad:hover,
+    [class*="banner-ad" i]:hover,
+    [class*="sticky-ad" i]:hover,
+    [class*="ad-slot" i]:hover,
+    [class*="ad-wrapper" i]:hover {
+      display: none !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      cursor: default !important;
     }
   `;
 
@@ -124,7 +148,7 @@ export function getCosmeticCSS(urlStr?: string): string {
 
   if (isYouTube) {
     css += `
-      /* YouTube Home & Feed Ad Banners */
+      /* YouTube Home & Feed Ad Banners, Promos, Sparkles & Sponsors */
       ytd-promoted-sparkles-web-renderer,
       ytd-promoted-video-renderer,
       ytd-display-ad-renderer,
@@ -135,12 +159,54 @@ export function getCosmeticCSS(urlStr?: string): string {
       ytd-ad-slot-renderer,
       #masthead-ad,
       ytd-video-masthead-ad-v3-renderer,
+      ytd-video-masthead-ad-primary-v3-renderer,
       ytd-primetime-promo-renderer,
       ytd-merch-shelf-renderer,
+      ytd-brand-video-singleton-renderer,
+      ytd-brand-video-shelf-renderer,
+
+      /* YouTube Rich Grid Ad Items, Sections & Ghost Card Wrappers */
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+      .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+      .ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+      ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+      .ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+      ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+      .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+      ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+      .ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+      ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+      .ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+      ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+      .ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+      ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+      .ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+      ytd-rich-item-renderer:has(#sparkles-container),
+      .ytd-rich-item-renderer:has(#sparkles-container),
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+      .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+      .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+      ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+      .ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+      ytd-rich-item-renderer:has([aria-label="Ad" i]),
+      .ytd-rich-item-renderer:has([aria-label="Ad" i]),
+
+      /* Ad Hover Overlays & Previews */
+      ytd-ad-slot-renderer #hover-overlays,
+      ytd-banner-promo-renderer #hover-overlays,
+      ytd-in-feed-ad-layout-renderer #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]) #hover-overlays,
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]) #hover-overlays,
 
       /* YouTube Video Player Ad Elements */
       #player-ads,
-      .ytp-ad-module,
       .ytp-ad-overlay-container,
       .ytp-ad-message-container,
       .ytp-ad-text,
@@ -153,11 +219,49 @@ export function getCosmeticCSS(urlStr?: string): string {
       ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
       ytd-action-companion-ad-renderer,
       ytd-compact-promoted-video-renderer,
-      .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
-      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
       tp-yt-paper-dialog:has(#feedback.ytd-ad-feedback-renderer),
       tp-yt-paper-dialog:has(ytd-enforcement-message-view-model) {
         display: none !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        min-height: 0 !important;
+        width: 0 !important;
+        max-width: 0 !important;
+        min-width: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        cursor: default !important;
+      }
+
+      /* Completely neutralize hover states and pointer interaction on ad elements and their wrappers */
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+      .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+      .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+      ytd-banner-promo-renderer:hover,
+      ytd-statement-banner-renderer:hover,
+      ytd-ad-slot-renderer:hover,
+      #masthead-ad:hover {
+        display: none !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        cursor: default !important;
+        transform: none !important;
+        box-shadow: none !important;
       }
     `;
   }

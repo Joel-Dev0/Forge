@@ -7,8 +7,6 @@ export const QUICKFIXES_PRESET_RULES = `
 ||youtube.com/api/stats/ads
 ||youtube.com/pagead/
 ||youtube.com/ptracking
-||youtube.com/youtubei/v1/att/
-||youtube.com/youtubei/v1/log_event
 ||youtube.com/get_midroll_info
 ||youtube.com/api/stats/qoe?*adformat=
 ||youtube.com/api/stats/watchtime?*adformat=
@@ -33,6 +31,6 @@ export const QUICKFIXES_PRESET_RULES = `
 ||antiadblocksystems.com^
 
 ! --- Explicit Exceptions for Legitimate Video Playback Streams ---
-@@||googlevideo.com/videoplayback$1p
-@@||youtube.com/videoplayback$1p
+@@||googlevideo.com/videoplayback
+@@||youtube.com/videoplayback
 `;

@@ -537,7 +537,11 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
 
   nextTrack: () => {
     const { playlists, currentPlaylistId, currentTrack, isShuffle, play } = get();
-    const pl = playlists.find((p) => p.id === currentPlaylistId) || playlists[0];
+    // Prefer the playlist containing the currently playing track so playlist browsing does not break track sequence
+    const pl =
+      (currentTrack && playlists.find((p) => p.tracks.some((t) => t.id === currentTrack.id))) ||
+      playlists.find((p) => p.id === currentPlaylistId) ||
+      playlists[0];
     if (!pl || pl.tracks.length === 0) return;
 
     let nextIndex = 0;
@@ -545,7 +549,7 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
       nextIndex = Math.floor(Math.random() * pl.tracks.length);
     } else if (currentTrack) {
       const idx = pl.tracks.findIndex((t) => t.id === currentTrack.id);
-      nextIndex = (idx + 1) % pl.tracks.length;
+      nextIndex = idx >= 0 ? (idx + 1) % pl.tracks.length : 0;
     }
 
     const next = pl.tracks[nextIndex];
@@ -555,13 +559,17 @@ export const useFocusPlayerStore = create<FocusPlayerState>((set, get) => ({
 
   previousTrack: () => {
     const { playlists, currentPlaylistId, currentTrack, play } = get();
-    const pl = playlists.find((p) => p.id === currentPlaylistId) || playlists[0];
+    // Prefer the playlist containing the currently playing track
+    const pl =
+      (currentTrack && playlists.find((p) => p.tracks.some((t) => t.id === currentTrack.id))) ||
+      playlists.find((p) => p.id === currentPlaylistId) ||
+      playlists[0];
     if (!pl || pl.tracks.length === 0) return;
 
     let prevIndex = 0;
     if (currentTrack) {
       const idx = pl.tracks.findIndex((t) => t.id === currentTrack.id);
-      prevIndex = (idx - 1 + pl.tracks.length) % pl.tracks.length;
+      prevIndex = idx >= 0 ? (idx - 1 + pl.tracks.length) % pl.tracks.length : 0;
     }
 
     const prev = pl.tracks[prevIndex];

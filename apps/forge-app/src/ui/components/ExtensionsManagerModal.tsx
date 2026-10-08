@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import {
-  Puzzle,
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
@@ -28,6 +27,7 @@ import {
   Shield,
   RefreshCw,
 } from "lucide-react";
+import { ChromeExtensionPuzzleIcon } from "./WebStoreExtensionsButton";
 
 import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { type ExtensionType, type SecurityTier } from "../../core/extensions/extensionTypes";
@@ -154,7 +154,7 @@ export function ExtensionsManagerModal() {
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-[var(--forge-border)] bg-[#151827]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#FF6B00]/20 text-[#FF6B00] flex items-center justify-center border border-[#FF6B00]/30 shadow-inner">
-              <Puzzle size={18} />
+              <ChromeExtensionPuzzleIcon size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -254,7 +254,7 @@ export function ExtensionsManagerModal() {
               <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
                 {filtered.length === 0 ? (
                   <div className="p-6 text-center text-xs text-zinc-500 flex flex-col items-center justify-center h-48 space-y-2">
-                    <Puzzle size={24} className="text-zinc-600 mb-1" />
+                    <ChromeExtensionPuzzleIcon size={24} className="text-zinc-600 mb-1" />
                     <p className="font-semibold text-zinc-400">No extensions installed</p>
                     <p className="text-[10px] text-zinc-500">Install extensions directly from the Chrome Web Store</p>
                   </div>
@@ -534,7 +534,7 @@ export function ExtensionsManagerModal() {
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center bg-[#12141f] text-zinc-500 p-8 space-y-3">
-                <Puzzle size={40} className="text-zinc-600" />
+                <ChromeExtensionPuzzleIcon size={40} className="text-zinc-600" />
                 <p className="text-sm font-semibold text-zinc-400">No Extension Selected</p>
                 <p className="text-xs text-zinc-500 max-w-sm text-center">
                   Install extensions from the official Google Chrome Web Store to manage and inspect them here.

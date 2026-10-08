@@ -38,20 +38,93 @@
       if (window.__forge_yt_blocker_active) return;
       window.__forge_yt_blocker_active = true;
 
+      function isAdItem(item) {
+        if (!item || typeof item !== 'object') return false;
+        if (item.adSlotRenderer || item.inFeedAdLayoutRenderer || item.statementBannerRenderer ||
+            item.bannerPromoRenderer || item.displayAdRenderer || item.promotedVideoRenderer ||
+            item.promotedSparklesWebRenderer || item.primetimePromoRenderer ||
+            item.brandVideoSingletonRenderer || item.brandVideoShelfRenderer || item.mastheadAd) {
+          return true;
+        }
+        const richItem = item.richItemRenderer;
+        if (richItem && typeof richItem === 'object') {
+          const c = richItem.content;
+          if (c && (c.adSlotRenderer || c.inFeedAdLayoutRenderer || c.displayAdRenderer ||
+                    c.promotedVideoRenderer || c.promotedSparklesWebRenderer || c.bannerPromoRenderer ||
+                    c.statementBannerRenderer || c.primetimePromoRenderer || c.brandVideoSingletonRenderer)) {
+            return true;
+          }
+        return false;
+      }
+
+      function filterAdArrays(root, depth = 0) {
+        if (!root || typeof root !== 'object' || depth > 8) return;
+        if (Array.isArray(root)) {
+          for (let i = root.length - 1; i >= 0; i--) {
+            if (isAdItem(root[i])) {
+              root.splice(i, 1);
+            } else if (typeof root[i] === 'object') {
+              filterAdArrays(root[i], depth + 1);
+            }
+          }
+          return;
+        }
+        for (const key of Object.keys(root)) {
+          const val = root[key];
+          if (Array.isArray(val)) {
+            for (let i = val.length - 1; i >= 0; i--) {
+              if (isAdItem(val[i])) {
+                val.splice(i, 1);
+              } else if (typeof val[i] === 'object') {
+                filterAdArrays(val[i], depth + 1);
+              }
+            }
+          } else if (val && typeof val === 'object') {
+            filterAdArrays(val, depth + 1);
+          }
+        }
+      }
+
       function sanitizeAdObject(obj) {
         if (window.__forge_adblock_enabled === false) return obj;
         if (!obj || typeof obj !== 'object') return obj;
         try {
-          delete obj.adPlacements;
-          delete obj.adSlots;
-          delete obj.playerAds;
+          if ('adPlacements' in obj) obj.adPlacements = [];
+          if ('adSlots' in obj) obj.adSlots = [];
+          if ('playerAds' in obj) obj.playerAds = [];
           delete obj.adBreakHeartbeatParams;
-          if (Array.isArray(obj.adPlacements)) obj.adPlacements = [];
-          if (Array.isArray(obj.adSlots)) obj.adSlots = [];
-          if (Array.isArray(obj.playerAds)) obj.playerAds = [];
+          delete obj.mastheadAd;
+          filterAdArrays(obj);
         } catch {}
         return obj;
       }
+
+      // Intercept client-side SPA player requests to neutralize ad placements
+      try {
+        const origFetch = window.fetch;
+        window.fetch = async function(...args) {
+          const response = await origFetch.apply(this, args);
+          try {
+            const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+            if (url && url.includes('/youtubei/v1/player')) {
+              const clone = response.clone();
+              const data = await clone.json();
+              if (data && typeof data === 'object') {
+                if ('adPlacements' in data) data.adPlacements = [];
+                if ('adSlots' in data) data.adSlots = [];
+                if ('playerAds' in data) data.playerAds = [];
+                delete data.adBreakHeartbeatParams;
+                return new Response(JSON.stringify(data), {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers
+                });
+              }
+            }
+          } catch {}
+          return response;
+        };
+      } catch {}
 
       // 1. Intercept ytInitialPlayerResponse at document-start before player renders
       try {
@@ -98,74 +171,61 @@
         setInterval(patchYtcfg, 1000);
       } catch {}
 
-      // 4. Intercept JSON.parse to remove ad placements from all dynamic responses
-      try {
-        const originalParse = JSON.parse;
-        JSON.parse = function(...args) {
-          const result = originalParse.apply(this, args);
-          if (result && typeof result === 'object') {
-            sanitizeAdObject(result);
-          }
-          return result;
-        };
-      } catch {}
+      // 4. Active DOM Cleaner for Ad Banners, Ghost Hover Cards & Placeholders
+      function cleanYouTubeAdBannersAndHovers() {
+        if (window.__forge_adblock_enabled === false) return;
+        try {
+          const adSelectors = [
+            'ytd-ad-slot-renderer',
+            'ytd-in-feed-ad-layout-renderer',
+            'ytd-banner-promo-renderer',
+            'ytd-statement-banner-renderer',
+            'ytd-display-ad-renderer',
+            'ytd-promoted-sparkles-web-renderer',
+            'ytd-promoted-video-renderer',
+            'ytd-brand-video-singleton-renderer',
+            '#masthead-ad',
+            'ytd-video-masthead-ad-v3-renderer',
+            'ytd-video-masthead-ad-primary-v3-renderer',
+            'ytd-action-companion-ad-renderer',
+            'ytd-compact-promoted-video-renderer'
+          ];
 
-      // 5. Intercept window.fetch for /youtubei/v1/player and /youtubei/v1/next
-      try {
-        const originalFetch = window.fetch;
-        window.fetch = async function(...args) {
-          const response = await originalFetch.apply(this, args);
-          try {
-            const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-            if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
-              const clone = response.clone();
-              const data = await clone.json();
-              if (data && typeof data === 'object') {
-                sanitizeAdObject(data);
-                return new Response(JSON.stringify(data), {
-                  status: response.status,
-                  statusText: response.statusText,
-                  headers: response.headers
-                });
+          for (const selector of adSelectors) {
+            const elements = document.querySelectorAll(selector);
+            for (const el of elements) {
+              const parentCard = el.closest('ytd-rich-item-renderer');
+              if (parentCard) {
+                parentCard.style.display = 'none';
+                parentCard.style.pointerEvents = 'none';
+              } else {
+                el.style.display = 'none';
+                el.style.pointerEvents = 'none';
               }
             }
-          } catch {}
-          return response;
-        };
-      } catch {}
-
-      // 6. Intercept XMLHttpRequest for /youtubei/v1/player
-      try {
-        const originalOpen = XMLHttpRequest.prototype.open;
-        const originalSend = XMLHttpRequest.prototype.send;
-
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-          this.__forge_url = String(url || '');
-          return originalOpen.apply(this, [method, url, ...rest]);
-        };
-
-        XMLHttpRequest.prototype.send = function(...args) {
-          if (this.__forge_url && (this.__forge_url.includes('/youtubei/v1/player') || this.__forge_url.includes('/youtubei/v1/next'))) {
-            this.addEventListener('readystatechange', function() {
-              if (this.readyState === 4 && this.status === 200) {
-                try {
-                  const data = JSON.parse(this.responseText);
-                  sanitizeAdObject(data);
-                  Object.defineProperty(this, 'responseText', {
-                    value: JSON.stringify(data),
-                    configurable: true
-                  });
-                  Object.defineProperty(this, 'response', {
-                    value: JSON.stringify(data),
-                    configurable: true
-                  });
-                } catch {}
-              }
-            });
           }
-          return originalSend.apply(this, args);
-        };
-      } catch {}
+
+          const sponsoredItems = document.querySelectorAll(
+            'ytd-rich-item-renderer:has(.badge-style-type-ad), ' +
+            'ytd-rich-item-renderer:has([aria-label*="Sponsored" i]), ' +
+            'ytd-rich-item-renderer:has([aria-label*="Promoted" i]), ' +
+            'ytd-rich-item-renderer:has([aria-label="Ad" i]), ' +
+            'ytd-rich-item-renderer:has(#sparkles-container)'
+          );
+          for (const item of sponsoredItems) {
+            item.style.display = 'none';
+            item.style.pointerEvents = 'none';
+          }
+
+          const hoverOverlays = document.querySelectorAll('#hover-overlays');
+          for (const h of hoverOverlays) {
+            if (h.closest('ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-banner-promo-renderer')) {
+              h.style.display = 'none';
+              h.style.pointerEvents = 'none';
+            }
+          }
+        } catch {}
+      }
 
       // 7. Real-Time Video Ad Detection, Instant Muting & Skipper
       let wasAdShowing = false;
@@ -185,17 +245,14 @@
           return;
         }
 
+        cleanYouTubeAdBannersAndHovers();
+
         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
         const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
 
         const isAd = player && (
           player.classList.contains('ad-showing') ||
-          player.classList.contains('ad-interrupting') ||
-          player.classList.contains('ad-created') ||
-          (typeof player.getAdState === 'function' && player.getAdState() === 1) ||
-          (typeof player.isAd === 'function' && player.isAd()) ||
-          document.querySelector('.ytp-ad-player-overlay') !== null ||
-          document.querySelector('.ytp-ad-module')?.childElementCount > 0
+          player.classList.contains('ad-interrupting')
         );
 
         if (isAd && video) {
@@ -204,23 +261,15 @@
             originalMute = video.muted;
           }
 
-          // Instant mute to ensure 0 sound leaks
+          // Speed up and mute the ad silently without seeking video.currentTime
           video.muted = true;
           video.volume = 0;
+          video.playbackRate = 16;
 
-          // Call built-in player skip methods if exposed
+          // Call built-in player skip method if exposed
           try {
-            if (typeof player.cancelPlayback === 'function') player.cancelPlayback();
             if (typeof player.skipAd === 'function') player.skipAd();
           } catch {}
-
-          // Fast forward to end
-          if (isFinite(video.duration) && video.duration > 0) {
-            video.currentTime = video.duration;
-          } else {
-            video.currentTime = 999999;
-          }
-          video.playbackRate = 16;
         } else if (!isAd && wasAdShowing) {
           wasAdShowing = false;
           if (video) {
@@ -258,7 +307,8 @@
           if (closeBtn && typeof closeBtn.click === 'function') {
             closeBtn.click();
           } else {
-            dlg.remove();
+            dlg.style.display = 'none';
+            dlg.style.pointerEvents = 'none';
           }
           if (video && video.paused) {
             video.play().catch(() => {});
@@ -787,22 +837,16 @@
         const adSelectors = [
           '.vjs-ad-playing video',
           '.jw-flag-ads video',
-          '.ad-container video',
+          '.ad-container video:not(.html5-main-video)',
           '.video-ad video',
-          'video[src*="ad"]',
-          'video[src*="doubleclick"]',
-          'video[src*="aniview"]',
-          'video[src*="springserve"]'
+          'video[src*="doubleclick"]'
         ];
 
         for (const selector of adSelectors) {
           const adVideos = document.querySelectorAll(selector);
           for (const v of adVideos) {
-            if (v instanceof HTMLVideoElement) {
+            if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
               v.muted = true;
-              if (isFinite(v.duration) && v.duration > 0) {
-                v.currentTime = v.duration;
-              }
               v.playbackRate = 16;
             }
           }
@@ -825,7 +869,35 @@
         }
       }
 
+      // 8. Generic Ad Banner, Placeholder & Hover Defuser
+      function cleanGenericAdBannersAndHovers() {
+        if (window.__forge_adblock_enabled === false) return;
+        try {
+          const adPlaceholders = document.querySelectorAll([
+            '.ad-container', '.ad-banner', '.ad-placeholder', '.ad-slot',
+            '.ad-box', '.ad-wrapper', '.banner-ad', '[class*="banner-ad" i]',
+            '[class*="sticky-ad" i]', '[class*="floating-ad" i]', '[id^="google_ads_iframe"]',
+            '[id^="div-gpt-ad"]', '.adsbygoogle'
+          ].join(','));
+
+          for (const el of adPlaceholders) {
+            const hasContent = el.innerText && el.innerText.trim().length > 0;
+            const hasVideo = el.querySelector('video');
+            if (!hasVideo && (!hasContent || el.clientHeight < 20 || el.clientWidth < 20)) {
+              el.style.display = 'none';
+              el.style.pointerEvents = 'none';
+              el.style.visibility = 'hidden';
+              el.style.height = '0';
+              el.style.maxHeight = '0';
+              el.style.minHeight = '0';
+              el.style.opacity = '0';
+            }
+          }
+        } catch {}
+      }
+
       setInterval(skipGenericVideoAds, 250);
+      setInterval(cleanGenericAdBannersAndHovers, 500);
     })();
   `;
 
@@ -1571,6 +1643,7 @@
 
   // 4. Cosmetic element-hiding CSS
   const cosmeticCss = isYouTube ? `
+    /* YouTube Home & Feed Ad Banners, Promos, Sparkles & Sponsors */
     ytd-promoted-sparkles-web-renderer,
     ytd-promoted-video-renderer,
     ytd-display-ad-renderer,
@@ -1581,8 +1654,53 @@
     ytd-ad-slot-renderer,
     #masthead-ad,
     ytd-video-masthead-ad-v3-renderer,
+    ytd-video-masthead-ad-primary-v3-renderer,
     ytd-primetime-promo-renderer,
     ytd-merch-shelf-renderer,
+    ytd-brand-video-singleton-renderer,
+    ytd-brand-video-shelf-renderer,
+
+    /* YouTube Rich Grid Ad Items, Sections & Ghost Card Wrappers */
+    ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+    .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+    ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+    .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+    ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+    .ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+    ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+    .ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+    ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+    .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+    ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+    .ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+    ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+    .ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+    ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+    .ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+    ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+    .ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+    ytd-rich-item-renderer:has(#sparkles-container),
+    .ytd-rich-item-renderer:has(#sparkles-container),
+    ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+    .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+    ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+    .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+    ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+    .ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+    ytd-rich-item-renderer:has([aria-label="Ad" i]),
+    .ytd-rich-item-renderer:has([aria-label="Ad" i]),
+
+    /* Ad Hover Overlays & Previews */
+    ytd-ad-slot-renderer #hover-overlays,
+    ytd-banner-promo-renderer #hover-overlays,
+    ytd-in-feed-ad-layout-renderer #hover-overlays,
+    ytd-rich-item-renderer:has(ytd-ad-slot-renderer) #hover-overlays,
+    ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer) #hover-overlays,
+    ytd-rich-item-renderer:has(ytd-banner-promo-renderer) #hover-overlays,
+    ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]) #hover-overlays,
+    ytd-rich-item-renderer:has([aria-label*="Sponsored" i]) #hover-overlays,
+
+    /* YouTube Video Player Ad Elements */
     #player-ads,
     .ytp-ad-module,
     .ytp-ad-overlay-container,
@@ -1591,21 +1709,55 @@
     .ytp-ad-preview-container,
     .ytp-ad-image-overlay,
     .ytp-ad-overlay-image,
+
+    /* Search & Watch Page Side Ad Blocks */
     #panels ytd-ads-engagement-panel-content-renderer,
     ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
     ytd-action-companion-ad-renderer,
     ytd-compact-promoted-video-renderer,
-    .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
-    .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
     tp-yt-paper-dialog:has(#feedback.ytd-ad-feedback-renderer),
     tp-yt-paper-dialog:has(ytd-enforcement-message-view-model) {
       display: none !important;
       height: 0 !important;
       max-height: 0 !important;
+      min-height: 0 !important;
+      width: 0 !important;
+      max-width: 0 !important;
+      min-width: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
+      opacity: 0 !important;
+      cursor: default !important;
+    }
+
+    /* Completely neutralize hover states and pointer interaction on ad elements and their wrappers */
+    ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+    .ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+    ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+    .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+    ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+    .ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+    ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+    .ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+    ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+    .ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+    ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+    .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+    ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+    .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+    ytd-banner-promo-renderer:hover,
+    ytd-statement-banner-renderer:hover,
+    ytd-ad-slot-renderer:hover,
+    #masthead-ad:hover {
+      display: none !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      cursor: default !important;
+      transform: none !important;
+      box-shadow: none !important;
     }
   ` : `
     /* Generic ad banners, wrappers & sponsor placeholders */
@@ -1715,11 +1867,35 @@
       display: none !important;
       height: 0 !important;
       max-height: 0 !important;
+      min-height: 0 !important;
+      width: 0 !important;
+      max-width: 0 !important;
+      min-width: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
       opacity: 0 !important;
+      cursor: default !important;
+    }
+
+    /* Neutralize hover styles and pointer interaction on generic ad wrappers */
+    .ad-container:hover,
+    .ad-banner:hover,
+    .ad-placeholder:hover,
+    .ad-slot:hover,
+    .ad-box:hover,
+    .ad-wrapper:hover,
+    .banner-ad:hover,
+    [class*="banner-ad" i]:hover,
+    [class*="sticky-ad" i]:hover,
+    [class*="ad-slot" i]:hover,
+    [class*="ad-wrapper" i]:hover {
+      display: none !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      cursor: default !important;
     }
   `;
 
@@ -1920,6 +2096,32 @@
   const installingExtIds = new Set<string>();
   const uninstallingExtIds = new Set<string>();
 
+  // Deep shadow DOM query selector helper
+  function queryDeepAll(selector: string, root: Document | ShadowRoot | Element = document): Element[] {
+    const results: Element[] = [];
+    try {
+      if (root instanceof Element && root.matches(selector)) {
+        results.push(root);
+      }
+      const matching = root.querySelectorAll(selector);
+      for (let i = 0; i < matching.length; i++) {
+        results.push(matching[i]);
+      }
+      // Traverse all descendants with open shadow roots
+      const all = root.querySelectorAll("*");
+      for (let i = 0; i < all.length; i++) {
+        const child = all[i];
+        if (child.shadowRoot) {
+          const shadowMatches = queryDeepAll(selector, child.shadowRoot);
+          for (let j = 0; j < shadowMatches.length; j++) {
+            results.push(shadowMatches[j]);
+          }
+        }
+      }
+    } catch {}
+    return results;
+  }
+
   const isChromeWebStoreUrl = () => {
     try {
       const h = (window.location.hostname || "").toLowerCase();
@@ -1935,7 +2137,7 @@
   };
 
   // Expose global bridge functions for Forge / WebView synchronization
-  (window as any).__forge_sync_installed_extensions = (extIds: string[]) => {
+  const syncInstalledList = (extIds: unknown) => {
     if (Array.isArray(extIds)) {
       installedExtIds.clear();
       extIds.forEach((id) => {
@@ -1946,7 +2148,12 @@
     }
   };
 
-  (window as any).__forge_mark_extension_installed = (extId: string, isInstalled: boolean) => {
+  (window as any).__forge_sync_installed_extensions = syncInstalledList;
+  window.addEventListener("forge:sync_installed_extensions", (e: any) => {
+    syncInstalledList(e?.detail);
+  });
+
+  const markInstalledStatus = (extId: unknown, isInstalled: boolean) => {
     if (typeof extId === "string") {
       const idClean = extId.toLowerCase();
       installingExtIds.delete(idClean);
@@ -1967,6 +2174,11 @@
     }
   };
 
+  (window as any).__forge_mark_extension_installed = markInstalledStatus;
+  window.addEventListener("forge:mark_extension_installed", (e: any) => {
+    markInstalledStatus(e?.detail?.extId, Boolean(e?.detail?.isInstalled));
+  });
+
   const getExtensionDetailsFromPage = () => {
     const href = window.location.href;
     const path = window.location.pathname;
@@ -1984,9 +2196,9 @@
     const extSlug = pathMatch && pathMatch[1] && pathMatch[1].length !== 32 ? pathMatch[1] : "";
 
     let friendlyName = "";
-    const h1 = document.querySelector("h1");
-    if (h1 && h1.textContent && h1.textContent.trim()) {
-      friendlyName = h1.textContent.trim();
+    const h1List = queryDeepAll("h1");
+    if (h1List.length > 0 && h1List[0].textContent && h1List[0].textContent.trim()) {
+      friendlyName = h1List[0].textContent.trim();
     } else if (extSlug) {
       friendlyName = extSlug
         .split("-")
@@ -1998,9 +2210,9 @@
     }
 
     let iconUrl = "";
-    const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
-    if (img) {
-      iconUrl = (img as HTMLImageElement).src || "";
+    const imgList = queryDeepAll("img[src*='googleusercontent.com'], img[src*='extension']");
+    if (imgList.length > 0 && (imgList[0] as HTMLImageElement).src) {
+      iconUrl = (imgList[0] as HTMLImageElement).src;
     }
 
     return { extId, friendlyName, iconUrl };
@@ -2008,8 +2220,9 @@
 
   const removeSwitchToChromeBanner = () => {
     try {
-      // 1. Dedicated custom element and attribute
-      document.querySelectorAll('cws-install-banner, [data-banner="install-chrome"]').forEach((el) => {
+      // 1. Dedicated custom element and attribute (traverse shadow roots)
+      const banners = queryDeepAll('cws-install-banner, [data-banner="install-chrome"]');
+      banners.forEach((el) => {
         const html = el as HTMLElement;
         if (html.style.display !== "none") {
           html.style.setProperty("display", "none", "important");
@@ -2018,7 +2231,7 @@
       });
 
       // 2. Specific alert elements containing "Switch to Chrome", guarded strictly against content sections
-      const alerts = document.querySelectorAll('[role="alert"], aside');
+      const alerts = queryDeepAll('[role="alert"], aside');
       alerts.forEach((el) => {
         const html = el as HTMLElement;
         if (html.style.display === "none") return;
@@ -2095,8 +2308,9 @@
     try {
       const polyfillCode = `
         (function() {
-          if (window.__forge_webstore_polyfilled) return;
+          if (window.__forge_webstore_polyfilled || window.__forge_cws_mock_injected) return;
           window.__forge_webstore_polyfilled = true;
+          window.__forge_cws_mock_injected = true;
           window.chrome = window.chrome || {};
 
           function makeEvent() {
@@ -2252,7 +2466,23 @@
       (document.documentElement.lang || "").toLowerCase().startsWith("es") ||
       window.location.href.includes("hl=es");
 
-    const installButtonContainers = document.querySelectorAll("cws-install-button");
+    let installButtonContainers = queryDeepAll(
+      "cws-install-button, cws-install-button-header, [data-is-install-button], [data-install-button]"
+    );
+
+    if (!installButtonContainers.length) {
+      // Fallback: look for containers hosting circular progress or role=progressbar
+      const progressElements = queryDeepAll("md-circular-progress, [role='progressbar']");
+      const candidateParents = new Set<Element>();
+      progressElements.forEach((p) => {
+        const parent = p.parentElement || (p.getRootNode() as ShadowRoot)?.host;
+        if (parent && parent instanceof Element) {
+          candidateParents.add(parent);
+        }
+      });
+      installButtonContainers = Array.from(candidateParents);
+    }
+
     if (!installButtonContainers.length) return;
 
     installButtonContainers.forEach((container) => {
@@ -2266,18 +2496,19 @@
             const sStyle = document.createElement("style");
             sStyle.id = "forge-shadow-style";
             sStyle.textContent = `
-              md-circular-progress, [role="progressbar"] {
+              md-circular-progress, [role="progressbar"], .loading-spinner {
                 display: none !important;
                 visibility: hidden !important;
                 opacity: 0 !important;
                 width: 0 !important;
                 height: 0 !important;
+                pointer-events: none !important;
               }
             `;
             shadow.appendChild(sStyle);
           } catch {}
         }
-        shadow.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((s) => {
+        shadow.querySelectorAll("md-circular-progress, [role='progressbar'], .loading-spinner").forEach((s) => {
           const el = s as HTMLElement;
           if (el.style.display !== "none") {
             el.style.setProperty("display", "none", "important");
@@ -2285,31 +2516,36 @@
             el.style.setProperty("opacity", "0", "important");
             el.style.setProperty("width", "0", "important");
             el.style.setProperty("height", "0", "important");
+            el.style.setProperty("pointer-events", "none", "important");
           }
         });
       }
 
-      container.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((s) => {
+      container.querySelectorAll("md-circular-progress, [role='progressbar'], .loading-spinner").forEach((s) => {
         const el = s as HTMLElement;
         if (el.style.display !== "none") {
           el.style.setProperty("display", "none", "important");
           el.style.setProperty("visibility", "hidden", "important");
+          el.style.setProperty("opacity", "0", "important");
           el.style.setProperty("width", "0", "important");
           el.style.setProperty("height", "0", "important");
+          el.style.setProperty("pointer-events", "none", "important");
         }
       });
 
-      // 2. Identify and control the single button element in the container/shadow
-      let actionBtn = targetParent.querySelector("button") as HTMLButtonElement | null;
-      if (!actionBtn) {
-        const mdBtn = targetParent.querySelector("md-filled-button, md-outlined-button");
-        if (mdBtn) {
-          actionBtn = (mdBtn.shadowRoot?.querySelector("button") || mdBtn) as HTMLButtonElement;
-        }
+      if (container instanceof HTMLElement) {
+        container.style.setProperty("display", "inline-flex", "important");
+        container.style.setProperty("visibility", "visible", "important");
+        container.style.setProperty("opacity", "1", "important");
       }
-      if (!actionBtn) {
-        actionBtn = targetParent.querySelector("[role='button']") as HTMLButtonElement | null;
-      }
+
+      // Hide any conflicting Lit buttons or spinners
+      targetParent.querySelectorAll("md-filled-button, md-outlined-button").forEach((btn) => {
+        (btn as HTMLElement).style.setProperty("display", "none", "important");
+      });
+
+      // 2. Identify or create the single button element in the container/shadow
+      let actionBtn = targetParent.querySelector("#forge-native-cws-btn") as HTMLButtonElement | null;
       if (!actionBtn) {
         actionBtn = document.createElement("button");
         actionBtn.id = "forge-native-cws-btn";
@@ -2319,15 +2555,11 @@
 
       // Check if button is already configured in the desired state to prevent DOM thrashing
       if (actionBtn.dataset.forgeState === desiredState) {
+        actionBtn.style.setProperty("display", "inline-flex", "important");
+        actionBtn.style.setProperty("visibility", "visible", "important");
         return;
       }
       actionBtn.dataset.forgeState = desiredState;
-
-      // Remove any circular progress that Google may have injected inside the button itself
-      actionBtn.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((p) => p.remove());
-      if (isInstalled) {
-        targetParent.querySelectorAll("md-circular-progress, [role='progressbar']").forEach((p) => p.remove());
-      }
 
       // Enable the button
       actionBtn.removeAttribute("disabled");

@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import Link from "next/link";
-import { ArrowRight, Download, Terminal, Layers, Zap } from "lucide-react";
+import { ArrowRight, Download, Terminal, Layers, Zap, Heart } from "lucide-react";
+import { DonationSection } from "./components/DonationSection";
 
 export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,8 +94,8 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Secondary CTA — Download */}
-        <div className="hero-btn flex items-center justify-center">
+        {/* Secondary CTA — Download & Donate */}
+        <div className="hero-btn flex flex-wrap items-center justify-center gap-6">
           <Link
             href="/downloads"
             id="hero-download-btn"
@@ -103,11 +104,19 @@ export default function Home() {
             <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
             Download the app for free
           </Link>
+
+          <a
+            href="#donate"
+            className="inline-flex items-center gap-2 text-sm text-primary/90 hover:text-primary font-medium transition-colors group"
+          >
+            <Heart className="w-4 h-4 fill-primary/20 text-primary group-hover:scale-110 transition-transform" />
+            Support Forge with a donation
+          </a>
         </div>
       </div>
 
       {/* Features Section */}
-      <div className="max-w-6xl w-full mt-32 grid grid-cols-1 md:grid-cols-3 gap-8 pb-20">
+      <div className="max-w-6xl w-full mt-32 grid grid-cols-1 md:grid-cols-3 gap-8 pb-12">
         {[
           {
             icon: <Terminal className="w-8 h-8 text-primary" />,
@@ -134,6 +143,9 @@ export default function Home() {
           </div>
         ))}
       </div>
+
+      {/* Dedicated Donation Section */}
+      <DonationSection id="donate" />
     </div>
   );
 }

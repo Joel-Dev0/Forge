@@ -77,10 +77,17 @@ function prune(sites: Record<string, TopSite>): Record<string, TopSite> {
   return next;
 }
 
-export function selectTopSites(state: Pick<TopSitesState, "sites" | "hidden">, limit: number): TopSite[] {
+/** Minimum visit count required before a site qualifies for the "Most Visited" section. */
+export const MIN_TOP_SITE_VISITS = 7;
+
+export function selectTopSites(
+  state: Pick<TopSitesState, "sites" | "hidden">,
+  limit: number,
+  minVisits: number = MIN_TOP_SITE_VISITS
+): TopSite[] {
   const hidden = new Set(state.hidden);
   return Object.values(state.sites)
-    .filter((s) => !hidden.has(s.host))
+    .filter((s) => !hidden.has(s.host) && s.visits >= minVisits)
     .sort((a, b) => b.visits - a.visits || b.lastVisitedAt - a.lastVisitedAt)
     .slice(0, limit);
 }

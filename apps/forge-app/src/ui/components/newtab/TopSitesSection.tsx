@@ -1,10 +1,16 @@
 import { useMemo, useState } from "react";
 import { Flame, X, RotateCcw, TrendingUp } from "lucide-react";
-import { selectTopSites, useTopSitesStore, type TopSite } from "../../../core/topsites/useTopSitesStore";
+import {
+  selectTopSites,
+  useTopSitesStore,
+  MIN_TOP_SITE_VISITS,
+  type TopSite,
+} from "../../../core/topsites/useTopSitesStore";
 
 interface Props {
   onNavigate: (url: string) => void;
   limit?: number;
+  minVisits?: number;
 }
 
 const ACCENTS = ["#FF6B00", "#3B82F6", "#10B981", "#A855F7", "#EC4899", "#EAB308", "#06B6D4", "#EF4444"];
@@ -58,14 +64,18 @@ function SiteIcon({ site }: { site: TopSite }) {
  * "Most Visited" tiles for the New Tab page.
  * Subscribes directly to the Top Sites store, so the ranking, visit counters,
  * titles and favicons update live while the user browses in other tabs/windows.
+ * Only displays websites that have been visited at least minVisits times (default: 7).
  */
-export function TopSitesSection({ onNavigate, limit = 12 }: Props) {
+export function TopSitesSection({ onNavigate, limit = 12, minVisits = MIN_TOP_SITE_VISITS }: Props) {
   const sites = useTopSitesStore((s) => s.sites);
   const hidden = useTopSitesStore((s) => s.hidden);
   const hideSite = useTopSitesStore((s) => s.hideSite);
   const restoreHidden = useTopSitesStore((s) => s.restoreHidden);
 
-  const topSites = useMemo(() => selectTopSites({ sites, hidden }, limit), [sites, hidden, limit]);
+  const topSites = useMemo(
+    () => selectTopSites({ sites, hidden }, limit, minVisits),
+    [sites, hidden, limit, minVisits]
+  );
 
   return (
     <section
@@ -99,7 +109,7 @@ export function TopSitesSection({ onNavigate, limit = 12 }: Props) {
       {topSites.length === 0 ? (
         <div className="flex items-center justify-center gap-2 px-5 py-8 text-[11px] text-[var(--forge-text-muted)]">
           <TrendingUp size={14} className="text-[#FF6B00]" />
-          <span>Sites you visit will show up here, ranked by how often you open them.</span>
+          <span>Sites you visit frequently (at least {minVisits} times) will appear here.</span>
         </div>
       ) : (
         <ul className="flex flex-wrap items-center gap-3 p-4 m-0 list-none">

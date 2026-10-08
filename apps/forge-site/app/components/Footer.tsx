@@ -31,6 +31,7 @@ export function Footer() {
     Resources: [
       { name: "Documentation", href: "/docs" },
       { name: "Changelog", href: "/roadmap" },
+      { name: "Donate & Sponsor ❤️", href: "/#donate" },
       { name: "Blog", href: "#" },
       { name: "Community", href: "#" },
     ],

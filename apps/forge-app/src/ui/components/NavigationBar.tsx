@@ -1,10 +1,11 @@
 import { useRef, useState, useEffect, type KeyboardEvent, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2, ArrowRight, X, Cpu } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCw, Star, Maximize2, Minimize2, PictureInPicture2, ArrowRight, X, Cpu, Download, Check, Loader2 } from "lucide-react";
 import { useTabsStore } from "../../core/tabs/useTabsStore";
 import { useNavigationStore, normalizeUrl, SEARCH_ENGINES } from "../../core/navigation/useNavigationStore";
 import { useBookmarksStore } from "../../core/bookmarks/useBookmarksStore";
 import { useCompatStore } from "../../core/compat/useCompatStore";
 import { useLocalhostAliasesStore } from "../../core/localhost/useLocalhostAliasesStore";
+import { useExtensionsStore } from "../../core/extensions/useExtensionsStore";
 import { ShieldsButton } from "./ShieldsButton";
 import { SecureNetworkButton } from "./SecureNetworkButton";
 import { SearchEngineDropdown } from "./SearchEngineDropdown";
@@ -39,6 +40,63 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const bookmarked = isBookmarked(urlBarValue);
   const activeAlias = getAliasForUrl(activeTab?.url || urlBarValue);
+
+  const extensions = useExtensionsStore((s) => s.extensions);
+  const installFromWebStoreUrl = useExtensionsStore((s) => s.installFromWebStoreUrl);
+  const [isInstallingCws, setIsInstallingCws] = useState(false);
+
+  const currentTabUrl = (activeTab?.url || urlBarValue || "").trim();
+  const cwsDetailMatch =
+    currentTabUrl.match(/chromewebstore\.google\.com\/detail\/(?:([^/]+)\/)?([a-z]{32})/i) ||
+    currentTabUrl.match(/chrome\.google\.com\/webstore\/detail\/(?:([^/]+)\/)?([a-z]{32})/i);
+
+  const isCwsDetailPage = Boolean(cwsDetailMatch);
+  const cwsExtId = cwsDetailMatch ? (cwsDetailMatch[2] || cwsDetailMatch[1]).toLowerCase() : "";
+  const cwsExtSlug = cwsDetailMatch && cwsDetailMatch[1] && cwsDetailMatch[1].length !== 32 ? cwsDetailMatch[1] : "";
+  const isCwsInstalled = Boolean(cwsExtId && extensions.some((ext) => ext.id.toLowerCase() === cwsExtId));
+
+  const handleCwsInstallClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isCwsInstalled) {
+      window.dispatchEvent(
+        new CustomEvent("forge:toast", {
+          detail: `Extension is already installed in Forge!`,
+        })
+      );
+      return;
+    }
+    if (isInstallingCws || !cwsExtId) return;
+    setIsInstallingCws(true);
+    try {
+      const friendlyName = cwsExtSlug
+        ? cwsExtSlug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+        : activeTab?.title?.split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+
+      const res = await installFromWebStoreUrl(currentTabUrl, { name: friendlyName });
+      if (res.success) {
+        window.dispatchEvent(
+          new CustomEvent("forge:toast", {
+            detail: `✓ Installed "${friendlyName}" in Forge!`,
+          })
+        );
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("forge:toast", {
+            detail: `Failed to install: ${res.message}`,
+          })
+        );
+      }
+    } catch (err: any) {
+      window.dispatchEvent(
+        new CustomEvent("forge:toast", {
+          detail: `Install error: ${err?.message || "Unknown error"}`,
+        })
+      );
+    } finally {
+      setIsInstallingCws(false);
+    }
+  };
 
   const isSelectingOnFocus = useRef(false);
 
@@ -188,6 +246,46 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           >
             {activeAlias.alias}
           </span>
+        )}
+
+        {/* Chrome Web Store Extension Install Action Pill */}
+        {isCwsDetailPage && (
+          <button
+            type="button"
+            onClick={handleCwsInstallClick}
+            disabled={isInstallingCws}
+            title={
+              isCwsInstalled
+                ? "This extension is installed in Forge"
+                : isInstallingCws
+                ? "Installing extension into Forge..."
+                : "Install this extension into Forge"
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all shrink-0 cursor-pointer shadow-xs ${
+              isCwsInstalled
+                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
+                : isInstallingCws
+                ? "bg-[#0b57d0] text-white opacity-85 cursor-wait"
+                : "bg-[#0b57d0] hover:bg-[#0842a0] text-white hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+            }`}
+          >
+            {isCwsInstalled ? (
+              <>
+                <Check size={11} className="stroke-[2.5]" />
+                <span>Installed</span>
+              </>
+            ) : isInstallingCws ? (
+              <>
+                <Loader2 size={11} className="animate-spin" />
+                <span>Installing...</span>
+              </>
+            ) : (
+              <>
+                <Download size={11} className="stroke-[2.2]" />
+                <span>Install in Forge</span>
+              </>
+            )}
+          </button>
         )}
 
         {/* Search / Enter Submit Button */}

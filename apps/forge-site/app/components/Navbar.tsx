@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Moon, Sun, Menu, X, Download } from "lucide-react";
+import { Moon, Sun, Menu, X, Download, Heart } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 
@@ -49,6 +49,7 @@ export function Navbar() {
     { name: "Documentation", href: "/docs" },
     { name: "Downloads", href: "/downloads" },
     { name: "Roadmap", href: "/roadmap" },
+    { name: "Donate", href: "/#donate", highlight: true },
   ];
 
   return (
@@ -68,15 +69,20 @@ export function Navbar() {
             </Link>
 
             {/* Desktop links */}
-            <div className="hidden md:flex space-x-8">
+            <div className="hidden md:flex space-x-8 items-center">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === item.href ? "text-primary" : "text-foreground/80"
+                  className={`text-sm font-medium transition-colors hover:text-primary flex items-center gap-1.5 ${
+                    item.highlight
+                      ? "text-primary hover:text-primary/80 font-semibold"
+                      : pathname === item.href
+                      ? "text-primary"
+                      : "text-foreground/80"
                   }`}
                 >
+                  {item.highlight && <Heart className="w-3.5 h-3.5 fill-primary text-primary" />}
                   {item.name}
                 </Link>
               ))}
@@ -150,12 +156,15 @@ export function Navbar() {
               key={item.href}
               href={item.href}
               onClick={close}
-              className={`px-4 py-3 rounded-xl text-base font-medium transition-colors ${
+              className={`px-4 py-3 rounded-xl text-base font-medium transition-colors flex items-center gap-2 ${
                 pathname === item.href
                   ? "bg-primary/10 text-primary"
+                  : item.highlight
+                  ? "text-primary hover:bg-primary/10 font-semibold"
                   : "text-foreground/80 hover:bg-surface-2 hover:text-foreground"
               }`}
             >
+              {item.highlight && <Heart className="w-4 h-4 fill-primary text-primary" />}
               {item.name}
             </Link>
           ))}

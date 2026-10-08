@@ -273,17 +273,20 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
 
     const syncCwsExtensions = () => {
       try {
+        if (!el || typeof el.executeJavaScript !== "function") return;
         const currentUrl = (el.getURL ? el.getURL() : "").toLowerCase();
         if (currentUrl.includes("chromewebstore.google.com") || currentUrl.includes("chrome.google.com")) {
           const exts = useExtensionsStore.getState().extensions;
           const extIds = exts.map((e) => e.id.toLowerCase());
-          if (typeof el.executeJavaScript === "function") {
-            el.executeJavaScript(`
+          el.executeJavaScript(`
+            try {
+              window.__forge_installed_ids = ${JSON.stringify(extIds)};
               if (typeof window.__forge_sync_installed_extensions === "function") {
                 window.__forge_sync_installed_extensions(${JSON.stringify(extIds)});
               }
-            `).catch(() => {});
-          }
+              window.dispatchEvent(new CustomEvent("forge:sync_installed_extensions", { detail: ${JSON.stringify(extIds)} }));
+            } catch {}
+          `).catch(() => {});
         }
       } catch {}
     };
@@ -333,7 +336,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       }
 
       syncTitleAndFavicon();
-      syncCwsExtensions();
+      setTimeout(syncCwsExtensions, 150);
     };
 
     const onTitle = (e: any) => {
@@ -567,17 +570,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       }
 
       if (typeof msg === "string" && msg.includes("__FORGE_REQUEST_INSTALLED_EXTENSIONS__")) {
-        try {
-          const exts = useExtensionsStore.getState().extensions;
-          const extIds = exts.map((e) => e.id.toLowerCase());
-          if (typeof el.executeJavaScript === "function") {
-            el.executeJavaScript(`
-              if (typeof window.__forge_sync_installed_extensions === "function") {
-                window.__forge_sync_installed_extensions(${JSON.stringify(extIds)});
-              }
-            `).catch(() => {});
-          }
-        } catch {}
+        syncCwsExtensions();
         return;
       }
 
@@ -594,9 +587,12 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
                 if (res.success) {
                   if (typeof el.executeJavaScript === "function") {
                     el.executeJavaScript(`
-                      if (typeof window.__forge_mark_extension_installed === "function") {
-                        window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, true);
-                      }
+                      try {
+                        if (typeof window.__forge_mark_extension_installed === "function") {
+                          window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, true);
+                        }
+                        window.dispatchEvent(new CustomEvent("forge:mark_extension_installed", { detail: { extId: ${JSON.stringify(extData.id.toLowerCase())}, isInstalled: true } }));
+                      } catch {}
                     `).catch(() => {});
                   }
                   window.dispatchEvent(
@@ -607,9 +603,12 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
                 } else {
                   if (typeof el.executeJavaScript === "function") {
                     el.executeJavaScript(`
-                      if (typeof window.__forge_mark_extension_installed === "function") {
-                        window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
-                      }
+                      try {
+                        if (typeof window.__forge_mark_extension_installed === "function") {
+                          window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
+                        }
+                        window.dispatchEvent(new CustomEvent("forge:mark_extension_installed", { detail: { extId: ${JSON.stringify(extData.id.toLowerCase())}, isInstalled: false } }));
+                      } catch {}
                     `).catch(() => {});
                   }
                   window.dispatchEvent(
@@ -621,9 +620,12 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
               }).catch((err: any) => {
                 if (typeof el.executeJavaScript === "function") {
                   el.executeJavaScript(`
-                    if (typeof window.__forge_mark_extension_installed === "function") {
-                      window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
-                    }
+                    try {
+                      if (typeof window.__forge_mark_extension_installed === "function") {
+                        window.__forge_mark_extension_installed(${JSON.stringify(extData.id.toLowerCase())}, false);
+                      }
+                      window.dispatchEvent(new CustomEvent("forge:mark_extension_installed", { detail: { extId: ${JSON.stringify(extData.id.toLowerCase())}, isInstalled: false } }));
+                    } catch {}
                   `).catch(() => {});
                 }
                 window.dispatchEvent(

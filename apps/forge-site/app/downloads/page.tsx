@@ -17,7 +17,10 @@ import {
   Layers,
   Compass,
   SlidersHorizontal,
+  Heart,
 } from "lucide-react";
+import { PostDownloadDonationModal } from "../components/PostDownloadDonationModal";
+import { DonationSection } from "../components/DonationSection";
 
 function WindowsIcon({ className }: { className?: string }) {
   return (
@@ -50,6 +53,43 @@ function AppleIcon({ className }: { className?: string }) {
 export default function Downloads() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVpnSimulatedOn, setIsVpnSimulatedOn] = useState(true);
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    platformName: string;
+    version: string;
+  }>({
+    isOpen: false,
+    platformName: "Windows",
+    version: "v2.4.0",
+  });
+
+  const handleDownload = (platformName: string, version: string) => {
+    const filename = platformName.toLowerCase().includes("win")
+      ? "Forge-Setup-2.4.0.exe"
+      : platformName.toLowerCase().includes("mac")
+      ? "Forge-2.4.0-arm64.dmg"
+      : "Forge-2.4.0.AppImage";
+    const downloadUrl = `https://github.com/Joel-Dev0/Forge/releases/download/${version}/${filename}`;
+
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      // ignore
+    }
+
+    setModalState({
+      isOpen: true,
+      platformName,
+      version,
+    });
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -158,9 +198,18 @@ export default function Downloads() {
           <h1 className="dl-header text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
             Download Forge Browser
           </h1>
-          <p className="dl-header text-xl text-foreground/70 max-w-2xl mx-auto">
+          <p className="dl-header text-xl text-foreground/70 max-w-2xl mx-auto mb-4">
             Get the developer-first browser featuring built-in WireGuard VPN, native network inspection, AdBlock, and pip multimedia control.
           </p>
+          <div className="dl-header flex items-center justify-center gap-3">
+            <a
+              href="#donate"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-white transition-all text-xs font-semibold shadow-xs"
+            >
+              <Heart className="w-3.5 h-3.5 fill-primary" />
+              Support Forge with a donation
+            </a>
+          </div>
         </div>
 
         {/* ============================================================== */}
@@ -178,7 +227,11 @@ export default function Downloads() {
               <h2 className="text-2xl font-bold mb-2">{os.name}</h2>
               <p className="text-sm text-foreground/50 mb-6">{os.arch}</p>
 
-              <button className="w-full py-3 bg-primary/10 text-primary hover:bg-primary hover:text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer">
+              <button
+                type="button"
+                onClick={() => handleDownload(os.name, os.version)}
+                className="w-full py-3 bg-primary/10 text-primary hover:bg-primary hover:text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
                 <Download className="w-4 h-4" /> Download {os.version}
               </button>
             </div>
@@ -617,7 +670,22 @@ export default function Downloads() {
             </div>
           </div>
         </div>
+
+        {/* ============================================================== */}
+        {/* DONATION SECTION */}
+        {/* ============================================================== */}
+        <div className="mt-20 pt-16 border-t border-surface-2">
+          <DonationSection id="donate" />
+        </div>
       </div>
+
+      {/* Post-Download Donation Modal Triggered When Clicking Any Download */}
+      <PostDownloadDonationModal
+        isOpen={modalState.isOpen}
+        onClose={() => setModalState((prev) => ({ ...prev, isOpen: false }))}
+        platformName={modalState.platformName}
+        version={modalState.version}
+      />
     </div>
   );
 }

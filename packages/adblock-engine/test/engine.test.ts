@@ -188,11 +188,20 @@ test("AdBlockEngine - YouTube Ad Blocking & Cosmetic/Scriptlet Generation", () =
   const ytCss = engine.getCosmeticCSS("https://www.youtube.com/watch?v=123");
   assert.ok(ytCss.includes("ytd-promoted-video-renderer"));
   assert.ok(ytCss.includes("display: none !important"));
+  assert.ok(ytCss.includes("ytd-rich-item-renderer:has(ytd-ad-slot-renderer)"));
+  assert.ok(ytCss.includes("ytd-banner-promo-renderer:hover"));
+  assert.ok(ytCss.includes("pointer-events: none !important"));
+  assert.ok(!ytCss.includes("ytd-rich-section-renderer:has"));
+  assert.ok(!ytCss.includes("ytd-rich-grid-row:has"));
 
   const ytScriptlet = engine.getScriptlet("https://www.youtube.com/watch?v=123");
   assert.ok(ytScriptlet.includes("adPlacements"));
   assert.ok(ytScriptlet.includes("ad-showing"));
   assert.ok(ytScriptlet.includes("ytp-ad-skip-button"));
+  assert.ok(ytScriptlet.includes("cleanYouTubeAdBannersAndHovers"));
+  assert.ok(ytScriptlet.includes("filterAdArrays"));
+  assert.ok(!ytScriptlet.includes(".remove()"));
+  assert.ok(!ytScriptlet.includes("richSectionRenderer"));
 });
 
 test("AdBlockEngine - uBlock Quick Fixes and dynamic list content updates", () => {

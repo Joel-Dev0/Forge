@@ -1072,8 +1072,6 @@ var QUICKFIXES_PRESET_RULES = `
 ||youtube.com/api/stats/ads
 ||youtube.com/pagead/
 ||youtube.com/ptracking
-||youtube.com/youtubei/v1/att/
-||youtube.com/youtubei/v1/log_event
 ||youtube.com/get_midroll_info
 ||youtube.com/api/stats/qoe?*adformat=
 ||youtube.com/api/stats/watchtime?*adformat=
@@ -1098,8 +1096,8 @@ var QUICKFIXES_PRESET_RULES = `
 ||antiadblocksystems.com^
 
 ! --- Explicit Exceptions for Legitimate Video Playback Streams ---
-@@||googlevideo.com/videoplayback$1p
-@@||youtube.com/videoplayback$1p
+@@||googlevideo.com/videoplayback
+@@||youtube.com/videoplayback
 `;
 
 // ../../packages/adblock-engine/src/filters/presets/malvertising.ts
@@ -1384,18 +1382,42 @@ function getCosmeticCSS(urlStr) {
       display: none !important;
       height: 0 !important;
       max-height: 0 !important;
+      min-height: 0 !important;
+      width: 0 !important;
+      max-width: 0 !important;
+      min-width: 0 !important;
       visibility: hidden !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
       opacity: 0 !important;
+      cursor: default !important;
+    }
+
+    /* Neutralize hover styles and pointer interaction on generic ad wrappers */
+    .ad-container:hover,
+    .ad-banner:hover,
+    .ad-placeholder:hover,
+    .ad-slot:hover,
+    .ad-box:hover,
+    .ad-wrapper:hover,
+    .banner-ad:hover,
+    [class*="banner-ad" i]:hover,
+    [class*="sticky-ad" i]:hover,
+    [class*="ad-slot" i]:hover,
+    [class*="ad-wrapper" i]:hover {
+      display: none !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      cursor: default !important;
     }
   `;
   if (!urlStr) return css;
   const isYouTube = urlStr.includes("youtube.com") || urlStr.includes("youtu.be");
   if (isYouTube) {
     css += `
-      /* YouTube Home & Feed Ad Banners */
+      /* YouTube Home & Feed Ad Banners, Promos, Sparkles & Sponsors */
       ytd-promoted-sparkles-web-renderer,
       ytd-promoted-video-renderer,
       ytd-display-ad-renderer,
@@ -1406,12 +1428,54 @@ function getCosmeticCSS(urlStr) {
       ytd-ad-slot-renderer,
       #masthead-ad,
       ytd-video-masthead-ad-v3-renderer,
+      ytd-video-masthead-ad-primary-v3-renderer,
       ytd-primetime-promo-renderer,
       ytd-merch-shelf-renderer,
+      ytd-brand-video-singleton-renderer,
+      ytd-brand-video-shelf-renderer,
+
+      /* YouTube Rich Grid Ad Items, Sections & Ghost Card Wrappers */
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+      .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+      .ytd-rich-item-renderer:has(ytd-banner-promo-renderer),
+      ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+      .ytd-rich-item-renderer:has(ytd-statement-banner-renderer),
+      ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+      .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+      ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+      .ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+      ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+      .ytd-rich-item-renderer:has(ytd-promoted-video-renderer),
+      ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+      .ytd-rich-item-renderer:has(ytd-brand-video-singleton-renderer),
+      ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+      .ytd-rich-item-renderer:has(ytd-primetime-promo-renderer),
+      ytd-rich-item-renderer:has(#sparkles-container),
+      .ytd-rich-item-renderer:has(#sparkles-container),
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+      .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]),
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+      .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]),
+      ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+      .ytd-rich-item-renderer:has([aria-label*="Promoted" i]),
+      ytd-rich-item-renderer:has([aria-label="Ad" i]),
+      .ytd-rich-item-renderer:has([aria-label="Ad" i]),
+
+      /* Ad Hover Overlays & Previews */
+      ytd-ad-slot-renderer #hover-overlays,
+      ytd-banner-promo-renderer #hover-overlays,
+      ytd-in-feed-ad-layout-renderer #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer) #hover-overlays,
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]) #hover-overlays,
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]) #hover-overlays,
 
       /* YouTube Video Player Ad Elements */
       #player-ads,
-      .ytp-ad-module,
       .ytp-ad-overlay-container,
       .ytp-ad-message-container,
       .ytp-ad-text,
@@ -1424,11 +1488,49 @@ function getCosmeticCSS(urlStr) {
       ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
       ytd-action-companion-ad-renderer,
       ytd-compact-promoted-video-renderer,
-      .ytd-rich-item-renderer:has(ytd-display-ad-renderer),
-      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
       tp-yt-paper-dialog:has(#feedback.ytd-ad-feedback-renderer),
       tp-yt-paper-dialog:has(ytd-enforcement-message-view-model) {
         display: none !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        min-height: 0 !important;
+        width: 0 !important;
+        max-width: 0 !important;
+        min-width: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        cursor: default !important;
+      }
+
+      /* Completely neutralize hover states and pointer interaction on ad elements and their wrappers */
+      ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-ad-slot-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-banner-promo-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-statement-banner-renderer):hover,
+      ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+      .ytd-rich-item-renderer:has(ytd-display-ad-renderer):hover,
+      ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+      .ytd-rich-item-renderer:has([class*="badge-style-type-ad" i]):hover,
+      ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+      .ytd-rich-item-renderer:has([aria-label*="Sponsored" i]):hover,
+      ytd-banner-promo-renderer:hover,
+      ytd-statement-banner-renderer:hover,
+      ytd-ad-slot-renderer:hover,
+      #masthead-ad:hover {
+        display: none !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        cursor: default !important;
+        transform: none !important;
+        box-shadow: none !important;
       }
     `;
   }
@@ -1449,57 +1551,82 @@ function getYouTubeScriptletCode() {
     if (window.__forge_yt_blocker_active) return;
     window.__forge_yt_blocker_active = true;
 
-    // 1. Intercept ytInitialPlayerResponse at document-start before player renders
-    try {
-      let _ytInitialPlayerResponse = window.ytInitialPlayerResponse;
-      Object.defineProperty(window, 'ytInitialPlayerResponse', {
-        get() {
-          return _ytInitialPlayerResponse;
-        },
-        set(val) {
-          if (val && typeof val === 'object') {
-            delete val.adPlacements;
-            delete val.adSlots;
-            delete val.playerAds;
-            delete val.adBreakHeartbeatParams;
-          }
-          _ytInitialPlayerResponse = val;
-        },
-        configurable: true
-      });
-    } catch {}
+    function isAdItem(item) {
+      if (!item || typeof item !== 'object') return false;
+      if (item.adSlotRenderer || item.inFeedAdLayoutRenderer || item.statementBannerRenderer ||
+          item.bannerPromoRenderer || item.displayAdRenderer || item.promotedVideoRenderer ||
+          item.promotedSparklesWebRenderer || item.primetimePromoRenderer ||
+          item.brandVideoSingletonRenderer || item.brandVideoShelfRenderer || item.mastheadAd) {
+        return true;
+      }
+      const richItem = item.richItemRenderer;
+      if (richItem && typeof richItem === 'object') {
+        const c = richItem.content;
+        if (c && (c.adSlotRenderer || c.inFeedAdLayoutRenderer || c.displayAdRenderer ||
+                  c.promotedVideoRenderer || c.promotedSparklesWebRenderer || c.bannerPromoRenderer ||
+                  c.statementBannerRenderer || c.primetimePromoRenderer || c.brandVideoSingletonRenderer)) {
+          return true;
+        }
+      }
+      return false;
+    }
 
-    // 2. Intercept JSON.parse to remove ad placements from all dynamic responses
-    try {
-      const originalParse = JSON.parse;
-      JSON.parse = function(...args) {
-        const result = originalParse.apply(this, args);
-        try {
-          if (result && typeof result === 'object') {
-            if (result.adPlacements) result.adPlacements = [];
-            if (result.adSlots) result.adSlots = [];
-            if (result.playerAds) result.playerAds = [];
-            if (result.adBreakHeartbeatParams) delete result.adBreakHeartbeatParams;
+    function filterAdArrays(root, depth = 0) {
+      if (!root || typeof root !== 'object' || depth > 8) return;
+      if (Array.isArray(root)) {
+        for (let i = root.length - 1; i >= 0; i--) {
+          if (isAdItem(root[i])) {
+            root.splice(i, 1);
+          } else if (typeof root[i] === 'object') {
+            filterAdArrays(root[i], depth + 1);
           }
-        } catch {}
-        return result;
-      };
-    } catch {}
+        }
+        return;
+      }
+      for (const key of Object.keys(root)) {
+        const val = root[key];
+        if (Array.isArray(val)) {
+          for (let i = val.length - 1; i >= 0; i--) {
+            if (isAdItem(val[i])) {
+              val.splice(i, 1);
+            } else if (typeof val[i] === 'object') {
+              filterAdArrays(val[i], depth + 1);
+            }
+          }
+        } else if (val && typeof val === 'object') {
+          filterAdArrays(val, depth + 1);
+        }
+      }
+    }
 
-    // 3. Intercept fetch for /youtubei/v1/player
+    function sanitizeAdObject(obj) {
+      if (window.__forge_adblock_enabled === false) return obj;
+      if (!obj || typeof obj !== 'object') return obj;
+      try {
+        if ('adPlacements' in obj) obj.adPlacements = [];
+        if ('adSlots' in obj) obj.adSlots = [];
+        if ('playerAds' in obj) obj.playerAds = [];
+        delete obj.adBreakHeartbeatParams;
+        delete obj.mastheadAd;
+        filterAdArrays(obj);
+      } catch {}
+      return obj;
+    }
+
+    // Intercept client-side SPA player requests to neutralize ad placements
     try {
-      const originalFetch = window.fetch;
+      const origFetch = window.fetch;
       window.fetch = async function(...args) {
-        const response = await originalFetch.apply(this, args);
+        const response = await origFetch.apply(this, args);
         try {
           const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-          if (url.includes('/youtubei/v1/player')) {
+          if (url && url.includes('/youtubei/v1/player')) {
             const clone = response.clone();
             const data = await clone.json();
             if (data && typeof data === 'object') {
-              data.adPlacements = [];
-              data.adSlots = [];
-              data.playerAds = [];
+              if ('adPlacements' in data) data.adPlacements = [];
+              if ('adSlots' in data) data.adSlots = [];
+              if ('playerAds' in data) data.playerAds = [];
               delete data.adBreakHeartbeatParams;
               return new Response(JSON.stringify(data), {
                 status: response.status,
@@ -1513,16 +1640,114 @@ function getYouTubeScriptletCode() {
       };
     } catch {}
 
-    // 4. Continuous Video Ad Fast-Forward & Automatic Skipper
+    // 1. Intercept ytInitialPlayerResponse before player renders
+    try {
+      let _ytInitialPlayerResponse = sanitizeAdObject(window.ytInitialPlayerResponse);
+      Object.defineProperty(window, 'ytInitialPlayerResponse', {
+        get() {
+          return _ytInitialPlayerResponse;
+        },
+        set(val) {
+          _ytInitialPlayerResponse = sanitizeAdObject(val);
+        },
+        configurable: true
+      });
+    } catch {}
+
+    // 2. Intercept ytInitialData to remove promoted items from home & search feed
+    try {
+      let _ytInitialData = sanitizeAdObject(window.ytInitialData);
+      Object.defineProperty(window, 'ytInitialData', {
+        get() {
+          return _ytInitialData;
+        },
+        set(val) {
+          _ytInitialData = sanitizeAdObject(val);
+        },
+        configurable: true
+      });
+    } catch {}
+
+    // 3. Active DOM Cleaner for Ad Banners, Ghost Hover Cards & Placeholders
+    function cleanYouTubeAdBannersAndHovers() {
+      if (window.__forge_adblock_enabled === false) return;
+      try {
+        const adSelectors = [
+          'ytd-ad-slot-renderer',
+          'ytd-in-feed-ad-layout-renderer',
+          'ytd-banner-promo-renderer',
+          'ytd-statement-banner-renderer',
+          'ytd-display-ad-renderer',
+          'ytd-promoted-sparkles-web-renderer',
+          'ytd-promoted-video-renderer',
+          'ytd-brand-video-singleton-renderer',
+          '#masthead-ad',
+          'ytd-video-masthead-ad-v3-renderer',
+          'ytd-video-masthead-ad-primary-v3-renderer',
+          'ytd-action-companion-ad-renderer',
+          'ytd-compact-promoted-video-renderer'
+        ];
+
+        for (const selector of adSelectors) {
+          const elements = document.querySelectorAll(selector);
+          for (const el of elements) {
+            const parentCard = el.closest('ytd-rich-item-renderer');
+            if (parentCard) {
+              parentCard.style.display = 'none';
+              parentCard.style.pointerEvents = 'none';
+            } else {
+              el.style.display = 'none';
+              el.style.pointerEvents = 'none';
+            }
+          }
+        }
+
+        const sponsoredItems = document.querySelectorAll(
+          'ytd-rich-item-renderer:has(.badge-style-type-ad), ' +
+          'ytd-rich-item-renderer:has([aria-label*="Sponsored" i]), ' +
+          'ytd-rich-item-renderer:has([aria-label*="Promoted" i]), ' +
+          'ytd-rich-item-renderer:has([aria-label="Ad" i]), ' +
+          'ytd-rich-item-renderer:has(#sparkles-container)'
+        );
+        for (const item of sponsoredItems) {
+          item.style.display = 'none';
+          item.style.pointerEvents = 'none';
+        }
+
+        const hoverOverlays = document.querySelectorAll('#hover-overlays');
+        for (const h of hoverOverlays) {
+          if (h.closest('ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-banner-promo-renderer')) {
+            h.style.display = 'none';
+            h.style.pointerEvents = 'none';
+          }
+        }
+      } catch {}
+    }
+
+    // 7. Continuous Video Ad Fast-Forward & Automatic Skipper
     let wasAdShowing = false;
     let originalMute = false;
 
     function checkAndSkipAds() {
+      if (window.__forge_adblock_enabled === false) {
+        if (wasAdShowing) {
+          wasAdShowing = false;
+          const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+          if (v) {
+            v.playbackRate = 1;
+            v.muted = originalMute;
+            v.volume = 1;
+          }
+        }
+        return;
+      }
+
+      cleanYouTubeAdBannersAndHovers();
+
       const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
       const isAd = player && (
         player.classList.contains('ad-showing') ||
-        player.classList.contains('ad-interrupting') ||
-        document.querySelector('.ytp-ad-player-overlay') !== null
+        player.classList.contains('ad-interrupting')
       );
 
       const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
@@ -1533,23 +1758,24 @@ function getYouTubeScriptletCode() {
           originalMute = video.muted;
         }
 
-        // Mute ad audio so user never hears it
+        // Speed up and mute the ad silently without seeking video.currentTime
         video.muted = true;
-
-        // Skip to end of ad video instantly
-        if (isFinite(video.duration) && video.duration > 0) {
-          video.currentTime = video.duration;
-        }
+        video.volume = 0;
         video.playbackRate = 16;
+
+        // Skip immediately if player method is exposed
+        try {
+          if (typeof player.skipAd === 'function') player.skipAd();
+        } catch {}
       } else if (!isAd && wasAdShowing) {
         wasAdShowing = false;
         if (video) {
           video.playbackRate = 1;
           video.muted = originalMute;
+          video.volume = 1;
         }
       }
 
-      // Auto-click any skip button variants
       const skipSelectors = [
         '.ytp-ad-skip-button',
         '.ytp-ad-skip-button-modern',
@@ -1557,7 +1783,8 @@ function getYouTubeScriptletCode() {
         '.ytp-ad-skip-button-slot button',
         'button.ytp-ad-skip-button',
         '.ytp-ad-overlay-close-button',
-        '.ytp-ad-overlay-close-container'
+        '.ytp-ad-overlay-close-container',
+        'button[id^="skip-button"]'
       ];
 
       for (const selector of skipSelectors) {
@@ -1569,14 +1796,14 @@ function getYouTubeScriptletCode() {
         }
       }
 
-      // Auto-dismiss anti-adblock enforcement modal if present
       const enforcementDialogs = document.querySelectorAll('tp-yt-paper-dialog:has(ytd-enforcement-message-view-model), ytd-enforcement-message-view-model');
       for (const dlg of enforcementDialogs) {
         const closeBtn = dlg.querySelector('button, [role="button"]') || dlg.closest('tp-yt-paper-dialog')?.querySelector('#close-button');
         if (closeBtn && typeof closeBtn.click === 'function') {
           closeBtn.click();
         } else {
-          dlg.remove();
+          dlg.style.display = 'none';
+          dlg.style.pointerEvents = 'none';
         }
         if (video && video.paused) {
           video.play().catch(() => {});
@@ -1616,7 +1843,6 @@ function getUniversalVideoScriptletCode() {
             destroy: function() {},
             addEventListener: function(evt, handler) {
               if (evt === 'adsManagerLoaded') {
-                // Return mock manager that signals all ads completed
                 setTimeout(function() {
                   handler({
                     getAdsManager: function() {
@@ -1643,29 +1869,28 @@ function getUniversalVideoScriptletCode() {
 
     // 2. Generic Video Ad Skipper & Fast-Forwarder
     function skipGenericVideoAds() {
+      if (window.__forge_adblock_enabled === false) return;
+
+      cleanGenericAdBannersAndHovers();
+
       const adSelectors = [
         '.vjs-ad-playing video',
         '.jw-flag-ads video',
-        '.ad-container video',
+        '.ad-container video:not(.html5-main-video)',
         '.video-ad video',
-        'video[src*="ad"]',
         'video[src*="doubleclick"]'
       ];
 
       for (const selector of adSelectors) {
         const adVideos = document.querySelectorAll(selector);
         for (const v of adVideos) {
-          if (v instanceof HTMLVideoElement) {
+          if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
             v.muted = true;
-            if (isFinite(v.duration) && v.duration > 0) {
-              v.currentTime = v.duration;
-            }
             v.playbackRate = 16;
           }
         }
       }
 
-      // Auto-click common skip ad buttons
       const skipButtons = document.querySelectorAll([
         '.videoAdUiSkipButton',
         '.skip-button',
@@ -1681,6 +1906,33 @@ function getUniversalVideoScriptletCode() {
           btn.click();
         }
       }
+    }
+
+    // 3. Generic Ad Banner, Placeholder & Hover Defuser
+    function cleanGenericAdBannersAndHovers() {
+      if (window.__forge_adblock_enabled === false) return;
+      try {
+        const adPlaceholders = document.querySelectorAll([
+          '.ad-container', '.ad-banner', '.ad-placeholder', '.ad-slot',
+          '.ad-box', '.ad-wrapper', '.banner-ad', '[class*="banner-ad" i]',
+          '[class*="sticky-ad" i]', '[class*="floating-ad" i]', '[id^="google_ads_iframe"]',
+          '[id^="div-gpt-ad"]', '.adsbygoogle'
+        ].join(','));
+
+        for (const el of adPlaceholders) {
+          const hasContent = el.innerText && el.innerText.trim().length > 0;
+          const hasVideo = el.querySelector('video');
+          if (!hasVideo && (!hasContent || el.clientHeight < 20 || el.clientWidth < 20)) {
+            el.style.display = 'none';
+            el.style.pointerEvents = 'none';
+            el.style.visibility = 'hidden';
+            el.style.height = '0';
+            el.style.maxHeight = '0';
+            el.style.minHeight = '0';
+            el.style.opacity = '0';
+          }
+        }
+      } catch {}
     }
 
     setInterval(skipGenericVideoAds, 250);
@@ -2269,6 +2521,7 @@ function initAdBlockAdapter(mainWindowGetter) {
     };
   });
   const activeWebviewContents = /* @__PURE__ */ new Set();
+  const insertedCssKeys = /* @__PURE__ */ new Map();
   ipcMain.handle("adblock:set-enabled", (_event, enabled) => {
     engine.setEnabled(enabled);
     for (const contents of activeWebviewContents) {
@@ -2281,12 +2534,32 @@ function initAdBlockAdapter(mainWindowGetter) {
           }
         `).catch(() => {
         });
-        if (enabled) {
+        if (!enabled) {
+          const keys = insertedCssKeys.get(contents);
+          if (keys) {
+            for (const key of keys) {
+              contents.removeInsertedCSS(key).catch(() => {
+              });
+            }
+            keys.clear();
+          }
+        } else {
           const url = contents.getURL();
           if (url && url !== "about:blank") {
             const css = engine.getCosmeticCSS(url);
-            if (css) contents.insertCSS(css).catch(() => {
-            });
+            if (css) {
+              contents.insertCSS(css).then((key) => {
+                if (key) {
+                  let keys = insertedCssKeys.get(contents);
+                  if (!keys) {
+                    keys = /* @__PURE__ */ new Set();
+                    insertedCssKeys.set(contents, keys);
+                  }
+                  keys.add(key);
+                }
+              }).catch(() => {
+              });
+            }
             const scriptlet = engine.getScriptlet(url);
             if (scriptlet) contents.executeJavaScript(scriptlet).catch(() => {
             });
@@ -2387,6 +2660,7 @@ function initAdBlockAdapter(mainWindowGetter) {
     activeWebviewContents.add(contents);
     contents.on("destroyed", () => {
       activeWebviewContents.delete(contents);
+      insertedCssKeys.delete(contents);
     });
     contents.setWindowOpenHandler((details) => {
       return handleWindowOpenRequest(contents, details, mainWindowGetter);
@@ -2446,7 +2720,15 @@ function initAdBlockAdapter(mainWindowGetter) {
         if (!url || url === "about:blank") return;
         const css = engine.getCosmeticCSS(url);
         if (css) {
-          await contents.insertCSS(css);
+          const key = await contents.insertCSS(css);
+          if (key) {
+            let keys = insertedCssKeys.get(contents);
+            if (!keys) {
+              keys = /* @__PURE__ */ new Set();
+              insertedCssKeys.set(contents, keys);
+            }
+            keys.add(key);
+          }
         }
         const scriptlet = engine.getScriptlet(url);
         if (scriptlet) {
@@ -5523,8 +5805,9 @@ var isCorsBypassActive = false;
 var bypassPrivateNetworkAccess = true;
 var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
 (function() {
-  if (window.__forge_cws_mock_injected) return;
+  if (window.__forge_cws_mock_injected || window.__forge_webstore_polyfilled) return;
   window.__forge_cws_mock_injected = true;
+  window.__forge_webstore_polyfilled = true;
 
   if (!window.chrome) window.chrome = {};
   if (!window.chrome.app) {
@@ -5559,29 +5842,33 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
   const onDownloadProgress = makeEvent();
 
   function parsePageExtensionDetails() {
-    const href = window.location.href;
-    const path = window.location.pathname;
-    const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
-                  href.match(/\\/detail\\/([a-z]{32})/i) ||
-                  href.match(/\\b([a-z]{32})\\b/i);
-    const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
-    const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
-    
-    let name = "";
-    const h1 = document.querySelector("h1");
-    if (h1 && h1.textContent) {
-      name = h1.textContent.trim();
-    } else if (slug) {
-      name = slug.split("-").map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
-    } else {
-      name = (document.title || "").split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+    try {
+      const href = window.location.href || "";
+      const path = window.location.pathname || "";
+      const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
+                    href.match(/\\/detail\\/([a-z]{32})/i) ||
+                    href.match(/\\b([a-z]{32})\\b/i);
+      const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
+      const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
+      
+      let name = "";
+      const h1 = document.querySelector("h1");
+      if (h1 && h1.textContent) {
+        name = h1.textContent.trim();
+      } else if (slug) {
+        name = slug.split("-").map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
+      } else {
+        name = (document.title || "").split("-")[0]?.replace(/Chrome Web Store/i, "").trim() || "Extension";
+      }
+
+      let iconUrl = "";
+      const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
+      if (img && img.src) iconUrl = img.src;
+
+      return { id: id, name: name, iconUrl: iconUrl, url: href };
+    } catch {
+      return { id: "", name: "Extension", iconUrl: "", url: "" };
     }
-
-    let iconUrl = "";
-    const img = document.querySelector("img[src*='googleusercontent.com'], img[src*='extension']");
-    if (img && img.src) iconUrl = img.src;
-
-    return { id: id, name: name, iconUrl: iconUrl, url: href };
   }
 
   function triggerForgeInstall(idParam, nameParam, iconParam) {
@@ -5592,6 +5879,8 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
 
     if (id) {
       installedExts.add(id);
+      if (!Array.isArray(window.__forge_installed_ids)) window.__forge_installed_ids = [];
+      if (!window.__forge_installed_ids.includes(id)) window.__forge_installed_ids.push(id);
       console.log("__FORGE_EXT_INSTALL__:" + JSON.stringify({
         id: id,
         name: name,
@@ -5612,22 +5901,30 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
   }
 
   function stopSpinnersOnPage() {
+    function pierce(root) {
+      try {
+        var spinners = root.querySelectorAll("md-circular-progress, [role='progressbar'], .loading-spinner");
+        for (var i = 0; i < spinners.length; i++) {
+          spinners[i].style.setProperty("display", "none", "important");
+          spinners[i].style.setProperty("visibility", "hidden", "important");
+          spinners[i].style.setProperty("pointer-events", "none", "important");
+        }
+        var buttons = root.querySelectorAll("button, [role='button']");
+        for (var j = 0; j < buttons.length; j++) {
+          buttons[j].removeAttribute("disabled");
+          buttons[j].removeAttribute("aria-busy");
+          buttons[j].style.setProperty("pointer-events", "auto", "important");
+        }
+        var all = root.querySelectorAll("*");
+        for (var k = 0; k < all.length; k++) {
+          if (all[k].shadowRoot) pierce(all[k].shadowRoot);
+        }
+      } catch (e) {}
+    }
     let count = 0;
     const interval = setInterval(function() {
       count++;
-      try {
-        const elements = document.querySelectorAll("button, [role='button'], cws-install-button, md-circular-progress, [role='progressbar']");
-        elements.forEach(function(el) {
-          el.removeAttribute("disabled");
-          el.removeAttribute("aria-busy");
-          const btn = el.closest("button, [role='button'], cws-install-button") || el;
-          if (btn) {
-            btn.removeAttribute("disabled");
-            btn.removeAttribute("aria-busy");
-            btn.style.pointerEvents = "auto";
-          }
-        });
-      } catch (err) {}
+      pierce(document);
       if (count > 15) clearInterval(interval);
     }, 150);
   }
@@ -5637,9 +5934,9 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
     onDownloadProgress: onDownloadProgress,
 
     beginInstallWithManifest3: function(details, callback) {
-      const id = details?.id || parsePageExtensionDetails().id;
-      const name = details?.localizedName || parsePageExtensionDetails().name;
-      const icon = details?.iconUrl || parsePageExtensionDetails().iconUrl;
+      const id = (details && typeof details === "string" ? details : (details && details.id ? details.id : parsePageExtensionDetails().id)).toLowerCase();
+      const name = (details && details.localizedName ? details.localizedName : parsePageExtensionDetails().name);
+      const icon = (details && details.iconUrl ? details.iconUrl : parsePageExtensionDetails().iconUrl);
       triggerForgeInstall(id, name, icon);
 
       if (typeof callback === "function") {
@@ -5649,8 +5946,14 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
     },
 
     completeInstall: function(id, callback) {
-      if (id) installedExts.add(String(id).toLowerCase());
+      if (id) {
+        const clean = String(id).toLowerCase();
+        installedExts.add(clean);
+        if (!Array.isArray(window.__forge_installed_ids)) window.__forge_installed_ids = [];
+        if (!window.__forge_installed_ids.includes(clean)) window.__forge_installed_ids.push(clean);
+      }
       stopSpinnersOnPage();
+      try { onInstallStageChanged.dispatch("install_complete"); } catch (e) {}
       if (typeof callback === "function") {
         setTimeout(function() { try { callback(""); } catch (e) {} }, 10);
       }
@@ -5667,28 +5970,27 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
 
     getExtensionStatus: function(id, manifest, callback) {
       const cb = typeof manifest === "function" ? manifest : callback;
-      const targetId = (typeof id === "string" ? id : parsePageExtensionDetails().id || "").toLowerCase();
-      const status = (targetId && installedExts.has(targetId)) ? "installed" : "not_installed";
+      const targetId = String(id || parsePageExtensionDetails().id || "").toLowerCase();
+      const list = Array.isArray(window.__forge_installed_ids) ? window.__forge_installed_ids : [];
+      const isInstalled = targetId ? (installedExts.has(targetId) || list.includes(targetId)) : false;
+      const status = isInstalled ? "enabled" : "installable";
       if (typeof cb === "function") {
         try { cb(status); } catch (e) {}
       }
       return Promise.resolve(status);
     },
 
-    isInIncognitoMode: function(callback) {
-      if (typeof callback === "function") try { callback(false); } catch (e) {}
-      return Promise.resolve(false);
-    },
-
-    getIsLauncherEnabled: function(callback) {
-      if (typeof callback === "function") try { callback(false); } catch (e) {}
-      return Promise.resolve(false);
-    },
-
-    getStoreLogin: function(callback) {
-      if (typeof callback === "function") try { callback(""); } catch (e) {}
-      return Promise.resolve("");
-    }
+    getBrowserLogin: function(cb) { if (cb) cb({ login: "" }); return Promise.resolve({ login: "" }); },
+    getStoreLogin: function(cb) { if (cb) cb(""); return Promise.resolve(""); },
+    setStoreLogin: function(login, cb) { if (cb) cb(); return Promise.resolve(); },
+    getWebGLStatus: function(cb) { if (cb) cb("webgl_allowed"); return Promise.resolve("webgl_allowed"); },
+    getIsLauncherEnabled: function(cb) { if (cb) cb(false); return Promise.resolve(false); },
+    isInIncognitoMode: function(cb) { if (cb) cb(false); return Promise.resolve(false); },
+    isPendingCustodianApproval: function(id, cb) { if (cb) cb(false); return Promise.resolve(false); },
+    getReferrerChain: function(cb) { if (cb) cb(""); return Promise.resolve(""); },
+    getFullChromeVersion: function(cb) { if (cb) cb({ version_number: "134.0.6998.88" }); return Promise.resolve({ version_number: "134.0.6998.88" }); },
+    getMV2DeprecationStatus: function(cb) { if (cb) cb("inactive"); return Promise.resolve("inactive"); },
+    shouldShowEnterprisePromotionBanner: function(cb) { if (cb) cb("PROMOTION_TYPE_UNSPECIFIED"); return Promise.resolve("PROMOTION_TYPE_UNSPECIFIED"); }
   };
 
   try {
@@ -5808,6 +6110,7 @@ function initCompatManager() {
     if (contents.getType() !== "webview") return;
     const injectCwsPolyfill = () => {
       try {
+        if (!contents || contents.isDestroyed()) return;
         const u = (contents.getURL() || "").toLowerCase();
         if (u.includes("chromewebstore.google.com") || u.includes("chrome.google.com")) {
           contents.executeJavaScript(CWS_POLYFILL_MAIN_WORLD_SCRIPT).catch(() => {
@@ -5816,16 +6119,9 @@ function initCompatManager() {
       } catch {
       }
     };
-    contents.on("did-start-navigation", (_ev, url, _isInPlace, isMainFrame) => {
-      if (!isMainFrame) return;
-      const lower = (url || "").toLowerCase();
-      if (lower.includes("chromewebstore.google.com") || lower.includes("chrome.google.com")) {
-        contents.executeJavaScript(CWS_POLYFILL_MAIN_WORLD_SCRIPT).catch(() => {
-        });
-      }
-    });
     contents.on("dom-ready", injectCwsPolyfill);
     contents.on("did-finish-load", injectCwsPolyfill);
+    contents.on("did-navigate-in-page", injectCwsPolyfill);
     contents.on("render-process-gone", (_ev, details) => {
       try {
         console.warn(`[Compat Manager] Guest webview ${contents.id} render process gone:`, details?.reason, details?.exitCode);

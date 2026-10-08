@@ -178,6 +178,7 @@ export function FocusPlayerModal() {
   }, [onlineUrlInput, onlineTitleInput, onlineArtistInput, onlineCategory]);
 
   const currentPl = playlists.find((p) => p.id === currentPlaylistId) || playlists[0];
+  const playingPlaylist = playlists.find((p) => p.tracks.some((t) => t.id === currentTrack?.id)) || currentPl;
 
   const formatTime = (secs: number) => {
     if (secs === 0) return "0:00";
@@ -477,71 +478,68 @@ export function FocusPlayerModal() {
 
         {/* Modal Content */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
-          {/* TAB 1: PLAYER */}
-          {activeTab === "player" && (
-            <div className="space-y-6">
-              {/* Media Card Display */}
-              <div
-                className={`rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col justify-between ${
-                  currentTrack?.provider === "youtube"
-                    ? "bg-black"
-                    : currentTrack?.provider === "spotify"
-                    ? "bg-[#181818]"
-                    : `bg-gradient-to-br ${currentPl.coverGradient}`
-                }`}
-              >
-                {/* Embed View for YouTube */}
-                {currentTrack?.provider === "youtube" && currentTrack.embedUrl && (
-                  <div className="relative w-full aspect-video max-h-56 bg-black flex items-center justify-center">
-                    <iframe
-                      id="focus-player-embed-iframe"
-                      src={(() => {
-                        let url = currentTrack.embedUrl.replace(/[?&]origin=[^&]+/g, "");
-                        if (!url.includes("enablejsapi=1")) {
-                          url += (url.includes("?") ? "&" : "?") + "enablejsapi=1";
+          {/* TAB 1: PLAYER - Persistently mounted so audio and iframe streams never cut off during navigation */}
+          <div
+            className={
+              activeTab === "player"
+                ? "space-y-6"
+                : "space-y-6 absolute -left-[99999px] -top-[99999px] opacity-0 pointer-events-none w-0 h-0 overflow-hidden"
+            }
+          >
+            {/* Media Card Display */}
+            <div
+              className={`rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col justify-between ${
+                currentTrack?.provider === "youtube"
+                  ? "bg-black"
+                  : currentTrack?.provider === "spotify"
+                  ? "bg-[#181818]"
+                  : `bg-gradient-to-br ${playingPlaylist.coverGradient || currentPl.coverGradient}`
+              }`}
+            >
+              {/* Embed View for YouTube */}
+              {currentTrack?.provider === "youtube" && currentTrack.embedUrl && (
+                <div className="relative w-full aspect-video max-h-56 bg-black flex items-center justify-center">
+                  <iframe
+                    id="focus-player-embed-iframe"
+                    src={(() => {
+                      let url = currentTrack.embedUrl.replace(/[?&]origin=[^&]+/g, "");
+                      if (!url.includes("enablejsapi=1")) {
+                        url += (url.includes("?") ? "&" : "?") + "enablejsapi=1";
+                      }
+                      return url;
+                    })()}
+                    title={currentTrack.title}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    onLoad={(e) => {
+                      try {
+                        const w = (e.target as HTMLIFrameElement)?.contentWindow;
+                        w?.postMessage('{"event":"listening"}', '*');
+                        if (!isAudioPlaying) {
+                          w?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+                          w?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                          w?.postMessage('{"method":"pause"}', '*');
                         }
-                        return url;
-                      })()}
-                      title={currentTrack.title}
-                      className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      onLoad={(e) => {
-                        try {
-                          const w = (e.target as HTMLIFrameElement)?.contentWindow;
-                          w?.postMessage('{"event":"listening"}', '*');
-                          if (!isAudioPlaying) {
-                            w?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
-                            w?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-                            w?.postMessage('{"method":"pause"}', '*');
-                          }
-                        } catch {}
-                      }}
-                    />
-                  </div>
-                )}
+                      } catch {}
+                    }}
+                  />
+                </div>
+              )}
 
-                {/* Embed View for Spotify */}
-                {currentTrack?.provider === "spotify" && currentTrack.embedUrl && (
-                  <div className="p-4 bg-[#121212] flex flex-col items-center justify-center">
-                    {isAudioPlaying ? (
-                      <iframe
-                        id="focus-player-embed-iframe"
-                        src={currentTrack.embedUrl}
-                        title={currentTrack.title}
-                        className="w-full h-[152px] rounded-xl border-0"
-                        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-[152px] rounded-xl bg-black/40 border border-white/5 flex flex-col items-center justify-center text-center p-4">
-                        <Music size={28} className="text-emerald-400 mb-2 opacity-60" />
-                        <p className="text-xs font-bold text-white">{currentTrack.title}</p>
-                        <p className="text-[11px] text-zinc-400 mt-0.5">Spotify Playback Paused (Click Orange Button to Resume)</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Embed View for Spotify - Persistently mounted to avoid playback cut-off */}
+              {currentTrack?.provider === "spotify" && currentTrack.embedUrl && (
+                <div className="p-4 bg-[#121212] flex flex-col items-center justify-center">
+                  <iframe
+                    id="focus-player-embed-iframe"
+                    src={currentTrack.embedUrl}
+                    title={currentTrack.title}
+                    className="w-full h-[152px] rounded-xl border-0"
+                    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                    loading="lazy"
+                  />
+                </div>
+              )}
 
                 {/* Embed View for SoundCloud */}
                 {currentTrack?.provider === "soundcloud" && currentTrack.embedUrl && (
@@ -604,11 +602,11 @@ export function FocusPlayerModal() {
                         <span className="text-zinc-400">Bind to:</span>
                         <select
                           value={
-                            Object.entries(profileBindings).find(([_, pId]) => pId === currentPl.id)?.[0] || ""
+                            Object.entries(profileBindings).find(([_, pId]) => pId === (playingPlaylist?.id || currentPl.id))?.[0] || ""
                           }
                           onChange={(e) => {
                             if (e.target.value) {
-                              bindPlaylistToProfile(e.target.value, currentPl.id);
+                              bindPlaylistToProfile(e.target.value, playingPlaylist?.id || currentPl.id);
                             }
                           }}
                           className="bg-transparent text-white font-medium outline-none text-[11px] cursor-pointer"
@@ -766,57 +764,92 @@ export function FocusPlayerModal() {
 
                 {/* Playlist selection cards */}
                 <div className="grid grid-cols-3 gap-2.5">
-                  {playlists.map((pl) => (
-                    <div
-                      key={pl.id}
-                      onClick={() => {
-                        if (activeAudioTab) {
-                          window.dispatchEvent(new CustomEvent("forge:media-pause"));
-                          useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
-                        }
-                        selectPlaylist(pl.id, true);
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative group ${
-                        currentPlaylistId === pl.id
-                          ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
-                          : "border-[var(--forge-border)] bg-[var(--forge-input)] hover:bg-[var(--forge-hover)]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-white truncate max-w-[140px]">
-                          {pl.provider === "stream" || pl.provider === "youtube" ? (
-                            <Globe size={12} className="text-[#FF6B00] shrink-0" />
-                          ) : pl.provider === "spotify" ? (
-                            <Music size={12} className="text-emerald-400 shrink-0" />
-                          ) : (
-                            <Radio size={12} className="text-blue-400 shrink-0" />
-                          )}
-                          <span className="truncate">{pl.name}</span>
+                  {playlists.map((pl) => {
+                    const isPlayingFromThisPl = isAudioPlaying && pl.tracks.some((t) => t.id === currentTrack?.id);
+                    return (
+                      <div
+                        key={pl.id}
+                        onClick={() => {
+                          // Select playlist for browsing tracks and options WITHOUT interrupting current audio playback
+                          selectPlaylist(pl.id, false);
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative group ${
+                          currentPlaylistId === pl.id
+                            ? "border-[#FF6B00] bg-[#FF6B00]/10 shadow-sm"
+                            : "border-[var(--forge-border)] bg-[var(--forge-input)] hover:bg-[var(--forge-hover)]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-white truncate max-w-[130px]">
+                            {pl.provider === "stream" || pl.provider === "youtube" ? (
+                              <Globe size={12} className="text-[#FF6B00] shrink-0" />
+                            ) : pl.provider === "spotify" ? (
+                              <Music size={12} className="text-emerald-400 shrink-0" />
+                            ) : (
+                              <Radio size={12} className="text-blue-400 shrink-0" />
+                            )}
+                            <span className="truncate">{pl.name}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Live indicator if active track is from this playlist */}
+                            {isPlayingFromThisPl && (
+                              <span
+                                title="Playing track from this playlist"
+                                className="w-2 h-2 rounded-full bg-[#FF6B00] animate-ping shrink-0"
+                              />
+                            )}
+
+                            {/* Quick Play playlist from start button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (activeAudioTab) {
+                                  window.dispatchEvent(new CustomEvent("forge:media-pause"));
+                                  useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+                                }
+                                selectPlaylist(pl.id, true);
+                              }}
+                              title={`Play ${pl.name} from start`}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded-md bg-[#FF6B00]/80 hover:bg-[#FF6B00] text-white transition-opacity cursor-pointer shadow-sm"
+                            >
+                              <Play size={10} fill="currentColor" />
+                            </button>
+
+                            {pl.isCustom && playlists.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePlaylist(pl.id);
+                                }}
+                                title="Delete custom playlist"
+                                className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-opacity p-1 cursor-pointer"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
                         </div>
 
-                        {pl.isCustom && playlists.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removePlaylist(pl.id);
-                            }}
-                            title="Delete custom playlist"
-                            className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-opacity p-1 cursor-pointer"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
+                        <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">
+                          {pl.description}
+                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-[9px] font-mono text-zinc-500">
+                            {pl.tracks.length} tracks
+                          </span>
+                          {isPlayingFromThisPl && (
+                            <span className="text-[9px] font-bold text-[#FF6B00] flex items-center gap-1">
+                              <Disc3 size={10} className="animate-spin" />
+                              <span>Playing</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
-
-                      <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1">
-                        {pl.description}
-                      </p>
-                      <span className="text-[9px] font-mono text-zinc-500 mt-2 block">
-                        {pl.tracks.length} tracks
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Tracks list for currently active playlist */}
@@ -835,11 +868,15 @@ export function FocusPlayerModal() {
                         <div
                           key={trk.id}
                           onClick={() => {
-                            if (activeAudioTab) {
-                              window.dispatchEvent(new CustomEvent("forge:media-pause"));
-                              useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+                            if (isTrackActive) {
+                              handleTogglePlay();
+                            } else {
+                              if (activeAudioTab) {
+                                window.dispatchEvent(new CustomEvent("forge:media-pause"));
+                                useTabsStore.getState().setTabAudio(activeAudioTab.id, false, activeAudioTab.isMuted);
+                              }
+                              play(trk);
                             }
-                            play(trk);
                           }}
                           className={`flex items-center justify-between px-3 py-2 rounded-xl transition-all cursor-pointer text-xs ${
                             isTrackActive
@@ -895,11 +932,9 @@ export function FocusPlayerModal() {
                 </div>
               </div>
             </div>
-          )}
 
           {/* TAB 2: ADD ONLINE STREAM */}
-          {activeTab === "add_online" && (
-            <div className="space-y-5">
+          <div className={activeTab === "add_online" ? "space-y-5" : "hidden"}>
               <div>
                 <h3 className="text-sm font-bold text-white">Add Online Music or Live Stream</h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
@@ -1019,12 +1054,10 @@ export function FocusPlayerModal() {
                   </button>
                 </div>
               </form>
-            </div>
-          )}
+          </div>
 
           {/* TAB 3: EXPLORE CURATED STATIONS */}
-          {activeTab === "explore" && (
-            <div className="space-y-4">
+          <div className={activeTab === "explore" ? "space-y-4" : "hidden"}>
               <div>
                 <h3 className="text-sm font-bold text-white">Curated Focus Broadcasts</h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
@@ -1071,12 +1104,10 @@ export function FocusPlayerModal() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+          </div>
 
           {/* TAB 4: ADD LOCAL AUDIO & SONGS (PERSISTENT INDEXEDDB) */}
-          {activeTab === "add_local" && (
-            <div className="space-y-5">
+          <div className={activeTab === "add_local" ? "space-y-5" : "hidden"}>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-white">Import & Save Local Songs</h3>
@@ -1319,8 +1350,7 @@ export function FocusPlayerModal() {
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </div>
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-[var(--forge-border)] bg-[#151827] flex items-center justify-between text-xs text-zinc-400">

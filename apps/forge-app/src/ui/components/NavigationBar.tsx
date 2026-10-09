@@ -16,6 +16,8 @@ import { SessionBadgeButton } from "./SessionBadgeButton";
 import { TorStatusButton } from "./tor/TorStatusButton";
 import { WebStoreExtensionsButton } from "./WebStoreExtensionsButton";
 import { DownloadsToolbarButton } from "./DownloadsToolbarButton";
+import { PwaInstallButton } from "./pwa/PwaInstallButton.tsx";
+import { PwaInstallModal } from "./pwa/PwaInstallModal.tsx";
 
 interface Props {
   onNavigate: (url: string) => void;
@@ -288,6 +290,9 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
           </button>
         )}
 
+        {/* Progressive Web App Install Action Button */}
+        <PwaInstallButton tabId={activeTabId} />
+
         {/* Search / Enter Submit Button */}
         <button
           type="submit"
@@ -354,6 +359,9 @@ export function NavigationBar({ onNavigate, onBack, onForward, onReload, onToggl
 
       {/* Forge Secure Network Button */}
       <SecureNetworkButton />
+
+      {/* Progressive Web App Install Modal */}
+      <PwaInstallModal />
     </div>
   );
 }
@@ -386,3 +394,4 @@ function NavBtn({
     </button>
   );
 }
+

@@ -597,7 +597,8 @@ export const KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS = [
   "shorte.st", "cut-urls", "exe.io", "fc.lc", "gplinks", "droplink",
   "1x-bet", "stake.com", "roobet", "bc.game", "bcgame", "betano", "cleanmypc",
   "your-system-infected", "critical-alert", "security-warning", "repair-now",
-  "allow-cookies", "confirm-you-are-not-a-robot", "robot-check", "click-allow", "captcha-verification", "press-allow"
+  "allow-cookies", "confirm-you-are-not-a-robot", "robot-check", "click-allow", "captcha-verification", "press-allow",
+  "system_vpn_update", "quicktoolera", "britishfireplace", "w-one023"
 ];
 
 export const SUSPICIOUS_AD_REDIRECT_PATHS = [
@@ -609,10 +610,11 @@ export const SUSPICIOUS_AD_REDIRECT_PATHS = [
 ];
 
 export const SUSPICIOUS_AFFILIATE_QUERY_KEYS = [
-  "click_id", "clickid", "aff_id", "affid", "subid", "sub_id", "sub1", "sub2",
+  "click_id", "clickid", "aff_id", "affid", "subid", "sub_id", "sub1", "sub2", "sub6",
   "zoneid", "zone_id", "banner_id", "bannerid", "campaign_id", "campaignid",
   "pub_id", "publisher_id", "ref_id", "refid", "track_id", "tracking_id",
-  "popunder", "target_url", "redirect_url", "traffic_source", "ad_id", "adid"
+  "popunder", "target_url", "redirect_url", "traffic_source", "ad_id", "adid",
+  "psid", "smartlink", "visitor-id", "partner_key", "session_partner_key"
 ];
 
 export const LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS = [

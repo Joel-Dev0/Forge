@@ -19,9 +19,15 @@ importers:
       '@forge/privacy-core':
         specifier: workspace:*
         version: link:../../packages/privacy-core
+      '@forge/pwa-core':
+        specifier: workspace:*
+        version: link:../../packages/pwa-core
       '@forge/tor-core':
         specifier: workspace:*
         version: link:../../packages/tor-core
+      '@forge/web-security':
+        specifier: workspace:*
+        version: link:../../packages/web-security
       lucide-react:
         specifier: ^1.18.0
         version: 1.18.0(react@19.2.7)
@@ -145,7 +151,15 @@ importers:
 
   packages/privacy-core: {}
 
+  packages/pwa-core:
+    dependencies:
+      '@forge/web-security':
+        specifier: workspace:*
+        version: link:../web-security
+
   packages/tor-core: {}
+
+  packages/web-security: {}
 
 packages:
 

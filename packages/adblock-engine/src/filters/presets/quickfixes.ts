@@ -22,6 +22,18 @@ export const QUICKFIXES_PRESET_RULES = `
 ||www.google.com/pagead/
 ||fundingchoicesmessages.google.com
 
+! --- Video Streaming & Adult VAST Networks (ExoClick / TrafficJunky) ---
+||pemsrv.com^
+||trafficjunky.com^
+||trafficjunky.net^
+||trafficfactory.biz^
+||exoclick.com^
+||tsyndicate.com^
+||realsrv.com^
+||magsrv.com^
+||adxad.com^
+||juicyads.com^
+
 ! --- Anti-Adblock Script Bypasses ---
 ||detectadblock.com^
 ||adblock-analytics.com^

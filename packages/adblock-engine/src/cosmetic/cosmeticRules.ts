@@ -148,6 +148,16 @@ export function getCosmeticCSS(urlStr?: string): string {
 
   if (isYouTube) {
     css += `
+      /* YouTube In-Stream Ad Video Instant Visual Blackout */
+      #movie_player.ad-showing video,
+      #movie_player.ad-interrupting video,
+      .html5-video-player.ad-showing video,
+      .html5-video-player.ad-interrupting video {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+
       /* YouTube Home & Feed Ad Banners, Promos, Sparkles & Sponsors */
       ytd-promoted-sparkles-web-renderer,
       ytd-promoted-video-renderer,
@@ -213,6 +223,12 @@ export function getCosmeticCSS(urlStr?: string): string {
       .ytp-ad-preview-container,
       .ytp-ad-image-overlay,
       .ytp-ad-overlay-image,
+      .ytp-ad-player-overlay,
+      .ytp-ad-player-overlay-flyout-cta,
+      .ytp-ad-module,
+      .ytp-ad-action-interstitial,
+      .ytp-ad-persistent-progress-bar-container,
+      .ytp-ad-button-vm,
 
       /* Search & Watch Page Side Ad Blocks */
       #panels ytd-ads-engagement-panel-content-renderer,

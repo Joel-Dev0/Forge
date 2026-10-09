@@ -1,7 +1,7 @@
 // electron/main.ts
-import { app as app9, BrowserWindow as BrowserWindow10, ipcMain as ipcMain15, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session13, shell, Menu } from "electron";
-import path6 from "node:path";
-import fs6 from "node:fs";
+import { app as app10, BrowserWindow as BrowserWindow12, ipcMain as ipcMain16, nativeTheme as nativeTheme2, nativeImage, powerMonitor, session as session13, shell as shell2, Menu } from "electron";
+import path7 from "node:path";
+import fs7 from "node:fs";
 import os2 from "node:os";
 import { exec as exec2 } from "node:child_process";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
@@ -24,12 +24,12 @@ function parseHttpUrl(input) {
   }
   const isTls = protocol === "https:";
   const port = parsed.port ? parseInt(parsed.port, 10) : isTls ? 443 : 80;
-  const path7 = `${parsed.pathname || "/"}${parsed.search || ""}`;
+  const path8 = `${parsed.pathname || "/"}${parsed.search || ""}`;
   return {
     protocol,
     hostname: parsed.hostname,
     port,
-    path: path7,
+    path: path8,
     isTls,
     href: parsed.href
   };
@@ -1087,6 +1087,18 @@ var QUICKFIXES_PRESET_RULES = `
 ||www.google.com/pagead/
 ||fundingchoicesmessages.google.com
 
+! --- Video Streaming & Adult VAST Networks (ExoClick / TrafficJunky) ---
+||pemsrv.com^
+||trafficjunky.com^
+||trafficjunky.net^
+||trafficfactory.biz^
+||exoclick.com^
+||tsyndicate.com^
+||realsrv.com^
+||magsrv.com^
+||adxad.com^
+||juicyads.com^
+
 ! --- Anti-Adblock Script Bypasses ---
 ||detectadblock.com^
 ||adblock-analytics.com^
@@ -1417,6 +1429,16 @@ function getCosmeticCSS(urlStr) {
   const isYouTube = urlStr.includes("youtube.com") || urlStr.includes("youtu.be");
   if (isYouTube) {
     css += `
+      /* YouTube In-Stream Ad Video Instant Visual Blackout */
+      #movie_player.ad-showing video,
+      #movie_player.ad-interrupting video,
+      .html5-video-player.ad-showing video,
+      .html5-video-player.ad-interrupting video {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+
       /* YouTube Home & Feed Ad Banners, Promos, Sparkles & Sponsors */
       ytd-promoted-sparkles-web-renderer,
       ytd-promoted-video-renderer,
@@ -1482,6 +1504,12 @@ function getCosmeticCSS(urlStr) {
       .ytp-ad-preview-container,
       .ytp-ad-image-overlay,
       .ytp-ad-overlay-image,
+      .ytp-ad-player-overlay,
+      .ytp-ad-player-overlay-flyout-cta,
+      .ytp-ad-module,
+      .ytp-ad-action-interstitial,
+      .ytp-ad-persistent-progress-bar-container,
+      .ytp-ad-button-vm,
 
       /* Search & Watch Page Side Ad Blocks */
       #panels ytd-ads-engagement-panel-content-renderer,
@@ -1550,6 +1578,24 @@ function getYouTubeScriptletCode() {
   return `
     if (window.__forge_yt_blocker_active) return;
     window.__forge_yt_blocker_active = true;
+
+    // 0. Intercept JSON.parse to neutralize ad structures across all network/worker paths
+    try {
+      const origJSONParse = JSON.parse;
+      JSON.parse = function(...args) {
+        const result = origJSONParse.apply(this, args);
+        if (window.__forge_adblock_enabled !== false && result && typeof result === 'object') {
+          if (result.adPlacements || result.playerAds || result.adSlots || result.adBreakHeartbeatParams) {
+            result.adPlacements = [];
+            result.playerAds = [];
+            result.adSlots = [];
+            delete result.adBreakHeartbeatParams;
+            delete result.adSafetyReason;
+          }
+        }
+        return result;
+      };
+    } catch {}
 
     function isAdItem(item) {
       if (!item || typeof item !== 'object') return false;
@@ -1620,14 +1666,15 @@ function getYouTubeScriptletCode() {
         const response = await origFetch.apply(this, args);
         try {
           const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-          if (url && url.includes('/youtubei/v1/player')) {
+          if (url && (
+            url.includes('/youtubei/v1/player') ||
+            url.includes('/youtubei/v1/next') ||
+            url.includes('/youtubei/v1/browse')
+          )) {
             const clone = response.clone();
             const data = await clone.json();
             if (data && typeof data === 'object') {
-              if ('adPlacements' in data) data.adPlacements = [];
-              if ('adSlots' in data) data.adSlots = [];
-              if ('playerAds' in data) data.playerAds = [];
-              delete data.adBreakHeartbeatParams;
+              sanitizeAdObject(data);
               return new Response(JSON.stringify(data), {
                 status: response.status,
                 statusText: response.statusText,
@@ -1638,6 +1685,39 @@ function getYouTubeScriptletCode() {
         } catch {}
         return response;
       };
+    } catch {}
+
+    // Intercept client-side XHR for /youtubei/v1/player, /youtubei/v1/next, /youtubei/v1/browse
+    try {
+      const origXHROpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this.__forge_url = typeof url === 'string' ? url : (url ? url.toString() : '');
+        return origXHROpen.apply(this, [method, url, ...rest]);
+      };
+
+      const origGetter = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText')?.get;
+      if (origGetter) {
+        Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
+          get: function() {
+            const text = origGetter.apply(this);
+            if (window.__forge_adblock_enabled !== false && this.__forge_url && (
+              this.__forge_url.includes('/youtubei/v1/player') ||
+              this.__forge_url.includes('/youtubei/v1/next') ||
+              this.__forge_url.includes('/youtubei/v1/browse')
+            )) {
+              try {
+                const data = JSON.parse(text);
+                if (data && typeof data === 'object') {
+                  sanitizeAdObject(data);
+                  return JSON.stringify(data);
+                }
+              } catch {}
+            }
+            return text;
+          },
+          configurable: true
+        });
+      }
     } catch {}
 
     // 1. Intercept ytInitialPlayerResponse before player renders
@@ -1724,7 +1804,7 @@ function getYouTubeScriptletCode() {
       } catch {}
     }
 
-    // 7. Continuous Video Ad Fast-Forward & Automatic Skipper
+    // 4. Instant Video Ad Suppression & True Skip Engine (No 16x fast-forward)
     let wasAdShowing = false;
     let originalMute = false;
 
@@ -1734,6 +1814,7 @@ function getYouTubeScriptletCode() {
           wasAdShowing = false;
           const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
           if (v) {
+            v.style.opacity = '1';
             v.playbackRate = 1;
             v.muted = originalMute;
             v.volume = 1;
@@ -1745,12 +1826,15 @@ function getYouTubeScriptletCode() {
       cleanYouTubeAdBannersAndHovers();
 
       const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-      const isAd = player && (
-        player.classList.contains('ad-showing') ||
-        player.classList.contains('ad-interrupting')
-      );
-
       const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+
+      // Crucial: Only detect ad when player actively has in-stream ad state
+      const isAd = Boolean(
+        player && (
+          player.classList.contains('ad-showing') ||
+          player.classList.contains('ad-interrupting')
+        )
+      );
 
       if (isAd && video) {
         if (!wasAdShowing) {
@@ -1758,30 +1842,39 @@ function getYouTubeScriptletCode() {
           originalMute = video.muted;
         }
 
-        // Speed up and mute the ad silently without seeking video.currentTime
+        // Instant visual blackout and audio silence during ad playback
+        video.style.opacity = '0';
         video.muted = true;
         video.volume = 0;
-        video.playbackRate = 16;
 
-        // Skip immediately if player method is exposed
+        // Skip immediately via player API if exposed
         try {
           if (typeof player.skipAd === 'function') player.skipAd();
+        } catch {}
+        try {
+          if (typeof player.cancelPlayback === 'function') player.cancelPlayback();
         } catch {}
       } else if (!isAd && wasAdShowing) {
         wasAdShowing = false;
         if (video) {
+          video.style.opacity = '1';
           video.playbackRate = 1;
           video.muted = originalMute;
           video.volume = 1;
+          if (video.paused) {
+            video.play().catch(() => {});
+          }
         }
       }
 
+      // Auto-click any active skip buttons
       const skipSelectors = [
         '.ytp-ad-skip-button',
         '.ytp-ad-skip-button-modern',
         '.ytp-skip-ad-button',
         '.ytp-ad-skip-button-slot button',
         'button.ytp-ad-skip-button',
+        '.ytp-ad-skip-button-container button',
         '.ytp-ad-overlay-close-button',
         '.ytp-ad-overlay-close-container',
         'button[id^="skip-button"]'
@@ -1873,24 +1966,7 @@ function getUniversalVideoScriptletCode() {
 
       cleanGenericAdBannersAndHovers();
 
-      const adSelectors = [
-        '.vjs-ad-playing video',
-        '.jw-flag-ads video',
-        '.ad-container video:not(.html5-main-video)',
-        '.video-ad video',
-        'video[src*="doubleclick"]'
-      ];
-
-      for (const selector of adSelectors) {
-        const adVideos = document.querySelectorAll(selector);
-        for (const v of adVideos) {
-          if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
-            v.muted = true;
-            v.playbackRate = 16;
-          }
-        }
-      }
-
+      // Auto-click standard HTML5 video player skip buttons
       const skipButtons = document.querySelectorAll([
         '.videoAdUiSkipButton',
         '.skip-button',
@@ -3140,7 +3216,11 @@ var KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS = [
   "robot-check",
   "click-allow",
   "captcha-verification",
-  "press-allow"
+  "press-allow",
+  "system_vpn_update",
+  "quicktoolera",
+  "britishfireplace",
+  "w-one023"
 ];
 var SUSPICIOUS_AD_REDIRECT_PATHS = [
   "/click.php",
@@ -3178,6 +3258,7 @@ var SUSPICIOUS_AFFILIATE_QUERY_KEYS = [
   "sub_id",
   "sub1",
   "sub2",
+  "sub6",
   "zoneid",
   "zone_id",
   "banner_id",
@@ -3195,7 +3276,12 @@ var SUSPICIOUS_AFFILIATE_QUERY_KEYS = [
   "redirect_url",
   "traffic_source",
   "ad_id",
-  "adid"
+  "adid",
+  "psid",
+  "smartlink",
+  "visitor-id",
+  "partner_key",
+  "session_partner_key"
 ];
 var LEGITIMATE_AUTH_AND_PAYMENT_DOMAINS = [
   "accounts.google.com",
@@ -5540,11 +5626,11 @@ var SOCIAL_PLATFORMS = {
     description: "World's video platform. High risk of infinite recommendation rabbit-holes and Shorts.",
     defaultTier: "LIMIT",
     limitDescription: "Allow watching specific videos & searching, while blocking Shorts shelves, comments, and home feed.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/watch") || path7.startsWith("/embed") || path7.startsWith("/results") || path7.startsWith("/api") || path7.startsWith("/youtubei");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/watch") || path8.startsWith("/embed") || path8.startsWith("/results") || path8.startsWith("/api") || path8.startsWith("/youtubei");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7.startsWith("/shorts") || path7.startsWith("/feed/explore") || path7.startsWith("/feed/trending");
+    isBlockedUnderLimit: (path8) => {
+      return path8.startsWith("/shorts") || path8.startsWith("/feed/explore") || path8.startsWith("/feed/trending");
     },
     cosmeticSelectors: [
       "#related",
@@ -5567,11 +5653,11 @@ var SOCIAL_PLATFORMS = {
     description: "Microblogging & social feed. Algorithmic 'For You' timeline and trending sidebar.",
     defaultTier: "BLOCK",
     limitDescription: "Allow direct messages, status links, and search, but block the infinite 'For You' feed.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/messages") || path7.startsWith("/search") || path7.startsWith("/i/api") || path7.includes("/status/");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/messages") || path8.startsWith("/search") || path8.startsWith("/i/api") || path8.includes("/status/");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/" || path7 === "/home" || path7.startsWith("/explore");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/" || path8 === "/home" || path8.startsWith("/explore");
     },
     cosmeticSelectors: [
       "[aria-label='Timeline: Your Home Timeline']",
@@ -5590,11 +5676,11 @@ var SOCIAL_PLATFORMS = {
     description: "Visual social media. High dopamine loops via Reels and Explore grid.",
     defaultTier: "BLOCK",
     limitDescription: "Allow direct messages and profile links, while blocking Reels, Explore, and feed.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/direct") || path7.startsWith("/accounts") || path7.startsWith("/api");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/direct") || path8.startsWith("/accounts") || path8.startsWith("/api");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/" || path7.startsWith("/reels") || path7.startsWith("/explore");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/" || path8.startsWith("/reels") || path8.startsWith("/explore");
     },
     cosmeticSelectors: [
       "a[href='/reels/']",
@@ -5613,11 +5699,11 @@ var SOCIAL_PLATFORMS = {
     description: "Ultra-fast short-form video feed with algorithmic addiction loops.",
     defaultTier: "BLOCK",
     limitDescription: "Block infinite FYP video stream and live feeds completely.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/messages") || path7.startsWith("/api");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/messages") || path8.startsWith("/api");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/" || path7.startsWith("/foryou") || path7.startsWith("/live");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/" || path8.startsWith("/foryou") || path8.startsWith("/live");
     },
     cosmeticSelectors: [
       "[data-e2e='recommend-list-item-container']",
@@ -5634,11 +5720,11 @@ var SOCIAL_PLATFORMS = {
     description: "Discussion platform. High distraction from r/all, r/popular, and endless scroll.",
     defaultTier: "LIMIT",
     limitDescription: "Allow direct search results and specific informative subreddits, while blocking popular feeds.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/search") || path7.startsWith("/message") || path7.startsWith("/r/") && !path7.startsWith("/r/all") && !path7.startsWith("/r/popular");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/search") || path8.startsWith("/message") || path8.startsWith("/r/") && !path8.startsWith("/r/all") && !path8.startsWith("/r/popular");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/" || path7.startsWith("/r/all") || path7.startsWith("/r/popular");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/" || path8.startsWith("/r/all") || path8.startsWith("/r/popular");
     },
     cosmeticSelectors: [
       "shreddit-feed[tab-name='popular']",
@@ -5657,11 +5743,11 @@ var SOCIAL_PLATFORMS = {
     description: "Professional network. Distracting newsfeed, engagement posts, and promotional noise.",
     defaultTier: "HIDE_DISTRACTIONS",
     limitDescription: "Allow messaging and job applications while hiding the social media newsfeed.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/messaging") || path7.startsWith("/jobs") || path7.startsWith("/mynetwork") || path7.startsWith("/in/");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/messaging") || path8.startsWith("/jobs") || path8.startsWith("/mynetwork") || path8.startsWith("/in/");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/feed" || path7.startsWith("/feed/");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/feed" || path8.startsWith("/feed/");
     },
     cosmeticSelectors: [
       "main.scaffold-layout__main",
@@ -5679,11 +5765,11 @@ var SOCIAL_PLATFORMS = {
     description: "Social network with algorithmic feed, stories, and watch reels.",
     defaultTier: "BLOCK",
     limitDescription: "Allow Messenger and direct groups, while blocking the newsfeed.",
-    isAllowedUnderLimit: (path7) => {
-      return path7.startsWith("/messages") || path7.startsWith("/groups") || path7.startsWith("/events");
+    isAllowedUnderLimit: (path8) => {
+      return path8.startsWith("/messages") || path8.startsWith("/groups") || path8.startsWith("/events");
     },
-    isBlockedUnderLimit: (path7) => {
-      return path7 === "/" || path7.startsWith("/watch") || path7.startsWith("/reel");
+    isBlockedUnderLimit: (path8) => {
+      return path8 === "/" || path8.startsWith("/watch") || path8.startsWith("/reel");
     },
     cosmeticSelectors: [
       "[role='feed']",
@@ -5918,9 +6004,9 @@ var CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
     try {
       const href = window.location.href || "";
       const path = window.location.pathname || "";
-      const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
-                    href.match(/\\/detail\\/([a-z]{32})/i) ||
-                    href.match(/\\b([a-z]{32})\\b/i);
+      const match = path.match(new RegExp('/detail/(?:([^/]+)/)?([a-z]{32})', 'i')) ||
+                    href.match(new RegExp('/detail/([a-z]{32})', 'i')) ||
+                    href.match(new RegExp('\\b([a-z]{32})\\b', 'i'));
       const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
       const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
       
@@ -6167,9 +6253,9 @@ function getPrimaryLocalIp() {
     for (const name of Object.keys(interfaces)) {
       const netList = interfaces[name];
       if (!netList) continue;
-      for (const net4 of netList) {
-        if (net4.family === "IPv4" && !net4.internal) {
-          return net4.address;
+      for (const net5 of netList) {
+        if (net5.family === "IPv4" && !net5.internal) {
+          return net5.address;
         }
       }
     }
@@ -8684,9 +8770,26 @@ function injectContentScriptsIntoWebContents(contents, stage = "dom-ready") {
     };
   }
   try {
-    ${code}
+    if (typeof window.trustedTypes !== "undefined" && window.trustedTypes && window.trustedTypes.defaultPolicy) {
+      var _tt = window.trustedTypes;
+      var _orig = _tt.createPolicy ? _tt.createPolicy.bind(_tt) : null;
+      if (_orig) {
+        _tt.createPolicy = function(n, r) {
+          try { return _orig(n, r); } catch(err) {
+            if (n === "default" && _tt.defaultPolicy) return _tt.defaultPolicy;
+            throw err;
+          };
+        };
+      }
+    }
+  } catch(e) {}
+  try {
+` + code + `
   } catch(e) {
-    console.warn("[Forge Ext Fallback] Error in content script for ${info.id}:", e);
+    if (e && e.message && e.message.indexOf("Policy with name") !== -1 && e.message.indexOf("already exists") !== -1) {
+      return;
+    }
+    console.warn("[Forge Ext Fallback] Error in content script for " + ${JSON.stringify(info.id)} + ":", e);
   }
 })();`;
             contents.executeJavaScript(wrapped).catch(() => {
@@ -9216,18 +9319,1038 @@ function registerTorIPC() {
   });
 }
 
+// electron/pwa/PwaIPC.ts
+import { ipcMain as ipcMain15, webContents as webContents6 } from "electron";
+
+// electron/pwa/PwaNavigationObserver.ts
+import { BrowserWindow as BrowserWindow10 } from "electron";
+
+// ../../packages/pwa-core/src/manifest/ManifestParser.ts
+var ManifestParser = class {
+  static parse(rawJson, baseUrl, manifestUrl) {
+    let data;
+    if (typeof rawJson === "string") {
+      try {
+        data = JSON.parse(rawJson);
+      } catch {
+        throw new Error("Invalid manifest JSON");
+      }
+    } else if (rawJson && typeof rawJson === "object") {
+      data = rawJson;
+    } else {
+      throw new Error("Manifest payload is empty or invalid");
+    }
+    const resolveUrl = (rel, base) => {
+      try {
+        return new URL(rel, base).href;
+      } catch {
+        return rel;
+      }
+    };
+    const docOrigin = new URL(baseUrl).origin;
+    const manifestBase = manifestUrl || baseUrl;
+    const name = String(data.name || data.short_name || "").trim();
+    const shortName = data.short_name ? String(data.short_name).trim() : void 0;
+    const description = data.description ? String(data.description).trim() : void 0;
+    const rawStartUrl = data.start_url || "/";
+    const startUrl = resolveUrl(rawStartUrl, manifestBase);
+    let scope;
+    if (data.scope) {
+      scope = resolveUrl(data.scope, manifestBase);
+    } else {
+      try {
+        const startParsed = new URL(startUrl);
+        const lastSlash = startParsed.pathname.lastIndexOf("/");
+        const dirPath = lastSlash >= 0 ? startParsed.pathname.slice(0, lastSlash + 1) : "/";
+        scope = `${startParsed.origin}${dirPath}`;
+      } catch {
+        scope = docOrigin;
+      }
+    }
+    let display = "standalone";
+    const rawDisplay = String(data.display || "").toLowerCase();
+    if (rawDisplay === "fullscreen" || rawDisplay === "standalone" || rawDisplay === "minimal-ui" || rawDisplay === "browser") {
+      display = rawDisplay;
+    }
+    const icons = [];
+    if (Array.isArray(data.icons)) {
+      for (const item of data.icons) {
+        if (!item || !item.src) continue;
+        const src = resolveUrl(item.src, manifestBase);
+        const sizes = item.sizes ? String(item.sizes) : void 0;
+        const type = item.type ? String(item.type) : void 0;
+        const purpose = item.purpose ? String(item.purpose) : void 0;
+        let width;
+        let height;
+        if (sizes) {
+          const match = sizes.match(/(\d+)\s*x\s*(\d+)/i);
+          if (match) {
+            width = parseInt(match[1], 10);
+            height = parseInt(match[2], 10);
+          }
+        }
+        icons.push({
+          src,
+          sizes,
+          type,
+          purpose,
+          width,
+          height
+        });
+      }
+    }
+    return {
+      name,
+      shortName,
+      description,
+      startUrl,
+      scope,
+      display,
+      themeColor: data.theme_color ? String(data.theme_color) : void 0,
+      backgroundColor: data.background_color ? String(data.background_color) : void 0,
+      icons,
+      rawManifestUrl: manifestUrl
+    };
+  }
+};
+
+// ../../packages/pwa-core/src/manifest/ManifestValidator.ts
+var ManifestValidator = class {
+  static validate(manifest) {
+    const issues = [];
+    if (!manifest.name && !manifest.shortName) {
+      issues.push("Manifest must declare a valid 'name' or 'short_name'");
+    }
+    if (!manifest.startUrl) {
+      issues.push("Manifest missing 'start_url'");
+    } else {
+      try {
+        const parsed = new URL(manifest.startUrl);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          issues.push(`'start_url' has invalid protocol "${parsed.protocol}"`);
+        }
+      } catch {
+        issues.push("'start_url' is not a valid absolute URL");
+      }
+    }
+    if (!manifest.icons || manifest.icons.length === 0) {
+      issues.push("Manifest must specify at least one icon");
+    } else {
+      const hasValidIcon = manifest.icons.some((icon) => {
+        try {
+          new URL(icon.src);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!hasValidIcon) {
+        issues.push("None of the declared manifest icons have a valid URL");
+      }
+    }
+    return {
+      isValid: issues.length === 0,
+      issues
+    };
+  }
+};
+
+// ../../packages/pwa-core/src/eligibility/TechnicalCriteria.ts
+var TechnicalCriteria = class _TechnicalCriteria {
+  static selectBestIcon(icons) {
+    if (!icons || icons.length === 0) return void 0;
+    const sorted = [...icons].sort((a, b) => {
+      const aSize = a.width || 0;
+      const bSize = b.width || 0;
+      const aIdeal = aSize >= 192 && aSize <= 512 ? 1e3 + aSize : aSize;
+      const bIdeal = bSize >= 192 && bSize <= 512 ? 1e3 + bSize : bSize;
+      return bIdeal - aIdeal;
+    });
+    return sorted[0];
+  }
+  static evaluate(manifest, options = {}) {
+    const issues = [];
+    const val = ManifestValidator.validate(manifest);
+    if (!val.isValid) {
+      issues.push(...val.issues);
+    }
+    if (manifest.display === "browser") {
+      issues.push("Display mode 'browser' does not qualify for standalone installation");
+    }
+    const bestIcon = _TechnicalCriteria.selectBestIcon(manifest.icons);
+    if (!bestIcon) {
+      issues.push("No valid icons found in web application manifest");
+    } else {
+      if (bestIcon.width && bestIcon.width < 144) {
+        issues.push(`Largest icon resolution (${bestIcon.width}px) is below minimum recommended 144x144`);
+      }
+    }
+    if (options.hasServiceWorker === false) {
+    }
+    const installable = issues.length === 0;
+    return {
+      installable,
+      bestIcon,
+      issues
+    };
+  }
+};
+
+// ../../packages/web-security/src/LocalDevPolicy.ts
+var DEFAULT_LOCAL_HOSTNAMES = /* @__PURE__ */ new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+  "0.0.0.0"
+]);
+var LocalDevPolicy = class {
+  config;
+  constructor(config = {}) {
+    this.config = {
+      allowHttpOnLocalhost: config.allowHttpOnLocalhost ?? true,
+      allowSelfSignedCertsOnLocalhost: config.allowSelfSignedCertsOnLocalhost ?? true,
+      customLocalHostnames: config.customLocalHostnames ?? []
+    };
+  }
+  isLocalHost(hostname) {
+    const cleanHost = hostname.replace(/^\[|\]$/g, "").toLowerCase().trim();
+    if (DEFAULT_LOCAL_HOSTNAMES.has(cleanHost)) return true;
+    if (this.config.customLocalHostnames.includes(cleanHost)) return true;
+    if (cleanHost.endsWith(".localhost") || cleanHost.endsWith(".test") || cleanHost.endsWith(".local")) {
+      return true;
+    }
+    if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanHost)) {
+      return true;
+    }
+    return false;
+  }
+  isLocalUrl(urlString) {
+    try {
+      const url = new URL(urlString);
+      return this.isLocalHost(url.hostname);
+    } catch {
+      return false;
+    }
+  }
+  isHttpAllowedForUrl(urlString) {
+    if (!this.config.allowHttpOnLocalhost) return false;
+    return this.isLocalUrl(urlString);
+  }
+  isSelfSignedCertAllowed(urlString) {
+    if (!this.config.allowSelfSignedCertsOnLocalhost) return false;
+    return this.isLocalUrl(urlString);
+  }
+};
+var defaultLocalDevPolicy = new LocalDevPolicy();
+
+// ../../packages/web-security/src/HttpsValidator.ts
+var HttpsValidator = class {
+  static validate(urlString, localPolicy = defaultLocalDevPolicy) {
+    const issues = [];
+    let parsed;
+    try {
+      parsed = new URL(urlString);
+    } catch {
+      return {
+        isSecure: false,
+        isLocal: false,
+        protocol: "",
+        origin: "",
+        hostname: "",
+        port: "",
+        issues: ["Invalid or unparseable URL string"]
+      };
+    }
+    const protocol = parsed.protocol.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+    const isLocal = localPolicy.isLocalHost(hostname);
+    if (protocol === "https:") {
+    } else if (protocol === "http:") {
+      if (isLocal) {
+        if (!localPolicy.isHttpAllowedForUrl(urlString)) {
+          issues.push("HTTP protocol is restricted for local development under current policy");
+        }
+      } else {
+        issues.push("Public unencrypted HTTP is not permitted for PWA installation");
+      }
+    } else {
+      issues.push(`Insecure or unsupported protocol: "${protocol}". PWAs require HTTPS`);
+    }
+    const isSecure = issues.length === 0;
+    return {
+      isSecure,
+      isLocal,
+      protocol,
+      origin: parsed.origin,
+      hostname,
+      port: parsed.port,
+      issues
+    };
+  }
+};
+
+// ../../packages/web-security/src/CertificateValidator.ts
+var CertificateValidator = class {
+  static validate(cert, urlString, localPolicy = defaultLocalDevPolicy) {
+    const reasons = [];
+    const isLocal = localPolicy.isLocalUrl(urlString);
+    if (!cert) {
+      if (isLocal && localPolicy.isHttpAllowedForUrl(urlString) && urlString.startsWith("http://")) {
+        return {
+          isValid: true,
+          reasons: ["Local HTTP development allowed without certificate"]
+        };
+      }
+      return {
+        isValid: false,
+        reasons: ["No TLS certificate data available for secure origin"]
+      };
+    }
+    if (cert.error) {
+      if (isLocal && localPolicy.isSelfSignedCertAllowed(urlString) && cert.isSelfSigned) {
+      } else {
+        reasons.push(`TLS certificate verification error: ${cert.error}`);
+      }
+    }
+    const now = Date.now();
+    if (cert.validFrom && now < cert.validFrom) {
+      reasons.push("TLS certificate is not yet valid (premature start date)");
+    }
+    if (cert.validTo && now > cert.validTo) {
+      reasons.push("TLS certificate has expired");
+    }
+    if (cert.isSelfSigned && !isLocal) {
+      reasons.push("Self-signed certificates are prohibited for public PWA origins");
+    }
+    const isValid = reasons.length === 0;
+    return {
+      isValid,
+      issuer: cert.issuer,
+      subject: cert.subject,
+      validFrom: cert.validFrom,
+      validTo: cert.validTo,
+      error: cert.error,
+      isSelfSigned: cert.isSelfSigned,
+      reasons
+    };
+  }
+};
+
+// ../../packages/web-security/src/RedirectAnalyzer.ts
+var RedirectAnalyzer = class {
+  static analyze(hops, finalUrl, localPolicy = defaultLocalDevPolicy) {
+    const issues = [];
+    let downgradedToHttp = false;
+    let crossOriginRedirect = false;
+    if (!hops || hops.length === 0) {
+      return {
+        isSafe: true,
+        initialUrl: finalUrl,
+        finalUrl,
+        hops: [],
+        downgradedToHttp: false,
+        crossOriginRedirect: false,
+        issues: []
+      };
+    }
+    const initialHop = hops[0];
+    const initialUrl = initialHop.url;
+    if (hops.length > 5) {
+      issues.push(`Suspiciously long redirect chain (${hops.length} hops)`);
+    }
+    let hadHttps = initialHop.protocol === "https:";
+    for (let i = 0; i < hops.length; i++) {
+      const hop = hops[i];
+      if (hop.protocol === "https:") {
+        hadHttps = true;
+      } else if (hop.protocol === "http:" && hadHttps) {
+        const isLocal = localPolicy.isLocalUrl(hop.url);
+        if (!isLocal) {
+          downgradedToHttp = true;
+          issues.push(`Security downgrade detected: redirected from HTTPS to insecure HTTP at "${hop.url}"`);
+        }
+      }
+      if (i > 0 && hops[i - 1].origin !== hop.origin) {
+        crossOriginRedirect = true;
+      }
+    }
+    try {
+      const finalParsed = new URL(finalUrl);
+      if (hadHttps && finalParsed.protocol === "http:" && !localPolicy.isLocalUrl(finalUrl)) {
+        downgradedToHttp = true;
+        issues.push(`Final navigation destination ended on insecure HTTP: "${finalUrl}"`);
+      }
+    } catch {
+      issues.push("Invalid final destination URL");
+    }
+    const isSafe = issues.length === 0 && !downgradedToHttp;
+    return {
+      isSafe,
+      initialUrl,
+      finalUrl,
+      hops,
+      downgradedToHttp,
+      crossOriginRedirect,
+      issues
+    };
+  }
+};
+
+// ../../packages/web-security/src/OriginValidator.ts
+var OriginValidator = class _OriginValidator {
+  static validate(urlString, localPolicy = defaultLocalDevPolicy) {
+    const issues = [];
+    let parsed;
+    try {
+      parsed = new URL(urlString);
+    } catch {
+      return {
+        isValid: false,
+        origin: "",
+        isOpaque: true,
+        isLocal: false,
+        matchesScope: () => false,
+        issues: ["Invalid URL string"]
+      };
+    }
+    const origin = parsed.origin;
+    const isOpaque = origin === "null" || !origin;
+    if (isOpaque) {
+      issues.push("Opaque or null origin is prohibited");
+    }
+    const isLocal = localPolicy.isLocalUrl(urlString);
+    return {
+      isValid: issues.length === 0,
+      origin,
+      isOpaque,
+      isLocal,
+      matchesScope: (targetUrl, scopeUrl) => _OriginValidator.isWithinScope(targetUrl, scopeUrl),
+      issues
+    };
+  }
+  static isSameOrigin(urlA, urlB) {
+    try {
+      const a = new URL(urlA);
+      const b = new URL(urlB);
+      return a.origin === b.origin;
+    } catch {
+      return false;
+    }
+  }
+  static isWithinScope(targetUrl, scopeUrl) {
+    try {
+      const target = new URL(targetUrl);
+      const scope = new URL(scopeUrl);
+      if (target.origin !== scope.origin) {
+        return false;
+      }
+      const scopePath = scope.pathname.endsWith("/") ? scope.pathname : `${scope.pathname}/`;
+      const targetPath = target.pathname.endsWith("/") ? target.pathname : `${target.pathname}/`;
+      if (scope.pathname === "/" || scope.pathname === "") {
+        return true;
+      }
+      return targetPath.startsWith(scopePath);
+    } catch {
+      return false;
+    }
+  }
+};
+
+// ../../packages/pwa-core/src/policy/InstallationPolicy.ts
+var InstallationPolicy = class {
+  static validatePolicy(documentUrl, manifest) {
+    const issues = [];
+    const docOriginAnalysis = OriginValidator.validate(documentUrl);
+    if (!docOriginAnalysis.isValid) {
+      issues.push(`Document URL origin is invalid: ${docOriginAnalysis.issues.join(", ")}`);
+    }
+    if (!OriginValidator.isSameOrigin(documentUrl, manifest.startUrl)) {
+      issues.push(
+        `Manifest start_url origin "${new URL(manifest.startUrl).origin}" does not match document origin "${docOriginAnalysis.origin}"`
+      );
+    }
+    if (!OriginValidator.isSameOrigin(manifest.startUrl, manifest.scope)) {
+      issues.push("Manifest scope must be on the same origin as start_url");
+    }
+    if (!OriginValidator.isWithinScope(manifest.startUrl, manifest.scope)) {
+      issues.push(`Manifest start_url "${manifest.startUrl}" is outside declared scope "${manifest.scope}"`);
+    }
+    const passed = issues.length === 0;
+    return {
+      passed,
+      issues
+    };
+  }
+};
+
+// electron/pwa/PwaSecurityGate.ts
+var PwaSecurityGate = class {
+  static evaluate(input) {
+    const {
+      tabId,
+      navigationId,
+      url,
+      cert,
+      redirectHops = [],
+      manifest,
+      hasServiceWorker
+    } = input;
+    const reasons = [];
+    const httpsAnalysis = HttpsValidator.validate(url, defaultLocalDevPolicy);
+    const secureConnection = httpsAnalysis.isSecure;
+    if (!secureConnection) {
+      reasons.push(...httpsAnalysis.issues);
+    }
+    const certAnalysis = CertificateValidator.validate(cert, url, defaultLocalDevPolicy);
+    const validCertificate = certAnalysis.isValid;
+    if (!validCertificate) {
+      reasons.push(...certAnalysis.reasons);
+    }
+    const redirectAnalysis = RedirectAnalyzer.analyze(redirectHops, url, defaultLocalDevPolicy);
+    const safeRedirectChain = redirectAnalysis.isSafe;
+    if (!safeRedirectChain) {
+      reasons.push(...redirectAnalysis.issues);
+    }
+    const connectionPassed = secureConnection && validCertificate && safeRedirectChain;
+    if (!connectionPassed) {
+      return {
+        tabId,
+        navigationId,
+        status: "blocked",
+        eligible: false,
+        url,
+        checks: {
+          secureConnection,
+          validCertificate,
+          safeRedirectChain,
+          validManifest: false,
+          installable: false,
+          riskPolicyPassed: false
+        },
+        reasons
+      };
+    }
+    if (!manifest) {
+      return {
+        tabId,
+        navigationId,
+        status: "hidden",
+        eligible: false,
+        url,
+        checks: {
+          secureConnection: true,
+          validCertificate: true,
+          safeRedirectChain: true,
+          validManifest: false,
+          installable: false,
+          riskPolicyPassed: true
+        },
+        reasons: ["No valid web app manifest linked on this page"]
+      };
+    }
+    const techCriteria = TechnicalCriteria.evaluate(manifest, { hasServiceWorker });
+    const installable = techCriteria.installable;
+    const validManifest = techCriteria.issues.length === 0;
+    if (!installable) {
+      reasons.push(...techCriteria.issues);
+    }
+    const policyResult = InstallationPolicy.validatePolicy(url, manifest);
+    const riskPolicyPassed = policyResult.passed;
+    if (!riskPolicyPassed) {
+      reasons.push(...policyResult.issues);
+    }
+    if (!riskPolicyPassed) {
+      return {
+        tabId,
+        navigationId,
+        status: "blocked",
+        eligible: false,
+        url,
+        manifest,
+        bestIconUrl: techCriteria.bestIcon?.src,
+        checks: {
+          secureConnection: true,
+          validCertificate: true,
+          safeRedirectChain: true,
+          validManifest,
+          installable,
+          riskPolicyPassed: false
+        },
+        reasons
+      };
+    }
+    if (!installable) {
+      return {
+        tabId,
+        navigationId,
+        status: "hidden",
+        eligible: false,
+        url,
+        manifest,
+        bestIconUrl: techCriteria.bestIcon?.src,
+        checks: {
+          secureConnection: true,
+          validCertificate: true,
+          safeRedirectChain: true,
+          validManifest,
+          installable: false,
+          riskPolicyPassed: true
+        },
+        reasons
+      };
+    }
+    return {
+      tabId,
+      navigationId,
+      status: "eligible",
+      eligible: true,
+      url,
+      manifest,
+      bestIconUrl: techCriteria.bestIcon?.src,
+      checks: {
+        secureConnection: true,
+        validCertificate: true,
+        safeRedirectChain: true,
+        validManifest: true,
+        installable: true,
+        riskPolicyPassed: true
+      },
+      reasons: ["All mandatory PWA security and technical checks passed"]
+    };
+  }
+};
+
+// electron/pwa/PwaNavigationObserver.ts
+var PwaNavigationObserver = class _PwaNavigationObserver {
+  static instance;
+  tabStates = /* @__PURE__ */ new Map();
+  webContentsToTabMap = /* @__PURE__ */ new Map();
+  static getInstance() {
+    if (!_PwaNavigationObserver.instance) {
+      _PwaNavigationObserver.instance = new _PwaNavigationObserver();
+    }
+    return _PwaNavigationObserver.instance;
+  }
+  registerTabWebContents(tabId, contents) {
+    this.webContentsToTabMap.set(contents.id, tabId);
+    contents.on("destroyed", () => {
+      this.webContentsToTabMap.delete(contents.id);
+      this.tabStates.delete(tabId);
+    });
+    contents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      this.handleNavigationStart(tabId, url);
+    });
+    contents.on("did-redirect-navigation", (_event, url, _isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      this.handleRedirectHop(tabId, url);
+    });
+    contents.on("did-finish-load", () => {
+      this.handleNavigationFinished(tabId, contents);
+    });
+  }
+  handleCertificateError(contentsId, url, error) {
+    const tabId = this.webContentsToTabMap.get(contentsId);
+    if (!tabId) return;
+    const state = this.getOrCreateState(tabId, url);
+    state.cert = { error };
+    const result = PwaSecurityGate.evaluate({
+      tabId,
+      navigationId: String(state.navigationId),
+      url: state.url,
+      cert: state.cert,
+      redirectHops: state.redirectHops,
+      manifest: null
+    });
+    state.lastResult = result;
+    this.broadcastResult(result);
+  }
+  getTabEligibility(tabId) {
+    return this.tabStates.get(tabId)?.lastResult;
+  }
+  handleNavigationStart(tabId, url) {
+    const state = this.getOrCreateState(tabId, url);
+    state.navigationId += 1;
+    state.url = url;
+    state.redirectHops = [];
+    state.cert = void 0;
+    state.manifest = null;
+    const navIdStr = String(state.navigationId);
+    const analyzingResult = {
+      tabId,
+      navigationId: navIdStr,
+      status: "analyzing",
+      eligible: false,
+      url,
+      checks: {
+        secureConnection: false,
+        validCertificate: false,
+        safeRedirectChain: false,
+        validManifest: false,
+        installable: false,
+        riskPolicyPassed: false
+      },
+      reasons: ["Analyzing page security and web application manifest..."]
+    };
+    state.lastResult = analyzingResult;
+    this.broadcastResult(analyzingResult);
+  }
+  handleRedirectHop(tabId, url) {
+    const state = this.tabStates.get(tabId);
+    if (!state) return;
+    try {
+      const parsed = new URL(url);
+      state.redirectHops.push({
+        url,
+        protocol: parsed.protocol,
+        origin: parsed.origin
+      });
+    } catch {
+    }
+  }
+  async handleNavigationFinished(tabId, contents) {
+    const state = this.tabStates.get(tabId);
+    if (!state || contents.isDestroyed()) return;
+    const currentNavId = state.navigationId;
+    const currentUrl = contents.getURL();
+    state.url = currentUrl;
+    try {
+      const manifestHref = await contents.executeJavaScript(`
+        (() => {
+          try {
+            const link = document.querySelector('link[rel="manifest"]');
+            return link ? link.href : null;
+          } catch {
+            return null;
+          }
+        })()
+      `, true);
+      if (state.navigationId !== currentNavId) return;
+      let parsedManifest = null;
+      if (manifestHref) {
+        const rawJson = await contents.executeJavaScript(`
+          (async () => {
+            try {
+              const res = await fetch(${JSON.stringify(manifestHref)}, { credentials: "omit" });
+              if (!res.ok) return null;
+              return await res.json();
+            } catch {
+              return null;
+            }
+          })()
+        `, true);
+        if (state.navigationId !== currentNavId) return;
+        if (rawJson) {
+          try {
+            parsedManifest = ManifestParser.parse(rawJson, currentUrl, manifestHref);
+          } catch (e) {
+            console.warn(`[PWA Observer] Manifest parse failed for ${manifestHref}:`, e?.message);
+          }
+        }
+      }
+      const result = PwaSecurityGate.evaluate({
+        tabId,
+        navigationId: String(currentNavId),
+        url: currentUrl,
+        cert: state.cert,
+        redirectHops: state.redirectHops,
+        manifest: parsedManifest
+      });
+      if (state.navigationId === currentNavId) {
+        state.lastResult = result;
+        this.broadcastResult(result);
+      }
+    } catch (err) {
+      if (state.navigationId === currentNavId) {
+        const errorResult = {
+          tabId,
+          navigationId: String(currentNavId),
+          status: "hidden",
+          eligible: false,
+          url: currentUrl,
+          checks: {
+            secureConnection: true,
+            validCertificate: true,
+            safeRedirectChain: true,
+            validManifest: false,
+            installable: false,
+            riskPolicyPassed: true
+          },
+          reasons: ["Evaluation error or non-PWA document"]
+        };
+        state.lastResult = errorResult;
+        this.broadcastResult(errorResult);
+      }
+    }
+  }
+  broadcastResult(result) {
+    const windows = BrowserWindow10.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("pwa:eligibility-updated", result);
+      }
+    }
+  }
+  getOrCreateState(tabId, url) {
+    let state = this.tabStates.get(tabId);
+    if (!state) {
+      state = {
+        tabId,
+        navigationId: 0,
+        url,
+        redirectHops: []
+      };
+      this.tabStates.set(tabId, state);
+    }
+    return state;
+  }
+};
+
+// electron/pwa/PwaInstallService.ts
+import { app as app9, BrowserWindow as BrowserWindow11, net as net4, shell } from "electron";
+import path6 from "node:path";
+import fs6 from "node:fs";
+import crypto from "node:crypto";
+var PwaInstallService = class _PwaInstallService {
+  static instance;
+  appsDir;
+  registryFile;
+  registry = /* @__PURE__ */ new Map();
+  constructor() {
+    this.appsDir = path6.join(app9.getPath("userData"), "pwa-apps");
+    this.registryFile = path6.join(this.appsDir, "registry.json");
+    this.ensureDirectory();
+    this.loadRegistry();
+  }
+  static getInstance() {
+    if (!_PwaInstallService.instance) {
+      _PwaInstallService.instance = new _PwaInstallService();
+    }
+    return _PwaInstallService.instance;
+  }
+  getInstalledApps() {
+    return Array.from(this.registry.values());
+  }
+  getInstalledApp(appId) {
+    return this.registry.get(appId);
+  }
+  async installPwa(tabId) {
+    const observer = PwaNavigationObserver.getInstance();
+    const eligibility = observer.getTabEligibility(tabId);
+    if (!eligibility || !eligibility.eligible || eligibility.status !== "eligible") {
+      return {
+        success: false,
+        error: "Installation rejected: PWA has not passed all mandatory security checks."
+      };
+    }
+    const manifest = eligibility.manifest;
+    if (!manifest) {
+      return {
+        success: false,
+        error: "Missing manifest payload during installation confirmation."
+      };
+    }
+    try {
+      const appId = this.generateAppId(manifest.scope || manifest.startUrl);
+      const appFolder = path6.join(this.appsDir, appId);
+      if (!fs6.existsSync(appFolder)) {
+        fs6.mkdirSync(appFolder, { recursive: true });
+      }
+      let localIconPath = path6.join(appFolder, "icon.png");
+      if (eligibility.bestIconUrl) {
+        try {
+          await this.downloadFile(eligibility.bestIconUrl, localIconPath);
+        } catch {
+          localIconPath = "";
+        }
+      }
+      const record = {
+        id: appId,
+        name: manifest.name || manifest.shortName || "PWA App",
+        shortName: manifest.shortName || manifest.name || "App",
+        startUrl: manifest.startUrl,
+        scope: manifest.scope,
+        display: manifest.display,
+        iconPath: localIconPath,
+        iconUrl: eligibility.bestIconUrl || "",
+        installedAt: Date.now()
+      };
+      this.registry.set(appId, record);
+      this.saveRegistry();
+      if (process.platform === "win32") {
+        this.createWindowsShortcuts(record);
+      }
+      return {
+        success: true,
+        appId
+      };
+    } catch (err) {
+      console.error("[PwaInstallService] Install error:", err);
+      return {
+        success: false,
+        error: err?.message || "Internal failure during PWA installation"
+      };
+    }
+  }
+  launchApp(appId) {
+    const record = this.registry.get(appId);
+    if (!record) return false;
+    record.lastLaunchedAt = Date.now();
+    this.saveRegistry();
+    const win = new BrowserWindow11({
+      width: 1200,
+      height: 800,
+      title: record.name,
+      icon: record.iconPath && fs6.existsSync(record.iconPath) ? record.iconPath : void 0,
+      autoHideMenuBar: true,
+      backgroundColor: "#0d0f17",
+      webPreferences: {
+        partition: `persist:pwa_${record.id}`,
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
+    win.loadURL(record.startUrl);
+    return true;
+  }
+  uninstallApp(appId) {
+    const record = this.registry.get(appId);
+    if (!record) return false;
+    if (process.platform === "win32") {
+      try {
+        const desktopLnk = path6.join(app9.getPath("desktop"), `${record.name}.lnk`);
+        if (fs6.existsSync(desktopLnk)) fs6.unlinkSync(desktopLnk);
+        const startMenuLnk = path6.join(
+          app9.getPath("appData"),
+          "Microsoft",
+          "Windows",
+          "Start Menu",
+          "Programs",
+          "Forge Apps",
+          `${record.name}.lnk`
+        );
+        if (fs6.existsSync(startMenuLnk)) fs6.unlinkSync(startMenuLnk);
+      } catch {
+      }
+    }
+    const appFolder = path6.join(this.appsDir, appId);
+    if (fs6.existsSync(appFolder)) {
+      try {
+        fs6.rmSync(appFolder, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    this.registry.delete(appId);
+    this.saveRegistry();
+    return true;
+  }
+  createWindowsShortcuts(record) {
+    const execPath = process.execPath;
+    const desktopPath = path6.join(app9.getPath("desktop"), `${record.name}.lnk`);
+    const startMenuFolder = path6.join(
+      app9.getPath("appData"),
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "Forge Apps"
+    );
+    if (!fs6.existsSync(startMenuFolder)) {
+      fs6.mkdirSync(startMenuFolder, { recursive: true });
+    }
+    const startMenuPath = path6.join(startMenuFolder, `${record.name}.lnk`);
+    const shortcutOptions = {
+      target: execPath,
+      args: `--pwa-app-id=${record.id}`,
+      description: `${record.name} - Progressive Web App in Forge`,
+      icon: record.iconPath && fs6.existsSync(record.iconPath) ? record.iconPath : execPath,
+      iconIndex: 0,
+      appUserModelId: `com.forge.pwa.${record.id}`
+    };
+    try {
+      shell.writeShortcutLink(desktopPath, "create", shortcutOptions);
+      shell.writeShortcutLink(startMenuPath, "create", shortcutOptions);
+    } catch (err) {
+      console.warn("[PwaInstallService] Could not write Windows shortcut:", err);
+    }
+  }
+  async downloadFile(url, destPath) {
+    const response = await net4.fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs6.writeFileSync(destPath, buffer);
+  }
+  generateAppId(scopeOrStartUrl) {
+    return crypto.createHash("sha256").update(scopeOrStartUrl).digest("hex").slice(0, 16);
+  }
+  ensureDirectory() {
+    if (!fs6.existsSync(this.appsDir)) {
+      fs6.mkdirSync(this.appsDir, { recursive: true });
+    }
+  }
+  loadRegistry() {
+    if (fs6.existsSync(this.registryFile)) {
+      try {
+        const raw = fs6.readFileSync(this.registryFile, "utf8");
+        const list = JSON.parse(raw);
+        for (const item of list) {
+          this.registry.set(item.id, item);
+        }
+      } catch {
+      }
+    }
+  }
+  saveRegistry() {
+    try {
+      const list = Array.from(this.registry.values());
+      fs6.writeFileSync(this.registryFile, JSON.stringify(list, null, 2), "utf8");
+    } catch {
+    }
+  }
+};
+
+// electron/pwa/PwaIPC.ts
+function registerPwaIPC() {
+  ipcMain15.on("pwa:register-tab", (_event, { tabId, contentsId }) => {
+    try {
+      const wc = webContents6.fromId(contentsId);
+      if (wc && !wc.isDestroyed()) {
+        PwaNavigationObserver.getInstance().registerTabWebContents(tabId, wc);
+      }
+    } catch (e) {
+      console.warn(`[PwaIPC] Failed to register tab ${tabId} with contentsId ${contentsId}:`, e);
+    }
+  });
+  ipcMain15.handle("pwa:get-eligibility", (_event, tabId) => {
+    return PwaNavigationObserver.getInstance().getTabEligibility(tabId);
+  });
+  ipcMain15.handle("pwa:request-install", async (_event, tabId) => {
+    return await PwaInstallService.getInstance().installPwa(tabId);
+  });
+  ipcMain15.handle("pwa:get-installed", () => {
+    return PwaInstallService.getInstance().getInstalledApps();
+  });
+  ipcMain15.handle("pwa:launch-installed", (_event, appId) => {
+    return PwaInstallService.getInstance().launchApp(appId);
+  });
+  ipcMain15.handle("pwa:uninstall", (_event, appId) => {
+    return PwaInstallService.getInstance().uninstallApp(appId);
+  });
+}
+
 // electron/main.ts
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 var __filename3 = fileURLToPath3(import.meta.url);
-var __dirname4 = path6.dirname(__filename3);
+var __dirname4 = path7.dirname(__filename3);
 if (process.platform === "win32") {
-  app9.setAppUserModelId("com.forge.browser");
+  app10.setAppUserModelId("com.forge.browser");
 }
-var gotTheLock = app9.requestSingleInstanceLock();
+var gotTheLock = app10.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app9.quit();
+  app10.quit();
 } else {
-  app9.on("second-instance", () => {
+  app10.on("second-instance", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -9235,15 +10358,15 @@ if (!gotTheLock) {
     }
   });
 }
-app9.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
-app9.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
-app9.commandLine.appendSwitch("disable-background-timer-throttling");
-app9.commandLine.appendSwitch("disable-renderer-backgrounding");
-app9.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
-app9.commandLine.appendSwitch("disable-gpu-process-crash-limit");
-app9.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
-app9.commandLine.appendSwitch("log-level", "3");
-app9.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
+app10.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app10.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,AutomaticTabDiscarding");
+app10.commandLine.appendSwitch("disable-background-timer-throttling");
+app10.commandLine.appendSwitch("disable-renderer-backgrounding");
+app10.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app10.commandLine.appendSwitch("disable-gpu-process-crash-limit");
+app10.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
+app10.commandLine.appendSwitch("log-level", "3");
+app10.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {
   event.preventDefault();
   callback(false);
 });
@@ -9256,15 +10379,15 @@ process.on("unhandledRejection", (reason) => {
   }
   console.error("[Electron Main] Unhandled Rejection (crash prevented):", reason);
 });
-app9.on("child-process-gone", (_event, details) => {
+app10.on("child-process-gone", (_event, details) => {
   console.warn("[Electron Main] Child process gone:", details.type, details.reason, details.exitCode);
 });
-app9.on("render-process-gone", (_event, webContents6, details) => {
+app10.on("render-process-gone", (_event, webContents7, details) => {
   console.warn("[Electron Main] Render process gone:", details.reason, details.exitCode);
   if (details.reason === "crashed" || details.reason === "killed" || details.reason === "oom") {
-    if (webContents6.getType() === "window" && !webContents6.isDestroyed()) {
+    if (webContents7.getType() === "window" && !webContents7.isDestroyed()) {
       try {
-        webContents6.reload();
+        webContents7.reload();
       } catch {
       }
     }
@@ -9319,7 +10442,7 @@ var MIME_EXT_MAP = {
   "audio/flac": ".flac"
 };
 function setupDownloadListeners(sess) {
-  sess.on("will-download", (_event, item, webContents6) => {
+  sess.on("will-download", (_event, item, webContents7) => {
     const itemUrl = item.getURL();
     let rawFilename = pendingDownloadFilenames.get(itemUrl) || item.getFilename() || "download";
     pendingDownloadFilenames.delete(itemUrl);
@@ -9327,7 +10450,7 @@ function setupDownloadListeners(sess) {
     if (!rawFilename || rawFilename === "." || rawFilename === "_") {
       rawFilename = "download";
     }
-    let ext = path6.extname(rawFilename).toLowerCase();
+    let ext = path7.extname(rawFilename).toLowerCase();
     if (!ext || ext === ".") {
       const mime = (item.getMimeType() || "").toLowerCase();
       let inferredExt = MIME_EXT_MAP[mime];
@@ -9341,15 +10464,15 @@ function setupDownloadListeners(sess) {
         rawFilename = `${rawFilename}${ext}`;
       }
     }
-    const downloadsDir = app9.getPath("downloads");
+    const downloadsDir = app10.getPath("downloads");
     try {
-      if (!fs6.existsSync(downloadsDir)) {
-        fs6.mkdirSync(downloadsDir, { recursive: true });
+      if (!fs7.existsSync(downloadsDir)) {
+        fs7.mkdirSync(downloadsDir, { recursive: true });
       }
     } catch {
     }
-    const actualExt = path6.extname(rawFilename);
-    const actualBase = path6.basename(rawFilename, actualExt);
+    const actualExt = path7.extname(rawFilename);
+    const actualBase = path7.basename(rawFilename, actualExt);
     let basePattern = actualBase;
     let counter = 1;
     const countMatch = actualBase.match(/^(.+)\s\((\d+)\)$/);
@@ -9358,10 +10481,10 @@ function setupDownloadListeners(sess) {
       counter = parseInt(countMatch[2], 10) + 1;
     }
     let finalFilename = rawFilename;
-    let finalPath = path6.join(downloadsDir, finalFilename);
-    while (fs6.existsSync(finalPath) || activeDownloadPaths.has(finalPath.toLowerCase())) {
+    let finalPath = path7.join(downloadsDir, finalFilename);
+    while (fs7.existsSync(finalPath) || activeDownloadPaths.has(finalPath.toLowerCase())) {
       finalFilename = `${basePattern} (${counter})${actualExt}`;
-      finalPath = path6.join(downloadsDir, finalFilename);
+      finalPath = path7.join(downloadsDir, finalFilename);
       counter++;
     }
     activeDownloadPaths.add(finalPath.toLowerCase());
@@ -9380,7 +10503,7 @@ function setupDownloadListeners(sess) {
       isPrivate
     };
     recentDownloads.unshift(record);
-    const win = BrowserWindow10.fromWebContents(webContents6) || mainWindow;
+    const win = BrowserWindow12.fromWebContents(webContents7) || mainWindow;
     win?.webContents.send("downloads:item-created", record);
     item.on("updated", (_e, state) => {
       record.receivedBytes = item.getReceivedBytes();
@@ -9465,7 +10588,7 @@ function registerShortcutInterception(contents) {
         return;
       }
       const host = contents.hostWebContents;
-      const targetWin = BrowserWindow10.fromWebContents(contents) || (host ? BrowserWindow10.fromWebContents(host) : null) || BrowserWindow10.getFocusedWindow() || mainWindow;
+      const targetWin = BrowserWindow12.fromWebContents(contents) || (host ? BrowserWindow12.fromWebContents(host) : null) || BrowserWindow12.getFocusedWindow() || mainWindow;
       if (targetWin && !targetWin.isDestroyed()) {
         targetWin.webContents.send("shortcut:trigger", action);
       }
@@ -9487,15 +10610,15 @@ powerMonitor.on("resume", () => {
 });
 function getAssetPath(filename) {
   const candidates = [
-    path6.join(__dirname4, "assets", filename),
-    path6.join(__dirname4, "../electron/assets", filename),
-    path6.join(process.cwd(), "apps/forge-app/electron/assets", filename),
-    path6.join(process.cwd(), "electron/assets", filename)
+    path7.join(__dirname4, "assets", filename),
+    path7.join(__dirname4, "../electron/assets", filename),
+    path7.join(process.cwd(), "apps/forge-app/electron/assets", filename),
+    path7.join(process.cwd(), "electron/assets", filename)
   ];
   for (const candidate of candidates) {
-    if (fs6.existsSync(candidate)) return candidate;
+    if (fs7.existsSync(candidate)) return candidate;
   }
-  return path6.join(__dirname4, "assets", filename);
+  return path7.join(__dirname4, "assets", filename);
 }
 function updateTaskbarMediaButtons(win, isPlaying) {
   if (process.platform !== "win32" || !win || win.isDestroyed()) return;
@@ -9540,10 +10663,10 @@ function updateTaskbarMediaButtons(win, isPlaying) {
   }
 }
 function createWindow(isIncognito = false) {
-  const icoPath = path6.join(__dirname4, "../public/icon.ico");
-  const pngPath = path6.join(__dirname4, "../public/logo.png");
-  const appIcon = fs6.existsSync(icoPath) ? icoPath : pngPath;
-  const win = new BrowserWindow10({
+  const icoPath = path7.join(__dirname4, "../public/icon.ico");
+  const pngPath = path7.join(__dirname4, "../public/logo.png");
+  const appIcon = fs7.existsSync(icoPath) ? icoPath : pngPath;
+  const win = new BrowserWindow12({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -9557,7 +10680,7 @@ function createWindow(isIncognito = false) {
     show: false,
     icon: appIcon,
     webPreferences: {
-      preload: path6.join(__dirname4, "preload.cjs"),
+      preload: path7.join(__dirname4, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -9593,8 +10716,8 @@ function createWindow(isIncognito = false) {
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
     webPreferences.contextIsolation = true;
-    const guestPreload = path6.join(__dirname4, "guestPreload.cjs");
-    if (fs6.existsSync(guestPreload)) {
+    const guestPreload = path7.join(__dirname4, "guestPreload.cjs");
+    if (fs7.existsSync(guestPreload)) {
       webPreferences.preload = guestPreload;
     }
   });
@@ -9631,7 +10754,7 @@ function createWindow(isIncognito = false) {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(`${process.env.VITE_DEV_SERVER_URL}${query}`);
   } else {
-    win.loadFile(path6.join(__dirname4, "../dist/index.html"), {
+    win.loadFile(path7.join(__dirname4, "../dist/index.html"), {
       query: isIncognito ? { incognito: "1" } : void 0
     });
   }
@@ -9639,20 +10762,20 @@ function createWindow(isIncognito = false) {
 }
 function getTargetBrowserWindow(event) {
   if (event) {
-    const fromSender = BrowserWindow10.fromWebContents(event.sender);
+    const fromSender = BrowserWindow12.fromWebContents(event.sender);
     if (fromSender && !fromSender.isDestroyed()) return fromSender;
   }
-  const focused = BrowserWindow10.getFocusedWindow();
+  const focused = BrowserWindow12.getFocusedWindow();
   if (focused && !focused.isDestroyed()) return focused;
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
   for (const win of allWindows) {
     if (win && !win.isDestroyed()) return win;
   }
-  const anyWin = BrowserWindow10.getAllWindows()[0];
+  const anyWin = BrowserWindow12.getAllWindows()[0];
   if (anyWin && !anyWin.isDestroyed()) return anyWin;
   return null;
 }
-ipcMain15.on("window:minimize", (event) => {
+ipcMain16.on("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -9661,7 +10784,7 @@ ipcMain15.on("window:minimize", (event) => {
     win.minimize();
   }
 });
-ipcMain15.handle("window:minimize", (event) => {
+ipcMain16.handle("window:minimize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isFullScreen()) {
@@ -9672,7 +10795,7 @@ ipcMain15.handle("window:minimize", (event) => {
   }
   return false;
 });
-ipcMain15.on("window:maximize", (event) => {
+ipcMain16.on("window:maximize", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     if (win.isMaximized()) {
@@ -9682,31 +10805,31 @@ ipcMain15.on("window:maximize", (event) => {
     }
   }
 });
-ipcMain15.on("window:close", (event) => {
+ipcMain16.on("window:close", (event) => {
   const win = getTargetBrowserWindow(event);
   if (win && !win.isDestroyed()) {
     win.close();
   }
 });
-ipcMain15.handle("window:is-maximized", (event) => {
+ipcMain16.handle("window:is-maximized", (event) => {
   const win = getTargetBrowserWindow(event);
   return win?.isMaximized() ?? false;
 });
-ipcMain15.on("window:set-fullscreen", (event, flag) => {
-  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
+ipcMain16.on("window:set-fullscreen", (event, flag) => {
+  const win = BrowserWindow12.fromWebContents(event.sender) || BrowserWindow12.getFocusedWindow() || mainWindow;
   win?.setFullScreen(flag);
 });
-ipcMain15.handle("window:is-fullscreen", (event) => {
-  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
+ipcMain16.handle("window:is-fullscreen", (event) => {
+  const win = BrowserWindow12.fromWebContents(event.sender) || BrowserWindow12.getFocusedWindow() || mainWindow;
   return win?.isFullScreen() ?? false;
 });
-ipcMain15.on("theme:set", (_event, mode) => {
+ipcMain16.on("theme:set", (_event, mode) => {
   if (["system", "light", "dark"].includes(mode)) {
     nativeTheme2.themeSource = mode;
   }
 });
-ipcMain15.on("window:set-title", (_event, title) => {
-  const win = BrowserWindow10.getFocusedWindow() || mainWindow;
+ipcMain16.on("window:set-title", (_event, title) => {
+  const win = BrowserWindow12.getFocusedWindow() || mainWindow;
   if (win && !win.isDestroyed()) {
     const cleanTitle = title?.trim();
     win.setTitle(cleanTitle ? `${cleanTitle} \u2014 Forge Browser` : "Forge Browser");
@@ -9733,11 +10856,11 @@ function restoreAndFocusWindow(win) {
 }
 function applyPipWindowIcon() {
   if (process.platform !== "win32") return;
-  const scriptPath = path6.join(__dirname4, "setPipIcon.ps1");
-  const fallbackScript = path6.join(__dirname4, "../electron/setPipIcon.ps1");
-  const psPath = fs6.existsSync(scriptPath) ? scriptPath : fallbackScript;
-  const icoPath = path6.join(__dirname4, "../public/icon.ico");
-  if (!fs6.existsSync(psPath) || !fs6.existsSync(icoPath)) return;
+  const scriptPath = path7.join(__dirname4, "setPipIcon.ps1");
+  const fallbackScript = path7.join(__dirname4, "../electron/setPipIcon.ps1");
+  const psPath = fs7.existsSync(scriptPath) ? scriptPath : fallbackScript;
+  const icoPath = path7.join(__dirname4, "../public/icon.ico");
+  if (!fs7.existsSync(psPath) || !fs7.existsSync(icoPath)) return;
   let attempts = 0;
   const interval = setInterval(() => {
     attempts++;
@@ -9749,31 +10872,31 @@ function applyPipWindowIcon() {
     if (attempts >= 10) clearInterval(interval);
   }, 200);
 }
-app9.on("browser-window-created", (_event, win) => {
+app10.on("browser-window-created", (_event, win) => {
   try {
-    const icoPath = path6.join(__dirname4, "../public/icon.ico");
-    const pngPath = path6.join(__dirname4, "../public/logo.png");
-    const appIcon = fs6.existsSync(icoPath) ? icoPath : pngPath;
+    const icoPath = path7.join(__dirname4, "../public/icon.ico");
+    const pngPath = path7.join(__dirname4, "../public/logo.png");
+    const appIcon = fs7.existsSync(icoPath) ? icoPath : pngPath;
     win.setIcon(appIcon);
   } catch {
   }
 });
-ipcMain15.on("window:restore-and-focus", (event) => {
-  const win = BrowserWindow10.fromWebContents(event.sender) || BrowserWindow10.getFocusedWindow() || mainWindow;
+ipcMain16.on("window:restore-and-focus", (event) => {
+  const win = BrowserWindow12.fromWebContents(event.sender) || BrowserWindow12.getFocusedWindow() || mainWindow;
   restoreAndFocusWindow(win);
 });
 var pipActiveWebContents = /* @__PURE__ */ new Set();
 var recentlyExitedPipWebContents = /* @__PURE__ */ new Map();
 var webviewContentsMap = /* @__PURE__ */ new Map();
 var playingWebContents = /* @__PURE__ */ new Set();
-app9.on("web-contents-created", (_event, contents) => {
+app10.on("web-contents-created", (_event, contents) => {
   try {
     contents.setMaxListeners(50);
   } catch {
   }
   registerShortcutInterception(contents);
   contents.setWindowOpenHandler((details) => {
-    return handleWindowOpenRequest(contents, details, () => BrowserWindow10.getFocusedWindow() || mainWindow);
+    return handleWindowOpenRequest(contents, details, () => BrowserWindow12.getFocusedWindow() || mainWindow);
   });
   if (contents.getType() !== "webview") return;
   webviewContentsMap.set(contents.id, contents);
@@ -9784,7 +10907,7 @@ app9.on("web-contents-created", (_event, contents) => {
   attachExtensionHooksToWebContents(contents);
   contents.on("context-menu", (_e, params) => {
     try {
-      const win = BrowserWindow10.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow12.getFocusedWindow() || mainWindow;
       if (win && !win.isDestroyed()) {
         win.webContents.send("browser:context-menu", {
           x: params.x,
@@ -9895,12 +11018,12 @@ app9.on("web-contents-created", (_event, contents) => {
     recentlyExitedPipWebContents.delete(contents.id);
   });
 });
-ipcMain15.on("media:status-update", (_event, data) => {
+ipcMain16.on("media:status-update", (_event, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     updateTaskbarMediaButtons(mainWindow, Boolean(data?.isPlaying));
   }
 });
-ipcMain15.handle("forge:http:request", async (_event, options) => {
+ipcMain16.handle("forge:http:request", async (_event, options) => {
   try {
     const response = await request(options);
     return { ok: true, data: response };
@@ -9908,13 +11031,13 @@ ipcMain15.handle("forge:http:request", async (_event, options) => {
     return { ok: false, error: err.message || String(err) };
   }
 });
-ipcMain15.handle("terminal:get-cwd", () => {
+ipcMain16.handle("terminal:get-cwd", () => {
   return terminalCwd;
 });
-ipcMain15.handle("terminal:set-cwd", (_event, newCwd) => {
+ipcMain16.handle("terminal:set-cwd", (_event, newCwd) => {
   try {
-    const resolved = path6.resolve(terminalCwd, newCwd);
-    if (fs6.existsSync(resolved) && fs6.statSync(resolved).isDirectory()) {
+    const resolved = path7.resolve(terminalCwd, newCwd);
+    if (fs7.existsSync(resolved) && fs7.statSync(resolved).isDirectory()) {
       terminalCwd = resolved;
       return { ok: true, cwd: terminalCwd };
     }
@@ -9923,7 +11046,7 @@ ipcMain15.handle("terminal:set-cwd", (_event, newCwd) => {
     return { ok: false, error: err.message, cwd: terminalCwd };
   }
 });
-ipcMain15.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
+ipcMain16.handle("terminal:exec", async (_event, command, shellType = "powershell") => {
   const trimmed = command.trim();
   if (!trimmed) {
     return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
@@ -9938,8 +11061,8 @@ ipcMain15.handle("terminal:exec", async (_event, command, shellType = "powershel
     target = target.replace(/^\/d\s+/i, "");
     target = target.replace(/^["']|["']$/g, "");
     try {
-      const resolved = path6.resolve(terminalCwd, target);
-      if (fs6.existsSync(resolved) && fs6.statSync(resolved).isDirectory()) {
+      const resolved = path7.resolve(terminalCwd, target);
+      if (fs7.existsSync(resolved) && fs7.statSync(resolved).isDirectory()) {
         terminalCwd = resolved;
         return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
       } else {
@@ -9951,18 +11074,18 @@ ipcMain15.handle("terminal:exec", async (_event, command, shellType = "powershel
   }
   if (/^[a-zA-Z]:$/.test(trimmed)) {
     const drive = trimmed.toUpperCase() + "\\";
-    if (fs6.existsSync(drive)) {
+    if (fs7.existsSync(drive)) {
       terminalCwd = drive;
       return { stdout: "", stderr: "", cwd: terminalCwd, exitCode: 0 };
     } else {
       return { stdout: "", stderr: `Drive '${trimmed}' does not exist.`, cwd: terminalCwd, exitCode: 1 };
     }
   }
-  const shell2 = process.platform === "win32" ? shellType === "cmd" ? "cmd.exe" : "powershell.exe" : process.env.SHELL || "/bin/bash";
+  const shell3 = process.platform === "win32" ? shellType === "cmd" ? "cmd.exe" : "powershell.exe" : process.env.SHELL || "/bin/bash";
   return new Promise((resolve) => {
     exec2(trimmed, {
       cwd: terminalCwd,
-      shell: shell2,
+      shell: shell3,
       maxBuffer: 15 * 1024 * 1024,
       env: { ...process.env }
     }, (error, stdout, stderr) => {
@@ -9975,12 +11098,12 @@ ipcMain15.handle("terminal:exec", async (_event, command, shellType = "powershel
     });
   });
 });
-ipcMain15.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
+ipcMain16.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
   try {
     if (contentsId && webviewContentsMap.has(contentsId)) {
       webviewContentsMap.get(contentsId).inspectElement(x, y);
     } else {
-      const win = BrowserWindow10.getFocusedWindow() || mainWindow;
+      const win = BrowserWindow12.getFocusedWindow() || mainWindow;
       win?.webContents.inspectElement(x, y);
     }
     return { ok: true };
@@ -9988,15 +11111,15 @@ ipcMain15.handle("browser:inspect-element", (_event, { contentsId, x, y }) => {
     return { ok: false, error: err.message };
   }
 });
-ipcMain15.on("window:open-private", () => {
+ipcMain16.on("window:open-private", () => {
   createWindow(true);
 });
-ipcMain15.handle("downloads:start", (event, { url, filename }) => {
+ipcMain16.handle("downloads:start", (event, { url, filename }) => {
   try {
     if (filename && typeof filename === "string" && filename.trim()) {
       pendingDownloadFilenames.set(url, filename.trim());
     }
-    const win = BrowserWindow10.fromWebContents(event.sender) || mainWindow;
+    const win = BrowserWindow12.fromWebContents(event.sender) || mainWindow;
     if (win && !win.isDestroyed()) {
       win.webContents.downloadURL(url);
       return { ok: true };
@@ -10008,37 +11131,37 @@ ipcMain15.handle("downloads:start", (event, { url, filename }) => {
     return { ok: false, error: err.message };
   }
 });
-ipcMain15.handle("downloads:get-recent", () => recentDownloads);
-ipcMain15.handle("downloads:clear-history", () => {
+ipcMain16.handle("downloads:get-recent", () => recentDownloads);
+ipcMain16.handle("downloads:clear-history", () => {
   recentDownloads.length = 0;
   return true;
 });
-ipcMain15.handle("downloads:open-folder", () => {
-  shell.openPath(app9.getPath("downloads"));
+ipcMain16.handle("downloads:open-folder", () => {
+  shell2.openPath(app10.getPath("downloads"));
   return true;
 });
-ipcMain15.handle("downloads:open-file", (_event, filePath) => {
-  if (filePath && fs6.existsSync(filePath)) {
-    shell.openPath(filePath);
+ipcMain16.handle("downloads:open-file", (_event, filePath) => {
+  if (filePath && fs7.existsSync(filePath)) {
+    shell2.openPath(filePath);
     return true;
   }
   return false;
 });
-ipcMain15.handle("downloads:show-in-folder", (_event, filePath) => {
-  if (filePath && fs6.existsSync(filePath)) {
-    shell.showItemInFolder(filePath);
+ipcMain16.handle("downloads:show-in-folder", (_event, filePath) => {
+  if (filePath && fs7.existsSync(filePath)) {
+    shell2.showItemInFolder(filePath);
     return true;
   }
-  shell.openPath(app9.getPath("downloads"));
+  shell2.openPath(app10.getPath("downloads"));
   return true;
 });
-var sessionBackupPath = path6.join(app9.getPath("userData"), "session-tabs.json");
-ipcMain15.handle("session:save-backup", (_event, data) => {
+var sessionBackupPath = path7.join(app10.getPath("userData"), "session-tabs.json");
+ipcMain16.handle("session:save-backup", (_event, data) => {
   try {
     if (data && Array.isArray(data.tabs)) {
-      const dir = path6.dirname(sessionBackupPath);
-      if (!fs6.existsSync(dir)) fs6.mkdirSync(dir, { recursive: true });
-      fs6.writeFileSync(sessionBackupPath, JSON.stringify(data, null, 2), "utf-8");
+      const dir = path7.dirname(sessionBackupPath);
+      if (!fs7.existsSync(dir)) fs7.mkdirSync(dir, { recursive: true });
+      fs7.writeFileSync(sessionBackupPath, JSON.stringify(data, null, 2), "utf-8");
       return true;
     }
   } catch (err) {
@@ -10046,10 +11169,10 @@ ipcMain15.handle("session:save-backup", (_event, data) => {
   }
   return false;
 });
-ipcMain15.handle("session:get-backup", () => {
+ipcMain16.handle("session:get-backup", () => {
   try {
-    if (fs6.existsSync(sessionBackupPath)) {
-      const raw = fs6.readFileSync(sessionBackupPath, "utf-8");
+    if (fs7.existsSync(sessionBackupPath)) {
+      const raw = fs7.readFileSync(sessionBackupPath, "utf-8");
       return JSON.parse(raw);
     }
   } catch (err) {
@@ -10057,11 +11180,11 @@ ipcMain15.handle("session:get-backup", () => {
   }
   return null;
 });
-ipcMain15.handle(
+ipcMain16.handle(
   "tabs:get-memory",
   (_event, items) => {
     try {
-      const metrics = app9.getAppMetrics();
+      const metrics = app10.getAppMetrics();
       const allWcs = webContents.getAllWebContents();
       const result = {};
       if (Array.isArray(items)) {
@@ -10117,7 +11240,7 @@ ipcMain15.handle(
     }
   }
 );
-ipcMain15.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
+ipcMain16.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
   try {
     const wc = webContents.fromId(contentsId);
     if (wc && !wc.isDestroyed() && typeof wc.setAudioMuted === "function") {
@@ -10128,7 +11251,7 @@ ipcMain15.handle("tabs:set-muted", (_event, { contentsId, isMuted }) => {
   }
   return false;
 });
-app9.whenReady().then(() => {
+app10.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   try {
     setupDownloadListeners(session13.defaultSession);
@@ -10163,7 +11286,7 @@ app9.whenReady().then(() => {
   initSessionManager();
   initCompatManager();
   initExtensionManager();
-  app9.on("session-created", (createdSession) => {
+  app10.on("session-created", (createdSession) => {
     try {
       const partName = createdSession._partition || createdSession.partition || "";
       if (partName) {
@@ -10176,14 +11299,15 @@ app9.whenReady().then(() => {
     setupDownloadListeners(privSes);
   });
   registerTorIPC();
+  registerPwaIPC();
   ElectronTorRuntime.getInstance().initialize().catch((err) => {
     console.warn("[Main] Error initializing Tor runtime:", err);
   });
   createWindow();
-  app9.on("activate", () => {
-    if (BrowserWindow10.getAllWindows().length === 0) createWindow();
+  app10.on("activate", () => {
+    if (BrowserWindow12.getAllWindows().length === 0) createWindow();
   });
 });
-app9.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app9.quit();
+app10.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app10.quit();
 });

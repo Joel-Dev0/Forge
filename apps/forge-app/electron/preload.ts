@@ -401,5 +401,25 @@ contextBridge.exposeInMainWorld("forge", {
     wakeServiceWorker: (extensionId: string) =>
       ipcRenderer.invoke("extensions:sw:wake", { extensionId }),
   },
+  pwa: {
+    registerTab: (tabId: string, contentsId: number) =>
+      ipcRenderer.send("pwa:register-tab", { tabId, contentsId }),
+    getEligibility: (tabId: string) =>
+      ipcRenderer.invoke("pwa:get-eligibility", tabId),
+    requestInstall: (tabId: string) =>
+      ipcRenderer.invoke("pwa:request-install", tabId),
+    getInstalled: () =>
+      ipcRenderer.invoke("pwa:get-installed"),
+    launchInstalled: (appId: string) =>
+      ipcRenderer.invoke("pwa:launch-installed", appId),
+    uninstall: (appId: string) =>
+      ipcRenderer.invoke("pwa:uninstall", appId),
+    onEligibilityUpdated: (callback: (result: any) => void) => {
+      const listener = (_event: any, result: any) => callback(result);
+      ipcRenderer.on("pwa:eligibility-updated", listener);
+      return () => ipcRenderer.removeListener("pwa:eligibility-updated", listener);
+    },
+  },
 });
+
 

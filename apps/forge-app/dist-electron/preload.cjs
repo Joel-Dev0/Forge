@@ -361,5 +361,18 @@ import_electron.contextBridge.exposeInMainWorld("forge", {
     // Phase 7: Service Worker Lifecycle
     getServiceWorkerStatuses: () => import_electron.ipcRenderer.invoke("extensions:sw:get-statuses"),
     wakeServiceWorker: (extensionId) => import_electron.ipcRenderer.invoke("extensions:sw:wake", { extensionId })
+  },
+  pwa: {
+    registerTab: (tabId, contentsId) => import_electron.ipcRenderer.send("pwa:register-tab", { tabId, contentsId }),
+    getEligibility: (tabId) => import_electron.ipcRenderer.invoke("pwa:get-eligibility", tabId),
+    requestInstall: (tabId) => import_electron.ipcRenderer.invoke("pwa:request-install", tabId),
+    getInstalled: () => import_electron.ipcRenderer.invoke("pwa:get-installed"),
+    launchInstalled: (appId) => import_electron.ipcRenderer.invoke("pwa:launch-installed", appId),
+    uninstall: (appId) => import_electron.ipcRenderer.invoke("pwa:uninstall", appId),
+    onEligibilityUpdated: (callback) => {
+      const listener = (_event, result) => callback(result);
+      import_electron.ipcRenderer.on("pwa:eligibility-updated", listener);
+      return () => import_electron.ipcRenderer.removeListener("pwa:eligibility-updated", listener);
+    }
   }
 });

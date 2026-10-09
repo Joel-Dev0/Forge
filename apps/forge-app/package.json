@@ -22,7 +22,9 @@
     "lucide-react": "^1.18.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "@forge/web-security": "workspace:*",
+    "@forge/pwa-core": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -190,9 +190,26 @@ function injectContentScriptsIntoWebContents(contents: Electron.WebContents, sta
     };
   }
   try {
-    ${code}
+    if (typeof window.trustedTypes !== "undefined" && window.trustedTypes && window.trustedTypes.defaultPolicy) {
+      var _tt = window.trustedTypes;
+      var _orig = _tt.createPolicy ? _tt.createPolicy.bind(_tt) : null;
+      if (_orig) {
+        _tt.createPolicy = function(n, r) {
+          try { return _orig(n, r); } catch(err) {
+            if (n === "default" && _tt.defaultPolicy) return _tt.defaultPolicy;
+            throw err;
+          };
+        };
+      }
+    }
+  } catch(e) {}
+  try {
+` + code + `
   } catch(e) {
-    console.warn("[Forge Ext Fallback] Error in content script for ${info.id}:", e);
+    if (e && e.message && e.message.indexOf("Policy with name") !== -1 && e.message.indexOf("already exists") !== -1) {
+      return;
+    }
+    console.warn("[Forge Ext Fallback] Error in content script for " + ${JSON.stringify(info.id)} + ":", e);
   }
 })();`;
             contents.executeJavaScript(wrapped).catch(() => {});

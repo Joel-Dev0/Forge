@@ -17,6 +17,8 @@ import { initPrivacyCleanerAdapter } from "./privacy/privacyCleanerAdapter.js";
 import { initSessionManager } from "./sessions/sessionManager.js";
 import { initCompatManager } from "./compat/compatManager.js";
 import { registerTorIPC } from "./tor/TorIPC.js";
+import { registerPwaIPC } from "./pwa/PwaIPC.js";
+import { PwaNavigationObserver } from "./pwa/PwaNavigationObserver.js";
 import { ElectronTorRuntime } from "./tor/TorRuntime.js";
 import { ElectronPrivateSessionManager } from "./privacy/privateSessionManager.js";
 import { initExtensionManager, attachExtensionHooksToWebContents, onNewSessionPartition } from "./extensions/extensionManager.js";
@@ -1173,6 +1175,7 @@ app.whenReady().then(() => {
     setupDownloadListeners(privSes);
   });
   registerTorIPC();
+  registerPwaIPC();
   ElectronTorRuntime.getInstance().initialize().catch((err) => {
     console.warn("[Main] Error initializing Tor runtime:", err);
   });
@@ -1186,3 +1189,4 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+

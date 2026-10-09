@@ -2,14 +2,29 @@
   // electron/guestPreload.ts
   (function() {
     try {
-      if (typeof window.trustedTypes !== "undefined" && typeof window.trustedTypes.createPolicy === "function") {
-        if (!window.trustedTypes.defaultPolicy) {
-          window.trustedTypes.createPolicy("default", {
-            createHTML: (s) => s,
-            createScript: (s) => s,
-            createScriptURL: (s) => s
-          });
+      const tt = window.trustedTypes;
+      if (typeof tt !== "undefined" && typeof tt.createPolicy === "function") {
+        if (!tt.defaultPolicy) {
+          try {
+            tt.createPolicy("default", {
+              createHTML: (s) => s,
+              createScript: (s) => s,
+              createScriptURL: (s) => s
+            });
+          } catch {
+          }
         }
+        const origCreatePolicy = tt.createPolicy.bind(tt);
+        tt.createPolicy = function(name, rules) {
+          try {
+            return origCreatePolicy(name, rules);
+          } catch (err) {
+            if (name === "default" && tt.defaultPolicy) {
+              return tt.defaultPolicy;
+            }
+            throw err;
+          }
+        };
       }
     } catch {
     }
@@ -17,10 +32,29 @@
     const isYouTube = currentUrl.includes("youtube.com") || currentUrl.includes("youtu.be");
     const hostname = (window.location.hostname || "").toLowerCase();
     const isSearchEngine = hostname.includes("google.") || hostname.includes("bing.com") || hostname.includes("duckduckgo.com") || hostname.includes("ecosia.org") || hostname.includes("brave.com") || hostname.includes("yahoo.com") || hostname.includes("yandex.") || hostname.includes("baidu.com") || hostname.includes("startpage.com");
+    const isSocialOrCleanApp = hostname.includes("instagram.com") || hostname.includes("x.com") || hostname.includes("twitter.com") || hostname.includes("facebook.com") || hostname.includes("threads.net") || hostname.includes("linkedin.com") || hostname.includes("github.com") || hostname.includes("reddit.com");
     const youtubeCode = `
     (function() {
       if (window.__forge_yt_blocker_active) return;
       window.__forge_yt_blocker_active = true;
+
+      // 0. Intercept JSON.parse to neutralize ad structures across all network/worker paths
+      try {
+        const origJSONParse = JSON.parse;
+        JSON.parse = function(...args) {
+          const result = origJSONParse.apply(this, args);
+          if (window.__forge_adblock_enabled !== false && result && typeof result === 'object') {
+            if (result.adPlacements || result.playerAds || result.adSlots || result.adBreakHeartbeatParams) {
+              result.adPlacements = [];
+              result.playerAds = [];
+              result.adSlots = [];
+              delete result.adBreakHeartbeatParams;
+              delete result.adSafetyReason;
+            }
+          }
+          return result;
+        };
+      } catch {}
 
       function isAdItem(item) {
         if (!item || typeof item !== 'object') return false;
@@ -38,6 +72,7 @@
                     c.statementBannerRenderer || c.primetimePromoRenderer || c.brandVideoSingletonRenderer)) {
             return true;
           }
+        }
         return false;
       }
 
@@ -90,14 +125,15 @@
           const response = await origFetch.apply(this, args);
           try {
             const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-            if (url && url.includes('/youtubei/v1/player')) {
+            if (url && (
+              url.includes('/youtubei/v1/player') ||
+              url.includes('/youtubei/v1/next') ||
+              url.includes('/youtubei/v1/browse')
+            )) {
               const clone = response.clone();
               const data = await clone.json();
               if (data && typeof data === 'object') {
-                if ('adPlacements' in data) data.adPlacements = [];
-                if ('adSlots' in data) data.adSlots = [];
-                if ('playerAds' in data) data.playerAds = [];
-                delete data.adBreakHeartbeatParams;
+                sanitizeAdObject(data);
                 return new Response(JSON.stringify(data), {
                   status: response.status,
                   statusText: response.statusText,
@@ -108,6 +144,39 @@
           } catch {}
           return response;
         };
+      } catch {}
+
+      // Intercept client-side XHR for /youtubei/v1/player, /youtubei/v1/next, /youtubei/v1/browse
+      try {
+        const origXHROpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+          this.__forge_url = typeof url === 'string' ? url : (url ? url.toString() : '');
+          return origXHROpen.apply(this, [method, url, ...rest]);
+        };
+
+        const origGetter = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText')?.get;
+        if (origGetter) {
+          Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
+            get: function() {
+              const text = origGetter.apply(this);
+              if (window.__forge_adblock_enabled !== false && this.__forge_url && (
+                this.__forge_url.includes('/youtubei/v1/player') ||
+                this.__forge_url.includes('/youtubei/v1/next') ||
+                this.__forge_url.includes('/youtubei/v1/browse')
+              )) {
+                try {
+                  const data = JSON.parse(text);
+                  if (data && typeof data === 'object') {
+                    sanitizeAdObject(data);
+                    return JSON.stringify(data);
+                  }
+                } catch {}
+              }
+              return text;
+            },
+            configurable: true
+          });
+        }
       } catch {}
 
       // 1. Intercept ytInitialPlayerResponse at document-start before player renders
@@ -211,7 +280,7 @@
         } catch {}
       }
 
-      // 7. Real-Time Video Ad Detection, Instant Muting & Skipper
+      // 5. Instant Video Ad Suppression & True Skip Engine (No 16x fast-forward)
       let wasAdShowing = false;
       let originalMute = false;
 
@@ -221,6 +290,7 @@
             wasAdShowing = false;
             const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
             if (v) {
+              v.style.opacity = '1';
               v.playbackRate = 1;
               v.muted = originalMute;
               v.volume = 1;
@@ -234,9 +304,12 @@
         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
         const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
 
-        const isAd = player && (
-          player.classList.contains('ad-showing') ||
-          player.classList.contains('ad-interrupting')
+        // Crucial: Only detect ad when player actively has in-stream ad state
+        const isAd = Boolean(
+          player && (
+            player.classList.contains('ad-showing') ||
+            player.classList.contains('ad-interrupting')
+          )
         );
 
         if (isAd && video) {
@@ -245,34 +318,39 @@
             originalMute = video.muted;
           }
 
-          // Speed up, mute and instantly jump to ad end
+          // Instant visual blackout and audio silence during ad playback
+          video.style.opacity = '0';
           video.muted = true;
           video.volume = 0;
-          if (video.duration && isFinite(video.duration) && video.duration > 0) {
-            video.currentTime = video.duration;
-          }
-          video.playbackRate = 16;
 
           // Call built-in player skip method if exposed
           try {
             if (typeof player.skipAd === 'function') player.skipAd();
           } catch {}
+          try {
+            if (typeof player.cancelPlayback === 'function') player.cancelPlayback();
+          } catch {}
         } else if (!isAd && wasAdShowing) {
           wasAdShowing = false;
           if (video) {
+            video.style.opacity = '1';
             video.playbackRate = 1;
             video.muted = originalMute;
             video.volume = 1;
+            if (video.paused) {
+              video.play().catch(() => {});
+            }
           }
         }
 
-        // Auto-click any skip button variants
+        // Auto-click any active skip button
         const skipSelectors = [
           '.ytp-ad-skip-button',
           '.ytp-ad-skip-button-modern',
           '.ytp-skip-ad-button',
           '.ytp-ad-skip-button-slot button',
           'button.ytp-ad-skip-button',
+          '.ytp-ad-skip-button-container button',
           '.ytp-ad-overlay-close-button',
           '.ytp-ad-overlay-close-container',
           'button[id^="skip-button"]'
@@ -306,7 +384,7 @@
       // Fast check intervals
       setInterval(checkAndSkipAds, 100);
 
-      // Microsecond video hardware event interception
+      // Video hardware event interception
       const hookVideoEvents = () => {
         const videos = document.querySelectorAll('video');
         for (const v of videos) {
@@ -553,12 +631,11 @@
         const text = (el.innerText || el.textContent || '').trim();
         if (text.length > 20) return false;
 
-        // Check if inside a player or covering a video or iframe
+        // Elements inside the player are player controls, posters, scrubber, or UI wrappers!
+        // NEVER treat internal elements of a video player as click traps!
         const parentPlayer = el.closest ? el.closest('.player, #player, .jwplayer, .video-js, [class*="player" i], [id*="player" i]') : null;
-        if (parentPlayer && parentPlayer !== el) {
-          if (!el.querySelector('video')) {
-            return true;
-          }
+        if (parentPlayer) {
+          return false;
         }
 
         const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
@@ -624,7 +701,10 @@
               e.preventDefault();
               e.stopPropagation();
               e.stopImmediatePropagation();
-              try { el.remove(); } catch {}
+              try {
+                el.style.setProperty('pointer-events', 'none', 'important');
+                el.style.setProperty('display', 'none', 'important');
+              } catch {}
               attemptPlayVideo();
               return;
             }
@@ -754,9 +834,10 @@
                   (z >= 2147483640 && !el.textContent?.trim());
 
                 if (hasAdContent) {
-                  el.style.display = 'none';
-                  el.style.pointerEvents = 'none';
-                  el.remove();
+                  el.style.setProperty('display', 'none', 'important');
+                  el.style.setProperty('pointer-events', 'none', 'important');
+                  el.style.setProperty('visibility', 'hidden', 'important');
+                  el.style.setProperty('opacity', '0', 'important');
                 }
               }
             }
@@ -772,8 +853,10 @@
           const allDivs = document.querySelectorAll('div, a, span');
           for (const el of allDivs) {
             if (isOverlayOverPlayerOrVideo(el)) {
-              el.style.pointerEvents = 'none';
-              el.remove();
+              // Non-destructive disabling: keep node alive in DOM to prevent player script crashes
+              el.style.setProperty('pointer-events', 'none', 'important');
+              el.style.setProperty('display', 'none', 'important');
+              el.style.setProperty('visibility', 'hidden', 'important');
             }
           }
         } catch {}
@@ -819,27 +902,8 @@
       // 7. Fast-forward generic HTML5 video ads
       function skipGenericVideoAds() {
         if (window.__forge_adblock_enabled === false) return;
-        const adSelectors = [
-          '.vjs-ad-playing video',
-          '.jw-flag-ads video',
-          '.ad-container video:not(.html5-main-video)',
-          '.video-ad video',
-          'video[src*="doubleclick"]'
-        ];
 
-        for (const selector of adSelectors) {
-          const adVideos = document.querySelectorAll(selector);
-          for (const v of adVideos) {
-            if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
-              v.muted = true;
-              if (v.duration && isFinite(v.duration) && v.duration > 0) {
-                v.currentTime = v.duration;
-              }
-              v.playbackRate = 16;
-            }
-          }
-        }
-
+        // Auto-click standard HTML5 video player skip buttons
         const skipButtons = document.querySelectorAll([
           '.videoAdUiSkipButton',
           '.skip-button',
@@ -1398,11 +1462,14 @@
         }
         if (v && v.requestPictureInPicture) {
           try {
+            if (v.readyState === 0) return;
             v.removeAttribute("disablepictureinpicture");
             await v.requestPictureInPicture();
             return;
           } catch (e) {
-            console.warn("[Forge PiP] Failed to enter PiP on video:", e);
+            if (e?.name !== "NotAllowedError" && e?.name !== "InvalidStateError") {
+              console.warn("[Forge PiP] Note:", e?.message || e);
+            }
           }
         }
         try {
@@ -1833,11 +1900,21 @@
       } catch {
       }
     };
+    let scriptInjected = false;
     const injectScript = () => {
+      if (scriptInjected) return;
       try {
-        if (isSearchEngine) return;
+        const u = (window.location.href || "").toLowerCase();
+        const host = (window.location.hostname || "").toLowerCase();
+        if (!host && (u === "about:blank" || !u.startsWith("http"))) return;
+        if (isSearchEngine || isSocialOrCleanApp) return;
+        const isYt = host.includes("youtube.") || host.includes("youtu.be") || u.includes("youtube.com") || u.includes("youtu.be") || isYouTube;
+        const code = isYt ? youtubeCode : universalVideoCode;
         const script = document.createElement("script");
-        const code = isYouTube ? youtubeCode : universalVideoCode;
+        const existingNonce = document.querySelector("script[nonce]")?.getAttribute("nonce");
+        if (existingNonce) {
+          script.setAttribute("nonce", existingNonce);
+        }
         let safeScript = code;
         try {
           if (window.trustedTypes?.defaultPolicy) {
@@ -1850,6 +1927,7 @@
         if (target) {
           target.appendChild(script);
           script.remove();
+          scriptInjected = true;
         }
       } catch {
       }
@@ -2243,9 +2321,9 @@
             beginInstallWithManifest3: function(details, callback) {
               var extId = (details && typeof details === 'string' ? details : (details && details.id ? details.id : '')).toLowerCase();
               if (!extId) {
-                var m = window.location.pathname.match(/\\/detail\\/(?:[^/]+\\/)?([a-z]{32})/i) ||
-                        window.location.href.match(/\\/detail\\/([a-z]{32})/i) ||
-                        window.location.href.match(/\\b([a-z]{32})\\b/i);
+                var m = window.location.pathname.match(new RegExp('/detail/(?:[^/]+/)?([a-z]{32})', 'i')) ||
+                        window.location.href.match(new RegExp('/detail/([a-z]{32})', 'i')) ||
+                        window.location.href.match(new RegExp('\\b([a-z]{32})\\b', 'i'));
                 if (m) extId = (m[2] || m[1] || m[0]).toLowerCase();
               }
               var extName = (details && details.localizedName ? details.localizedName : (document.querySelector('h1')?.textContent || '')).trim();

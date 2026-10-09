@@ -16,6 +16,24 @@ function getYouTubeScriptletCode(): string {
     if (window.__forge_yt_blocker_active) return;
     window.__forge_yt_blocker_active = true;
 
+    // 0. Intercept JSON.parse to neutralize ad structures across all network/worker paths
+    try {
+      const origJSONParse = JSON.parse;
+      JSON.parse = function(...args) {
+        const result = origJSONParse.apply(this, args);
+        if (window.__forge_adblock_enabled !== false && result && typeof result === 'object') {
+          if (result.adPlacements || result.playerAds || result.adSlots || result.adBreakHeartbeatParams) {
+            result.adPlacements = [];
+            result.playerAds = [];
+            result.adSlots = [];
+            delete result.adBreakHeartbeatParams;
+            delete result.adSafetyReason;
+          }
+        }
+        return result;
+      };
+    } catch {}
+
     function isAdItem(item) {
       if (!item || typeof item !== 'object') return false;
       if (item.adSlotRenderer || item.inFeedAdLayoutRenderer || item.statementBannerRenderer ||
@@ -85,14 +103,15 @@ function getYouTubeScriptletCode(): string {
         const response = await origFetch.apply(this, args);
         try {
           const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
-          if (url && url.includes('/youtubei/v1/player')) {
+          if (url && (
+            url.includes('/youtubei/v1/player') ||
+            url.includes('/youtubei/v1/next') ||
+            url.includes('/youtubei/v1/browse')
+          )) {
             const clone = response.clone();
             const data = await clone.json();
             if (data && typeof data === 'object') {
-              if ('adPlacements' in data) data.adPlacements = [];
-              if ('adSlots' in data) data.adSlots = [];
-              if ('playerAds' in data) data.playerAds = [];
-              delete data.adBreakHeartbeatParams;
+              sanitizeAdObject(data);
               return new Response(JSON.stringify(data), {
                 status: response.status,
                 statusText: response.statusText,
@@ -103,6 +122,39 @@ function getYouTubeScriptletCode(): string {
         } catch {}
         return response;
       };
+    } catch {}
+
+    // Intercept client-side XHR for /youtubei/v1/player, /youtubei/v1/next, /youtubei/v1/browse
+    try {
+      const origXHROpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this.__forge_url = typeof url === 'string' ? url : (url ? url.toString() : '');
+        return origXHROpen.apply(this, [method, url, ...rest]);
+      };
+
+      const origGetter = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText')?.get;
+      if (origGetter) {
+        Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
+          get: function() {
+            const text = origGetter.apply(this);
+            if (window.__forge_adblock_enabled !== false && this.__forge_url && (
+              this.__forge_url.includes('/youtubei/v1/player') ||
+              this.__forge_url.includes('/youtubei/v1/next') ||
+              this.__forge_url.includes('/youtubei/v1/browse')
+            )) {
+              try {
+                const data = JSON.parse(text);
+                if (data && typeof data === 'object') {
+                  sanitizeAdObject(data);
+                  return JSON.stringify(data);
+                }
+              } catch {}
+            }
+            return text;
+          },
+          configurable: true
+        });
+      }
     } catch {}
 
     // 1. Intercept ytInitialPlayerResponse before player renders
@@ -189,7 +241,7 @@ function getYouTubeScriptletCode(): string {
       } catch {}
     }
 
-    // 7. Continuous Video Ad Fast-Forward & Automatic Skipper
+    // 4. Instant Video Ad Suppression & True Skip Engine (No 16x fast-forward)
     let wasAdShowing = false;
     let originalMute = false;
 
@@ -199,6 +251,7 @@ function getYouTubeScriptletCode(): string {
           wasAdShowing = false;
           const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
           if (v) {
+            v.style.opacity = '1';
             v.playbackRate = 1;
             v.muted = originalMute;
             v.volume = 1;
@@ -210,12 +263,15 @@ function getYouTubeScriptletCode(): string {
       cleanYouTubeAdBannersAndHovers();
 
       const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-      const isAd = player && (
-        player.classList.contains('ad-showing') ||
-        player.classList.contains('ad-interrupting')
-      );
-
       const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+
+      // Crucial: Only detect ad when player actively has in-stream ad state
+      const isAd = Boolean(
+        player && (
+          player.classList.contains('ad-showing') ||
+          player.classList.contains('ad-interrupting')
+        )
+      );
 
       if (isAd && video) {
         if (!wasAdShowing) {
@@ -223,30 +279,39 @@ function getYouTubeScriptletCode(): string {
           originalMute = video.muted;
         }
 
-        // Speed up and mute the ad silently without seeking video.currentTime
+        // Instant visual blackout and audio silence during ad playback
+        video.style.opacity = '0';
         video.muted = true;
         video.volume = 0;
-        video.playbackRate = 16;
 
-        // Skip immediately if player method is exposed
+        // Skip immediately via player API if exposed
         try {
           if (typeof player.skipAd === 'function') player.skipAd();
+        } catch {}
+        try {
+          if (typeof player.cancelPlayback === 'function') player.cancelPlayback();
         } catch {}
       } else if (!isAd && wasAdShowing) {
         wasAdShowing = false;
         if (video) {
+          video.style.opacity = '1';
           video.playbackRate = 1;
           video.muted = originalMute;
           video.volume = 1;
+          if (video.paused) {
+            video.play().catch(() => {});
+          }
         }
       }
 
+      // Auto-click any active skip buttons
       const skipSelectors = [
         '.ytp-ad-skip-button',
         '.ytp-ad-skip-button-modern',
         '.ytp-skip-ad-button',
         '.ytp-ad-skip-button-slot button',
         'button.ytp-ad-skip-button',
+        '.ytp-ad-skip-button-container button',
         '.ytp-ad-overlay-close-button',
         '.ytp-ad-overlay-close-container',
         'button[id^="skip-button"]'
@@ -339,24 +404,7 @@ function getUniversalVideoScriptletCode(): string {
 
       cleanGenericAdBannersAndHovers();
 
-      const adSelectors = [
-        '.vjs-ad-playing video',
-        '.jw-flag-ads video',
-        '.ad-container video:not(.html5-main-video)',
-        '.video-ad video',
-        'video[src*="doubleclick"]'
-      ];
-
-      for (const selector of adSelectors) {
-        const adVideos = document.querySelectorAll(selector);
-        for (const v of adVideos) {
-          if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
-            v.muted = true;
-            v.playbackRate = 16;
-          }
-        }
-      }
-
+      // Auto-click standard HTML5 video player skip buttons
       const skipButtons = document.querySelectorAll([
         '.videoAdUiSkipButton',
         '.skip-button',

@@ -46,9 +46,9 @@ export const CWS_POLYFILL_MAIN_WORLD_SCRIPT = `
     try {
       const href = window.location.href || "";
       const path = window.location.pathname || "";
-      const match = path.match(/\\/detail\\/(?:([^/]+)\\/)?([a-z]{32})/i) ||
-                    href.match(/\\/detail\\/([a-z]{32})/i) ||
-                    href.match(/\\b([a-z]{32})\\b/i);
+      const match = path.match(new RegExp('/detail/(?:([^/]+)/)?([a-z]{32})', 'i')) ||
+                    href.match(new RegExp('/detail/([a-z]{32})', 'i')) ||
+                    href.match(new RegExp('\\b([a-z]{32})\\b', 'i'));
       const id = match ? (match[2] || match[1] || match[0]).toLowerCase() : "";
       const slug = (match && match[1] && match[1].length !== 32) ? match[1] : "";
       

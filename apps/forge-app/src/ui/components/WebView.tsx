@@ -295,6 +295,12 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       syncTitleAndFavicon();
       syncCwsExtensions();
       try {
+        if (typeof (el as any).getWebContentsId === "function") {
+          const wcid = (el as any).getWebContentsId();
+          (window as any).forge?.pwa?.registerTab?.(tabId, wcid);
+        }
+      } catch {}
+      try {
         const currentTab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
         if (currentTab?.isMuted && typeof (el as any).setAudioMuted === "function") {
           (el as any).setAudioMuted(true);
@@ -305,6 +311,12 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
     const onFinishLoad = () => {
       syncTitleAndFavicon();
       syncCwsExtensions();
+      try {
+        if (typeof (el as any).getWebContentsId === "function") {
+          const wcid = (el as any).getWebContentsId();
+          (window as any).forge?.pwa?.registerTab?.(tabId, wcid);
+        }
+      } catch {}
     };
 
     const onNavigate = (e: any) => {

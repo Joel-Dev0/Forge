@@ -202,7 +202,7 @@ export function PostDownloadDonationModal({
             >
               <div className="flex items-center gap-2.5">
                 <PaypalIcon className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-                <span>Pay via PayPal</span>
+                <span>Donate with PayPal</span>
               </div>
               <ExternalLink className="w-3.5 h-3.5 text-white/60 group-hover:text-white" />
             </a>

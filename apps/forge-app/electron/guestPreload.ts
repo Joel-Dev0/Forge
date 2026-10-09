@@ -261,9 +261,12 @@
             originalMute = video.muted;
           }
 
-          // Speed up and mute the ad silently without seeking video.currentTime
+          // Speed up, mute and instantly jump to ad end
           video.muted = true;
           video.volume = 0;
+          if (video.duration && isFinite(video.duration) && video.duration > 0) {
+            video.currentTime = video.duration;
+          }
           video.playbackRate = 16;
 
           // Call built-in player skip method if exposed
@@ -847,6 +850,9 @@
           for (const v of adVideos) {
             if (v instanceof HTMLVideoElement && !v.classList.contains('html5-main-video')) {
               v.muted = true;
+              if (v.duration && isFinite(v.duration) && v.duration > 0) {
+                v.currentTime = v.duration;
+              }
               v.playbackRate = 16;
             }
           }
@@ -1903,6 +1909,7 @@
   const injectStyle = () => {
     try {
       if ((window as any).__forge_adblock_enabled === false) return;
+      if (document.getElementById("__forge_adblock_css")) return;
       const style = document.createElement("style");
       style.id = "__forge_adblock_css";
       style.textContent = cosmeticCss;
@@ -1933,6 +1940,41 @@
       }
     } catch {}
   };
+
+  // 4b. Active document injection for adblock CSS & scriptlets
+  const runInjection = () => {
+    injectStyle();
+    injectScript();
+  };
+
+  runInjection();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runInjection);
+  }
+  window.addEventListener("load", runInjection);
+
+  if (!document.documentElement && document) {
+    const rootObserver = new MutationObserver(() => {
+      if (document.documentElement || document.head) {
+        runInjection();
+        rootObserver.disconnect();
+      }
+    });
+    try {
+      rootObserver.observe(document, { childList: true });
+    } catch {}
+  }
+
+  try {
+    const styleObserver = new MutationObserver(() => {
+      if ((window as any).__forge_adblock_enabled !== false && !document.getElementById("__forge_adblock_css")) {
+        injectStyle();
+      }
+    });
+    if (document.documentElement) {
+      styleObserver.observe(document.documentElement, { childList: true });
+    }
+  } catch {}
 
   // 5. Universal media reproduction detector (video & audio) on any website
   let mediaDetectorInitialized = false;
@@ -2085,7 +2127,8 @@
     } catch {}
   };
 
-  // Run universal media controls and detector directly in preload
+  // Run universal media controls, adblock injections and detector directly in preload
+  runInjection();
   initUniversalMediaControls();
   setupMediaDetector();
   setupFocusDistractionCleaner();

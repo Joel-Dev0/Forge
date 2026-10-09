@@ -366,7 +366,7 @@ export function DonationSection({ id = "donate" }: { id?: string }) {
                   <div className="flex items-center gap-3">
                     <PaypalIcon className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
                     <div className="text-left">
-                      <div className="font-bold text-sm">PayPal Checkout</div>
+                      <div className="font-bold text-sm">Donate with PayPal</div>
                       <div className="text-[11px] text-white/70">Quick 1-click international</div>
                     </div>
                   </div>

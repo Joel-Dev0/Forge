@@ -525,6 +525,45 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       useTabsStore.getState().openTab(targetUrl);
     };
 
+    const onWillNavigate = (e: any) => {
+      const navUrl = e.url;
+      if (!navUrl) return;
+      const currentUrl = (typeof (ref.current as any)?.getURL === "function" ? (ref.current as any).getURL() : url) || "";
+      if (!currentUrl || currentUrl === "about:blank") return;
+
+      const urlLower = navUrl.toLowerCase();
+      const isKnownAd = [
+        "doubleclick", "googlesyndication", "adservice", "popads", "popcash",
+        "adcash", "adroll", "trafficjunky", "trafficfactory", "exoclick", "adnxs",
+        "criteo", "taboola", "outbrain", "adsterra", "propellerads", "monetag",
+        "hilltopads", "richads", "clickadu", "trafficstars", "onclickprediction",
+        "onclickalgo", "onclickbright", "onclickperformance", "ad2up", "ero-advertising",
+        "juicyads", "yllix", "bidvertiser", "bet365", "1xbet", "redirect", "click.php",
+        "track/click", "serving/ad", "adserver", "clksite", "revenuehits", "rotator",
+        "popunder", "fastclick", "go.ad2up", "ad-maven", "directrev", "clkmon",
+        "bestadbid", "adclicker", "runative", "syndicate", "casino", "casinon",
+        "spelpaus", "zilla-networks", "zeroad", "pushsdk", "redirect-ad",
+        "profitablecpmrate", "profitablegatetocontent", "highperformancegate", "highcpmgate",
+        "effectivecpmgate", "realsrv", "magsrv", "xlviirdr", "pukegoocha", "whomeeno",
+        "voomau", "oortous", "whounsoo", "dooloust", "shoumou", "deloplen", "grootso",
+        "shukriya", "slytherin", "short.ink", "direct-link", "shrinkme", "linkvertise",
+        "videobin", "clicknupload", "streamwish", "filemoon", "mixdrop", "streamvid", "mp4upload"
+      ].some((k) => urlLower.includes(k));
+
+      const isSuspiciousPath = [
+        "/click.php", "/out.php", "/track.php", "/redirect.php", "/goto.php",
+        "/jump.php", "/redir.php", "/traffic/", "/rotator/", "/adclick",
+        "/ad_click", "/ad-click", "/pop/click", "/clk/", "/zone/", "/dispatcher.php",
+        "/serving/ad", "/track/click", "/delivery/", "/go.php", "/ad.php", "/adv.php",
+        "/link.php", "/count.php", "/click/"
+      ].some((p) => urlLower.includes(p));
+
+      if (isKnownAd || isSuspiciousPath) {
+        console.warn("[Forge Shield] Dropped suspicious ad navigation redirect:", navUrl);
+        e.preventDefault();
+      }
+    };
+
     // Pipe guest page console logs to Forge Console IA & handle PiP return to page
     const onConsoleMessage = (e: any) => {
       const msg = e.message || "";
@@ -748,6 +787,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
     el.addEventListener("did-fail-load", onFailLoad);
     el.addEventListener("render-process-gone", onRenderProcessGone);
     el.addEventListener("new-window", onNewWindow);
+    el.addEventListener("will-navigate", onWillNavigate);
     el.addEventListener("console-message", onConsoleMessage);
     el.addEventListener("enter-html-full-screen", onEnterHtmlFullScreen);
     el.addEventListener("leave-html-full-screen", onLeaveHtmlFullScreen);
@@ -801,6 +841,7 @@ export function WebView({ tabId, url, isActive, isLazy, isSleeping, onRef, style
       el.removeEventListener("did-fail-load", onFailLoad);
       el.removeEventListener("render-process-gone", onRenderProcessGone);
       el.removeEventListener("new-window", onNewWindow);
+      el.removeEventListener("will-navigate", onWillNavigate);
       el.removeEventListener("console-message", onConsoleMessage);
       el.removeEventListener("enter-html-full-screen", onEnterHtmlFullScreen);
       el.removeEventListener("leave-html-full-screen", onLeaveHtmlFullScreen);

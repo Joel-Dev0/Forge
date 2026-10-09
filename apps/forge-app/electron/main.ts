@@ -489,6 +489,13 @@ function createWindow(isIncognito = false) {
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
     webPreferences.contextIsolation = true;
+
+    // Guarantee that Forge Guest Preload (adblocker, video ad skipper, popunder defuser)
+    // is always attached to every webview at document-start
+    const guestPreload = path.join(__dirname, "guestPreload.cjs");
+    if (fs.existsSync(guestPreload)) {
+      webPreferences.preload = guestPreload;
+    }
   });
 
   let windowShown = false;

@@ -586,7 +586,18 @@ export const KNOWN_AD_POPUNDER_DOMAINS_AND_KEYWORDS = [
   // Gambling / Betting Popups (frequent popunder targets)
   "bet365", "1xbet", "betway", "parimatch", "mostbet", "pin-up", "vulkan",
   "casino", "casinon", "spelpaus", "jackpotcity", "spinpalace", "betwinner",
-  "megapari", "melbet"
+  "megapari", "melbet",
+
+  // Additional video redirect gates, popunders, stream hosts & scam networks
+  "alwingulla", "agacelebir", "cloutho", "eastsour", "dooloust", "whounsoo", "whomeeno",
+  "pukegoocha", "oortous", "voomau", "shoumou", "deloplen", "grootso", "shukriya", "slytherin",
+  "ad-score", "cpmstar", "adkeeper", "bebi.com", "adoperator", "mondiad", "adstarget",
+  "streamhide", "vidhide", "streamtape", "voe.sx", "doodstream", "filelions", "luluvdo",
+  "dropload", "hexupload", "shrinkme", "linkvertise", "ouo.io", "adf.ly", "bc.vc", "short.am",
+  "shorte.st", "cut-urls", "exe.io", "fc.lc", "gplinks", "droplink",
+  "1x-bet", "stake.com", "roobet", "bc.game", "bcgame", "betano", "cleanmypc",
+  "your-system-infected", "critical-alert", "security-warning", "repair-now",
+  "allow-cookies", "confirm-you-are-not-a-robot", "robot-check", "click-allow", "captcha-verification", "press-allow"
 ];
 
 export const SUSPICIOUS_AD_REDIRECT_PATHS = [
@@ -692,6 +703,20 @@ export function isAdOrRedirectUrl(targetUrl: string, sourceUrl?: string): boolea
       resourceType: "subdocument",
     });
     if (subdocEval.blocked) return true;
+
+    const scriptEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "script",
+    });
+    if (scriptEval.blocked) return true;
+
+    const xmlEval = engine.match({
+      url: targetUrl,
+      sourceUrl,
+      resourceType: "xmlhttprequest",
+    });
+    if (xmlEval.blocked) return true;
   }
 
   return false;

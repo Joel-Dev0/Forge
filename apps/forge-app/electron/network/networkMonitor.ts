@@ -205,6 +205,24 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
       });
 
       if (adblock.cancel) {
+        const lowerUrl = (details.url || "").toLowerCase();
+        // Defuse Optimizely datafiles & prevent 30s onReady promise timeout on news sites
+        if (lowerUrl.includes("optimizely.com") && (lowerUrl.includes("/datafiles/") || lowerUrl.includes(".json") || lowerUrl.includes("datafile"))) {
+          const emptyDatafile = JSON.stringify({
+            version: "4",
+            rollouts: [],
+            experiments: [],
+            featureFlags: [],
+            audiences: [],
+            events: [],
+            attributes: [],
+            anonymizeIP: true,
+            botFiltering: false,
+          });
+          callback({ redirectURL: `data:application/json;charset=utf-8,${encodeURIComponent(emptyDatafile)}` });
+          return;
+        }
+
         const entry: NetworkEntry = {
           id: entryId,
           url: details.url,
@@ -324,20 +342,29 @@ export function initNetworkMonitor(getMainWindow: () => BrowserWindow | null) {
         }
       }
 
-      // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen on any page
+      // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen on any page,
+      // and eliminate obsolete Feature-Policy / document-domain collisions
+      if ((responseHeaders["permissions-policy"] || responseHeaders["Permissions-Policy"]) && (responseHeaders["feature-policy"] || responseHeaders["Feature-Policy"])) {
+        delete responseHeaders["feature-policy"];
+        delete responseHeaders["Feature-Policy"];
+      }
+
       for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();
         if (lower === "permissions-policy" || lower === "feature-policy") {
           const val = responseHeaders[key];
+          const cleanPolicy = (v: string) => v
+            .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
+            .replace(/fullscreen=\(\)/gi, "fullscreen=*")
+            .replace(/document-domain\s*=\s*\([^)]*\)\s*,?\s*/gi, "")
+            .replace(/document-domain\s+[^;]+;?\s*/gi, "")
+            .replace(/,\s*,/g, ",")
+            .replace(/^,\s*|,\s*$/g, "");
+
           if (Array.isArray(val)) {
-            responseHeaders[key] = val.map((v) =>
-              v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-               .replace(/fullscreen=\(\)/gi, "fullscreen=*")
-            );
+            responseHeaders[key] = val.map(cleanPolicy);
           } else if (typeof val === "string") {
-            responseHeaders[key] = val
-              .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-              .replace(/fullscreen=\(\)/gi, "fullscreen=*");
+            responseHeaders[key] = cleanPolicy(val);
           }
         }
       }

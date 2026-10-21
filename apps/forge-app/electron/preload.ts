@@ -185,6 +185,9 @@ contextBridge.exposeInMainWorld("forge", {
     setEnabled: (enabled: boolean) => ipcRenderer.invoke("adblock:set-enabled", enabled),
     setFeature: (feature: string, enabled: boolean) => ipcRenderer.invoke("adblock:set-feature", feature, enabled),
     getDetailedStats: () => ipcRenderer.invoke("adblock:get-detailed-stats"),
+    getAutoLearnedRules: () => ipcRenderer.invoke("adblock:get-auto-learned-rules"),
+    clearAutoLearnedRules: () => ipcRenderer.invoke("adblock:clear-auto-learned-rules"),
+    learnRule: (target: string, category?: string, reason?: string) => ipcRenderer.invoke("adblock:learn-rule", target, category, reason),
     getCustomRules: () => ipcRenderer.invoke("adblock:get-custom-rules"),
     toggleCustomRule: (ruleId: string, enabled?: boolean) => ipcRenderer.invoke("adblock:toggle-custom-rule", ruleId, enabled),
     importRules: (rawContent: string) => ipcRenderer.invoke("adblock:import-rules", rawContent),
@@ -202,6 +205,11 @@ contextBridge.exposeInMainWorld("forge", {
       const listener = (_event: any, entry: any) => callback(entry);
       ipcRenderer.on("adblock:request-entry", listener);
       return () => ipcRenderer.removeListener("adblock:request-entry", listener);
+    },
+    onRuleLearned: (callback: (data: { rule: any; reason: string }) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on("adblock:rule-learned", listener);
+      return () => ipcRenderer.removeListener("adblock:rule-learned", listener);
     },
     onStateChanged: (callback: (state: any) => void) => {
       const listener = (_event: any, state: any) => callback(state);

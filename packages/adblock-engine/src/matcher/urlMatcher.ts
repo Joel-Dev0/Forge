@@ -163,3 +163,100 @@ export function matchRule(rule: BlockRule, request: RequestDetails): boolean {
 
   return true;
 }
+
+export const SUSPICIOUS_AFFILIATE_KEYS = [
+  "click_id", "clickid", "aff_id", "affid", "subid", "sub_id",
+  "zoneid", "zone_id", "banner_id", "campaign_id", "pub_id",
+  "ref_id", "track_id", "popunder", "psid", "smartlink",
+  "partner_key", "session_partner_key", "sub6", "visitor-id"
+];
+
+export const SUSPICIOUS_AD_PATHS = [
+  "/click.php", "/out.php", "/track.php", "/redirect.php", "/goto.php",
+  "/jump.php", "/redir.php", "/traffic/", "/rotator/", "/adclick",
+  "/ad_click", "/ad-click", "/pop/click", "/clk/", "/zone/", "/dispatcher.php",
+  "/serving/ad", "/delivery/", "/go.php", "/ad.php", "/adv.php"
+];
+
+export const KNOWN_POP_NETWORKS = [
+  "monetag", "adsterra", "clickadu", "propellerads", "profitablecpm",
+  "highcpm", "effectivecpm", "realsrv", "magsrv", "xlviirdr",
+  "pukegoocha", "whomeeno", "voomau", "oortous", "whounsoo",
+  "dooloust", "shoumou", "deloplen", "grootso", "alwingulla",
+  "eastsour", "cloutho", "agacelebir", "britishfireplace", "w-one023",
+  "quicktoolera"
+];
+
+export const SAFE_TOP_DOMAINS = [
+  "google.com", "gstatic.com", "googleapis.com", "youtube.com", "ytimg.com",
+  "github.com", "microsoft.com", "apple.com", "cloudflare.com", "cdnjs.cloudflare.com",
+  "amazon.com", "aws.amazon.com", "wikipedia.org", "w3.org", "mozilla.org",
+  "bbci.co.uk", "bbc.com", "instagram.com", "x.com", "twitter.com", "facebook.com"
+];
+
+/**
+ * Heuristically inspects a request for suspicious third-party ad networks,
+ * smartlinks, or popunder redirect parameters that should be auto-blocked and learned.
+ */
+export function detectSuspiciousAdRequest(request: RequestDetails): {
+  suspicious: boolean;
+  ruleCandidate?: string;
+  reason?: string;
+} {
+  const hostname = extractHostname(request.url);
+  if (!hostname || hostname.length < 3 || !hostname.includes(".")) {
+    return { suspicious: false };
+  }
+
+  // Never flag whitelisted system/major platforms
+  if (SAFE_TOP_DOMAINS.some(d => hostname === d || hostname.endsWith("." + d))) {
+    return { suspicious: false };
+  }
+
+  const is3rd = request.sourceUrl ? isThirdPartyRequest(request.url, request.sourceUrl) : true;
+  const lowerUrl = request.url.toLowerCase();
+
+  // 1. Direct hit on known popunder/ad network domain keyword
+  for (const net of KNOWN_POP_NETWORKS) {
+    if (hostname.includes(net)) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: `Matches known high-risk ad/popunder network (${net})`
+      };
+    }
+  }
+
+  // 2. Suspicious redirect paths or affiliate parameters on third-party requests
+  if (is3rd) {
+    let matchedKey = "";
+    try {
+      const parsed = new URL(request.url);
+      for (const k of SUSPICIOUS_AFFILIATE_KEYS) {
+        if (parsed.searchParams.has(k)) {
+          matchedKey = k;
+          break;
+        }
+      }
+    } catch {}
+
+    if (matchedKey) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: `Third-party affiliate smartlink tracking parameter detected (${matchedKey})`
+      };
+    }
+
+    const hasSuspiciousPath = SUSPICIOUS_AD_PATHS.some((p) => lowerUrl.includes(p));
+    if (hasSuspiciousPath) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: "Third-party ad dispatcher path pattern"
+      };
+    }
+  }
+
+  return { suspicious: false };
+}

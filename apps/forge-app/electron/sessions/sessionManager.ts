@@ -78,6 +78,23 @@ export function configureSessionPartition(ses: ElectronSession, partitionName: s
           callback({ redirectURL: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
           return;
         } else {
+          const lowerUrl = (details.url || "").toLowerCase();
+          // Defuse Optimizely datafiles & prevent 30s onReady promise timeout on news sites
+          if (lowerUrl.includes("optimizely.com") && (lowerUrl.includes("/datafiles/") || lowerUrl.includes(".json") || lowerUrl.includes("datafile"))) {
+            const emptyDatafile = JSON.stringify({
+              version: "4",
+              rollouts: [],
+              experiments: [],
+              featureFlags: [],
+              audiences: [],
+              events: [],
+              attributes: [],
+              anonymizeIP: true,
+              botFiltering: false,
+            });
+            callback({ redirectURL: `data:application/json;charset=utf-8,${encodeURIComponent(emptyDatafile)}` });
+            return;
+          }
           callback({ cancel: true });
           return;
         }

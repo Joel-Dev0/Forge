@@ -77,8 +77,49 @@ function getFullBroadcastState() {
   };
 }
 
+
+function getAutoRulesFilePath(): string {
+  try {
+    return path.join(app.getPath("userData"), "forge_auto_learned_rules.json");
+  } catch {
+    return path.join(process.cwd(), "forge_auto_learned_rules.json");
+  }
+}
+
+function loadPersistedAutoRules(): void {
+  try {
+    const p = getAutoRulesFilePath();
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, "utf8"));
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item && item.raw) {
+            engine.learnRule(item.raw, item.category || "ad", item.reason || "Restored from persistent cache");
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
+function persistAutoRules(): void {
+  try {
+    const p = getAutoRulesFilePath();
+    const rules = engine.getAutoLearnedRules();
+    fs.writeFileSync(p, JSON.stringify(rules.map((r) => ({ raw: r.raw, category: r.category, domain: r.domain })), null, 2), "utf8");
+  } catch {}
+}
+
 export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null) {
   getWin = mainWindowGetter;
+
+  // Hook Smart Auto-Rule persistence & live events
+  engine.onRuleLearned = (rule, reason) => {
+    persistAutoRules();
+    broadcastEvent("adblock:rule-learned", { rule, reason });
+    broadcastEvent("adblock:state-changed", getFullBroadcastState());
+  };
+  loadPersistedAutoRules();
 
   // Initialize background list auto-updater
   initListUpdater(engine, (status) => {
@@ -159,6 +200,29 @@ export function initAdBlockAdapter(mainWindowGetter: () => BrowserWindow | null)
 
   ipcMain.handle("adblock:get-detailed-stats", () => {
     return engine.getDetailedStats();
+  });
+
+  ipcMain.handle("adblock:get-auto-learned-rules", () => {
+    return engine.getAutoLearnedRules();
+  });
+
+  ipcMain.handle("adblock:clear-auto-learned-rules", () => {
+    engine.clearAutoLearnedRules();
+    persistAutoRules();
+    broadcastEvent("adblock:state-changed", getFullBroadcastState());
+    return true;
+  });
+
+  ipcMain.handle("adblock:learn-rule", (_event, target: string, category?: any, reason?: string) => {
+    const rule = engine.learnRule(target, category || "ad", reason || "Manually learned rule");
+    if (rule) persistAutoRules();
+    return rule;
+  });
+
+  ipcMain.on("adblock:report-auto-rule", (_event, data: { domain?: string; reason?: string }) => {
+    if (data && data.domain) {
+      engine.learnRule(data.domain, "ad", data.reason || "Reported by in-page Shield");
+    }
   });
 
   ipcMain.handle("adblock:get-custom-rules", () => {

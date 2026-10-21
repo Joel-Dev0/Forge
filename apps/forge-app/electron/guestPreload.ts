@@ -548,6 +548,51 @@
         window.isAdBlockActive = false;
       } catch {}
 
+      // 1b. Optimizely & Experimentation Defuser Stub (prevents 30s timeout on news sites)
+      try {
+        if (!window.optimizely) {
+          const optQueue = [];
+          optQueue.push = function() { return 0; };
+          optQueue.get = function() { return null; };
+          window.optimizely = optQueue;
+        }
+      } catch {}
+
+      // Intercept client-side fetch for Optimizely datafiles & telemetry
+      try {
+        const origFetch = window.fetch;
+        window.fetch = async function(...args) {
+          try {
+            const u = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+            if (u && (u.includes("optimizely.com/datafiles/") || (u.includes("optimizely.com") && u.includes(".json")))) {
+              return new Response(JSON.stringify({
+                version: "4",
+                rollouts: [],
+                experiments: [],
+                featureFlags: [],
+                audiences: [],
+                events: [],
+                attributes: [],
+                anonymizeIP: true,
+                botFiltering: false
+              }), {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+            if (u && (u.includes("logx.optimizely.com") || u.includes("optimizely.com/v1/events"))) {
+              return new Response(JSON.stringify({ success: true }), {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          } catch {}
+          return origFetch.apply(this, args);
+        };
+      } catch {}
+
       // 2. Universal Popunder & Unsolicited Window.Open Defuser
       try {
         let lastUserActionTime = 0;

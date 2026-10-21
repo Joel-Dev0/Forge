@@ -1,7 +1,7 @@
 import type { BlockRule, BlockDecision, RequestDetails, RuleCategory } from "./rules/rule.ts";
 import { parseRule, parseFilterListText } from "./rules/parser.ts";
 import { DomainIndex } from "./matcher/domainTrie.ts";
-import { matchRule, extractHostname, stripTrackingParameters, COMMON_TRACKING_QUERY_PARAMS } from "./matcher/urlMatcher.ts";
+import { matchRule, extractHostname, stripTrackingParameters, COMMON_TRACKING_QUERY_PARAMS, detectSuspiciousAdRequest } from "./matcher/urlMatcher.ts";
 import { FilterList, type FilterListMetadata } from "./filters/filterList.ts";
 import { EASYLIST_PRESET_RULES } from "./filters/presets/easylist.ts";
 import { EASYPRIVACY_PRESET_RULES } from "./filters/presets/easyprivacy.ts";
@@ -14,13 +14,14 @@ export * from "./rules/index.ts";
 export * from "./matcher/index.ts";
 export * from "./filters/index.ts";
 export * from "./cosmetic/index.ts";
-export { stripTrackingParameters, COMMON_TRACKING_QUERY_PARAMS };
+export { stripTrackingParameters, COMMON_TRACKING_QUERY_PARAMS, detectSuspiciousAdRequest };
 
 export interface ShieldFeatures {
   adBlock: boolean;
   trackerProtection: boolean;
   malvertisingProtection: boolean;
   customRules: boolean;
+  smartAutoRules: boolean;
 }
 
 export interface AdBlockStats {
@@ -58,7 +59,10 @@ export class AdBlockEngine {
     trackerProtection: true,
     malvertisingProtection: true,
     customRules: true,
+    smartAutoRules: true,
   };
+
+  public onRuleLearned?: (rule: BlockRule, reason: string) => void;
 
   private lists = new Map<string, FilterList>();
   private domainIndex = new DomainIndex();
@@ -141,6 +145,16 @@ export class AdBlockEngine {
     );
     easyList.loadFromText(EASYLIST_PRESET_RULES);
     this.addFilterListInstance(easyList);
+
+    // 6. Smart Auto-Learned Rules (Dynamic Heuristic Intelligence)
+    const smartAutoList = new FilterList(
+      "smart_auto",
+      "Smart Auto-Learned Rules",
+      "custom",
+      "Rules automatically synthesized and learned on-the-fly by Forge Shield Heuristics",
+      true
+    );
+    this.addFilterListInstance(smartAutoList);
   }
 
   /**
@@ -261,6 +275,84 @@ export class AdBlockEngine {
         return this.features.customRules;
       default:
         return true;
+    }
+  }
+
+  // --- Smart Auto-Rule Learning ---
+
+  /**
+   * Automatically learns and synthesizes an adblock rule from a suspicious domain or pattern.
+   * Inserts into the "smart_auto" filter list and immediately rebuilds the active search indices.
+   */
+  public learnRule(
+    target: string,
+    category: RuleCategory = "ad",
+    reason: string = "Learned by Smart Heuristics"
+  ): BlockRule | null {
+    if (!this.features.smartAutoRules) return null;
+
+    const cleanTarget = (target || "").trim();
+    if (!cleanTarget) return null;
+
+    let domain = extractHostname(cleanTarget) || cleanTarget;
+    domain = domain.replace(/^(\.|\*|\/)+/, "").replace(/(\.|\*|\/)+$/, "").toLowerCase();
+    if (!domain || domain.length < 3 || !domain.includes(".")) return null;
+
+    const WHITELISTED_SYSTEM_DOMAINS = [
+      "google.com", "gstatic.com", "googleapis.com", "youtube.com", "ytimg.com",
+      "github.com", "microsoft.com", "apple.com", "cloudflare.com", "cdnjs.cloudflare.com",
+      "amazon.com", "aws.amazon.com", "wikipedia.org", "w3.org", "mozilla.org",
+      "bbci.co.uk", "bbc.com", "instagram.com", "x.com", "twitter.com", "facebook.com"
+    ];
+    if (WHITELISTED_SYSTEM_DOMAINS.some((d) => domain === d || domain.endsWith("." + d))) {
+      return null;
+    }
+
+    const rawRule = `||${domain}^`;
+
+    let autoList = this.lists.get("smart_auto");
+    if (!autoList) {
+      autoList = new FilterList(
+        "smart_auto",
+        "Smart Auto-Learned Rules",
+        "custom",
+        "Rules automatically synthesized and learned on-the-fly by Forge Shield Heuristics",
+        true
+      );
+      this.lists.set("smart_auto", autoList);
+    }
+
+    if (autoList.rules.some((r) => r.raw === rawRule || r.domain === domain)) {
+      return null;
+    }
+
+    const rule = parseRule(rawRule);
+    if (!rule) return null;
+
+    rule.id = `auto_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    rule.category = category;
+    rule.enabled = true;
+
+    autoList.addRule(rule);
+    this.rebuildIndices();
+
+    if (this.onRuleLearned) {
+      this.onRuleLearned(rule, reason);
+    }
+
+    return rule;
+  }
+
+  public getAutoLearnedRules(): BlockRule[] {
+    const list = this.lists.get("smart_auto");
+    return list ? [...list.rules] : [];
+  }
+
+  public clearAutoLearnedRules(): void {
+    const list = this.lists.get("smart_auto");
+    if (list) {
+      list.rules = [];
+      this.rebuildIndices();
     }
   }
 
@@ -471,6 +563,31 @@ export class AdBlockEngine {
           category,
           listId,
           reason: `Blocked by ${category} pattern: ${rule.raw}`,
+        };
+      }
+    }
+
+    // 5. Check Smart Heuristics & Auto-Learn Rules
+    if (this.features.smartAutoRules) {
+      const heuristic = detectSuspiciousAdRequest(request);
+      if (heuristic.suspicious && heuristic.ruleCandidate) {
+        const learned = this.learnRule(heuristic.ruleCandidate, "ad", heuristic.reason);
+        this.blockedCount++;
+        this.categoryCounts.ad = (this.categoryCounts.ad || 0) + 1;
+
+        const candidateHost = extractHostname(heuristic.ruleCandidate) || heuristic.ruleCandidate;
+        const currentDomainHit = this.domainHits.get(candidateHost) || { count: 0, category: "ad" };
+        this.domainHits.set(candidateHost, { count: currentDomainHit.count + 1, category: "ad" });
+
+        const autoList = this.lists.get("smart_auto");
+        if (autoList) autoList.incrementHits();
+
+        return {
+          blocked: true,
+          rule: learned || undefined,
+          category: "ad",
+          listId: "smart_auto",
+          reason: `Blocked & auto-learned by Smart Heuristics: ${heuristic.reason || heuristic.ruleCandidate}`,
         };
       }
     }

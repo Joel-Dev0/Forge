@@ -152,3 +152,63 @@ test("Shield Features - Detailed Statistics Breakdown", () => {
   assert.equal(stats.topDomains[0].domain, "ad.doubleclick.net");
   assert.equal(stats.topDomains[0].count, 2);
 });
+
+test("Shield Features - Smart Auto-Rule Learner and Dynamic Rule Synthesis", () => {
+  const engine = new AdBlockEngine(true);
+  assert.equal(engine.isFeatureEnabled("smartAutoRules"), true);
+
+  // 1. A previously unknown suspicious popunder network with affiliate redirect keys
+  const suspiciousUrl = "https://dynamic-smartlink-ad-hub.net/affiliate/dispatch?psid=88888&sub6=partner_xyz";
+  const initialRulesCount = engine.getAutoLearnedRules().length;
+  assert.equal(initialRulesCount, 0);
+
+  // 2. Matching the request should trigger heuristic auto-learning
+  const res = engine.match({
+    url: suspiciousUrl,
+    resourceType: "subdocument",
+    sourceUrl: "https://example-streaming-site.com/watch",
+    isThirdParty: true,
+  });
+
+  assert.equal(res.blocked, true);
+  assert.equal(res.listId, "smart_auto");
+  assert.ok(res.reason?.includes("Smart Heuristics"));
+
+  // 3. Verify that the rule was added dynamically to smart_auto list
+  const learnedRules = engine.getAutoLearnedRules();
+  assert.equal(learnedRules.length, 1);
+  assert.equal(learnedRules[0].raw, "||dynamic-smartlink-ad-hub.net^");
+  assert.equal(learnedRules[0].domain, "dynamic-smartlink-ad-hub.net");
+
+  // 4. Any subsequent request to this domain or subdomain is now immediately blocked by the Trie index
+  const res2 = engine.match({
+    url: "https://sub.dynamic-smartlink-ad-hub.net/ad.js",
+    resourceType: "script",
+  });
+  assert.equal(res2.blocked, true);
+
+  // 5. Test manual programmatic learnRule
+  let reportedReason = "";
+  engine.onRuleLearned = (rule, reason) => {
+    reportedReason = reason;
+  };
+
+  const manualRule = engine.learnRule("https://custom-trap-network.org/gate?psid=123", "ad", "Popunder Trap Neutralized");
+  assert.ok(manualRule);
+  assert.equal(manualRule.raw, "||custom-trap-network.org^");
+  assert.equal(reportedReason, "Popunder Trap Neutralized");
+  assert.equal(engine.getAutoLearnedRules().length, 2);
+
+  // 6. Test deduplication - attempting to learn again should return null and not duplicate
+  const duplicateRule = engine.learnRule("custom-trap-network.org");
+  assert.equal(duplicateRule, null);
+  assert.equal(engine.getAutoLearnedRules().length, 2);
+
+  // 7. Whitelisted system domains are never auto-blocked
+  const safeRule = engine.learnRule("https://google.com/search");
+  assert.equal(safeRule, null);
+
+  // 8. Test clearing auto-learned rules
+  engine.clearAutoLearnedRules();
+  assert.equal(engine.getAutoLearnedRules().length, 0);
+});

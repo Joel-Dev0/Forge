@@ -279,20 +279,29 @@ export function setupCorsBypassInterceptor(targetSession: Electron.Session) {
       }
     }
 
-    // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen
+    // Ensure Permissions-Policy & Feature-Policy do not restrict Picture-in-Picture or Fullscreen,
+    // and eliminate obsolete Feature-Policy / document-domain collisions
+    if ((responseHeaders["permissions-policy"] || responseHeaders["Permissions-Policy"]) && (responseHeaders["feature-policy"] || responseHeaders["Feature-Policy"])) {
+      delete responseHeaders["feature-policy"];
+      delete responseHeaders["Feature-Policy"];
+    }
+
     for (const key of Object.keys(responseHeaders)) {
       const lower = key.toLowerCase();
       if (lower === "permissions-policy" || lower === "feature-policy") {
         const val = responseHeaders[key];
+        const cleanPolicy = (v: string) => v
+          .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
+          .replace(/fullscreen=\(\)/gi, "fullscreen=*")
+          .replace(/document-domain\s*=\s*\([^)]*\)\s*,?\s*/gi, "")
+          .replace(/document-domain\s+[^;]+;?\s*/gi, "")
+          .replace(/,\s*,/g, ",")
+          .replace(/^,\s*|,\s*$/g, "");
+
         if (Array.isArray(val)) {
-          responseHeaders[key] = val.map((v) =>
-            v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-             .replace(/fullscreen=\(\)/gi, "fullscreen=*")
-          );
+          responseHeaders[key] = val.map(cleanPolicy);
         } else if (typeof val === "string") {
-          responseHeaders[key] = val
-            .replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*")
-            .replace(/fullscreen=\(\)/gi, "fullscreen=*");
+          responseHeaders[key] = cleanPolicy(val);
         }
       }
     }

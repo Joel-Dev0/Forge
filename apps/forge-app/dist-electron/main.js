@@ -733,6 +733,151 @@ function matchRule(rule, request2) {
   }
   return true;
 }
+var SUSPICIOUS_AFFILIATE_KEYS = [
+  "click_id",
+  "clickid",
+  "aff_id",
+  "affid",
+  "subid",
+  "sub_id",
+  "zoneid",
+  "zone_id",
+  "banner_id",
+  "campaign_id",
+  "pub_id",
+  "ref_id",
+  "track_id",
+  "popunder",
+  "psid",
+  "smartlink",
+  "partner_key",
+  "session_partner_key",
+  "sub6",
+  "visitor-id"
+];
+var SUSPICIOUS_AD_PATHS = [
+  "/click.php",
+  "/out.php",
+  "/track.php",
+  "/redirect.php",
+  "/goto.php",
+  "/jump.php",
+  "/redir.php",
+  "/traffic/",
+  "/rotator/",
+  "/adclick",
+  "/ad_click",
+  "/ad-click",
+  "/pop/click",
+  "/clk/",
+  "/zone/",
+  "/dispatcher.php",
+  "/serving/ad",
+  "/delivery/",
+  "/go.php",
+  "/ad.php",
+  "/adv.php"
+];
+var KNOWN_POP_NETWORKS = [
+  "monetag",
+  "adsterra",
+  "clickadu",
+  "propellerads",
+  "profitablecpm",
+  "highcpm",
+  "effectivecpm",
+  "realsrv",
+  "magsrv",
+  "xlviirdr",
+  "pukegoocha",
+  "whomeeno",
+  "voomau",
+  "oortous",
+  "whounsoo",
+  "dooloust",
+  "shoumou",
+  "deloplen",
+  "grootso",
+  "alwingulla",
+  "eastsour",
+  "cloutho",
+  "agacelebir",
+  "britishfireplace",
+  "w-one023",
+  "quicktoolera"
+];
+var SAFE_TOP_DOMAINS = [
+  "google.com",
+  "gstatic.com",
+  "googleapis.com",
+  "youtube.com",
+  "ytimg.com",
+  "github.com",
+  "microsoft.com",
+  "apple.com",
+  "cloudflare.com",
+  "cdnjs.cloudflare.com",
+  "amazon.com",
+  "aws.amazon.com",
+  "wikipedia.org",
+  "w3.org",
+  "mozilla.org",
+  "bbci.co.uk",
+  "bbc.com",
+  "instagram.com",
+  "x.com",
+  "twitter.com",
+  "facebook.com"
+];
+function detectSuspiciousAdRequest(request2) {
+  const hostname = extractHostname(request2.url);
+  if (!hostname || hostname.length < 3 || !hostname.includes(".")) {
+    return { suspicious: false };
+  }
+  if (SAFE_TOP_DOMAINS.some((d) => hostname === d || hostname.endsWith("." + d))) {
+    return { suspicious: false };
+  }
+  const is3rd = request2.sourceUrl ? isThirdPartyRequest(request2.url, request2.sourceUrl) : true;
+  const lowerUrl = request2.url.toLowerCase();
+  for (const net5 of KNOWN_POP_NETWORKS) {
+    if (hostname.includes(net5)) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: `Matches known high-risk ad/popunder network (${net5})`
+      };
+    }
+  }
+  if (is3rd) {
+    let matchedKey = "";
+    try {
+      const parsed = new URL(request2.url);
+      for (const k of SUSPICIOUS_AFFILIATE_KEYS) {
+        if (parsed.searchParams.has(k)) {
+          matchedKey = k;
+          break;
+        }
+      }
+    } catch {
+    }
+    if (matchedKey) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: `Third-party affiliate smartlink tracking parameter detected (${matchedKey})`
+      };
+    }
+    const hasSuspiciousPath = SUSPICIOUS_AD_PATHS.some((p) => lowerUrl.includes(p));
+    if (hasSuspiciousPath) {
+      return {
+        suspicious: true,
+        ruleCandidate: hostname,
+        reason: "Third-party ad dispatcher path pattern"
+      };
+    }
+  }
+  return { suspicious: false };
+}
 
 // ../../packages/adblock-engine/src/filters/filterList.ts
 var FilterList = class {
@@ -2022,8 +2167,10 @@ var AdBlockEngine = class {
     adBlock: true,
     trackerProtection: true,
     malvertisingProtection: true,
-    customRules: true
+    customRules: true,
+    smartAutoRules: true
   };
+  onRuleLearned;
   lists = /* @__PURE__ */ new Map();
   domainIndex = new DomainIndex();
   generalBlockRules = [];
@@ -2093,6 +2240,14 @@ var AdBlockEngine = class {
     );
     easyList.loadFromText(EASYLIST_PRESET_RULES);
     this.addFilterListInstance(easyList);
+    const smartAutoList = new FilterList(
+      "smart_auto",
+      "Smart Auto-Learned Rules",
+      "custom",
+      "Rules automatically synthesized and learned on-the-fly by Forge Shield Heuristics",
+      true
+    );
+    this.addFilterListInstance(smartAutoList);
   }
   /**
    * Rebuilds search indices across all currently enabled filter lists.
@@ -2188,6 +2343,82 @@ var AdBlockEngine = class {
         return this.features.customRules;
       default:
         return true;
+    }
+  }
+  // --- Smart Auto-Rule Learning ---
+  /**
+   * Automatically learns and synthesizes an adblock rule from a suspicious domain or pattern.
+   * Inserts into the "smart_auto" filter list and immediately rebuilds the active search indices.
+   */
+  learnRule(target, category = "ad", reason = "Learned by Smart Heuristics") {
+    if (!this.features.smartAutoRules) return null;
+    const cleanTarget = (target || "").trim();
+    if (!cleanTarget) return null;
+    let domain = extractHostname(cleanTarget) || cleanTarget;
+    domain = domain.replace(/^(\.|\*|\/)+/, "").replace(/(\.|\*|\/)+$/, "").toLowerCase();
+    if (!domain || domain.length < 3 || !domain.includes(".")) return null;
+    const WHITELISTED_SYSTEM_DOMAINS = [
+      "google.com",
+      "gstatic.com",
+      "googleapis.com",
+      "youtube.com",
+      "ytimg.com",
+      "github.com",
+      "microsoft.com",
+      "apple.com",
+      "cloudflare.com",
+      "cdnjs.cloudflare.com",
+      "amazon.com",
+      "aws.amazon.com",
+      "wikipedia.org",
+      "w3.org",
+      "mozilla.org",
+      "bbci.co.uk",
+      "bbc.com",
+      "instagram.com",
+      "x.com",
+      "twitter.com",
+      "facebook.com"
+    ];
+    if (WHITELISTED_SYSTEM_DOMAINS.some((d) => domain === d || domain.endsWith("." + d))) {
+      return null;
+    }
+    const rawRule = `||${domain}^`;
+    let autoList = this.lists.get("smart_auto");
+    if (!autoList) {
+      autoList = new FilterList(
+        "smart_auto",
+        "Smart Auto-Learned Rules",
+        "custom",
+        "Rules automatically synthesized and learned on-the-fly by Forge Shield Heuristics",
+        true
+      );
+      this.lists.set("smart_auto", autoList);
+    }
+    if (autoList.rules.some((r) => r.raw === rawRule || r.domain === domain)) {
+      return null;
+    }
+    const rule = parseRule(rawRule);
+    if (!rule) return null;
+    rule.id = `auto_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    rule.category = category;
+    rule.enabled = true;
+    autoList.addRule(rule);
+    this.rebuildIndices();
+    if (this.onRuleLearned) {
+      this.onRuleLearned(rule, reason);
+    }
+    return rule;
+  }
+  getAutoLearnedRules() {
+    const list = this.lists.get("smart_auto");
+    return list ? [...list.rules] : [];
+  }
+  clearAutoLearnedRules() {
+    const list = this.lists.get("smart_auto");
+    if (list) {
+      list.rules = [];
+      this.rebuildIndices();
     }
   }
   // --- Custom Rules Management ---
@@ -2344,6 +2575,26 @@ var AdBlockEngine = class {
           category,
           listId,
           reason: `Blocked by ${category} pattern: ${rule.raw}`
+        };
+      }
+    }
+    if (this.features.smartAutoRules) {
+      const heuristic = detectSuspiciousAdRequest(request2);
+      if (heuristic.suspicious && heuristic.ruleCandidate) {
+        const learned = this.learnRule(heuristic.ruleCandidate, "ad", heuristic.reason);
+        this.blockedCount++;
+        this.categoryCounts.ad = (this.categoryCounts.ad || 0) + 1;
+        const candidateHost = extractHostname(heuristic.ruleCandidate) || heuristic.ruleCandidate;
+        const currentDomainHit = this.domainHits.get(candidateHost) || { count: 0, category: "ad" };
+        this.domainHits.set(candidateHost, { count: currentDomainHit.count + 1, category: "ad" });
+        const autoList = this.lists.get("smart_auto");
+        if (autoList) autoList.incrementHits();
+        return {
+          blocked: true,
+          rule: learned || void 0,
+          category: "ad",
+          listId: "smart_auto",
+          reason: `Blocked & auto-learned by Smart Heuristics: ${heuristic.reason || heuristic.ruleCandidate}`
         };
       }
     }
@@ -2579,8 +2830,45 @@ function getFullBroadcastState() {
     detailedStats: engine.getDetailedStats()
   };
 }
+function getAutoRulesFilePath() {
+  try {
+    return path2.join(app2.getPath("userData"), "forge_auto_learned_rules.json");
+  } catch {
+    return path2.join(process.cwd(), "forge_auto_learned_rules.json");
+  }
+}
+function loadPersistedAutoRules() {
+  try {
+    const p = getAutoRulesFilePath();
+    if (fs2.existsSync(p)) {
+      const data = JSON.parse(fs2.readFileSync(p, "utf8"));
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item && item.raw) {
+            engine.learnRule(item.raw, item.category || "ad", item.reason || "Restored from persistent cache");
+          }
+        }
+      }
+    }
+  } catch {
+  }
+}
+function persistAutoRules() {
+  try {
+    const p = getAutoRulesFilePath();
+    const rules = engine.getAutoLearnedRules();
+    fs2.writeFileSync(p, JSON.stringify(rules.map((r) => ({ raw: r.raw, category: r.category, domain: r.domain })), null, 2), "utf8");
+  } catch {
+  }
+}
 function initAdBlockAdapter(mainWindowGetter) {
   getWin = mainWindowGetter;
+  engine.onRuleLearned = (rule, reason) => {
+    persistAutoRules();
+    broadcastEvent("adblock:rule-learned", { rule, reason });
+    broadcastEvent("adblock:state-changed", getFullBroadcastState());
+  };
+  loadPersistedAutoRules();
   initListUpdater(engine, (status2) => {
     broadcastEvent("adblock:lists-updated", status2);
     broadcastEvent("adblock:state-changed", getFullBroadcastState());
@@ -2653,6 +2941,25 @@ function initAdBlockAdapter(mainWindowGetter) {
   });
   ipcMain.handle("adblock:get-detailed-stats", () => {
     return engine.getDetailedStats();
+  });
+  ipcMain.handle("adblock:get-auto-learned-rules", () => {
+    return engine.getAutoLearnedRules();
+  });
+  ipcMain.handle("adblock:clear-auto-learned-rules", () => {
+    engine.clearAutoLearnedRules();
+    persistAutoRules();
+    broadcastEvent("adblock:state-changed", getFullBroadcastState());
+    return true;
+  });
+  ipcMain.handle("adblock:learn-rule", (_event, target, category, reason) => {
+    const rule = engine.learnRule(target, category || "ad", reason || "Manually learned rule");
+    if (rule) persistAutoRules();
+    return rule;
+  });
+  ipcMain.on("adblock:report-auto-rule", (_event, data) => {
+    if (data && data.domain) {
+      engine.learnRule(data.domain, "ad", data.reason || "Reported by in-page Shield");
+    }
   });
   ipcMain.handle("adblock:get-custom-rules", () => {
     return engine.getCustomRules();
@@ -4784,6 +5091,22 @@ function initNetworkMonitor(getMainWindow) {
         referrer: sourceUrl
       });
       if (adblock.cancel) {
+        const lowerUrl = (details.url || "").toLowerCase();
+        if (lowerUrl.includes("optimizely.com") && (lowerUrl.includes("/datafiles/") || lowerUrl.includes(".json") || lowerUrl.includes("datafile"))) {
+          const emptyDatafile = JSON.stringify({
+            version: "4",
+            rollouts: [],
+            experiments: [],
+            featureFlags: [],
+            audiences: [],
+            events: [],
+            attributes: [],
+            anonymizeIP: true,
+            botFiltering: false
+          });
+          callback({ redirectURL: `data:application/json;charset=utf-8,${encodeURIComponent(emptyDatafile)}` });
+          return;
+        }
         const entry = {
           id: entryId,
           url: details.url,
@@ -4883,16 +5206,19 @@ function initNetworkMonitor(getMainWindow) {
           }
         }
       }
+      if ((responseHeaders["permissions-policy"] || responseHeaders["Permissions-Policy"]) && (responseHeaders["feature-policy"] || responseHeaders["Feature-Policy"])) {
+        delete responseHeaders["feature-policy"];
+        delete responseHeaders["Feature-Policy"];
+      }
       for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();
         if (lower === "permissions-policy" || lower === "feature-policy") {
           const val = responseHeaders[key];
+          const cleanPolicy = (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*").replace(/document-domain\s*=\s*\([^)]*\)\s*,?\s*/gi, "").replace(/document-domain\s+[^;]+;?\s*/gi, "").replace(/,\s*,/g, ",").replace(/^,\s*|,\s*$/g, "");
           if (Array.isArray(val)) {
-            responseHeaders[key] = val.map(
-              (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*")
-            );
+            responseHeaders[key] = val.map(cleanPolicy);
           } else if (typeof val === "string") {
-            responseHeaders[key] = val.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*");
+            responseHeaders[key] = cleanPolicy(val);
           }
         }
       }
@@ -6219,16 +6545,19 @@ function setupCorsBypassInterceptor(targetSession) {
         }
       }
     }
+    if ((responseHeaders["permissions-policy"] || responseHeaders["Permissions-Policy"]) && (responseHeaders["feature-policy"] || responseHeaders["Feature-Policy"])) {
+      delete responseHeaders["feature-policy"];
+      delete responseHeaders["Feature-Policy"];
+    }
     for (const key of Object.keys(responseHeaders)) {
       const lower = key.toLowerCase();
       if (lower === "permissions-policy" || lower === "feature-policy") {
         const val = responseHeaders[key];
+        const cleanPolicy = (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*").replace(/document-domain\s*=\s*\([^)]*\)\s*,?\s*/gi, "").replace(/document-domain\s+[^;]+;?\s*/gi, "").replace(/,\s*,/g, ",").replace(/^,\s*|,\s*$/g, "");
         if (Array.isArray(val)) {
-          responseHeaders[key] = val.map(
-            (v) => v.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*")
-          );
+          responseHeaders[key] = val.map(cleanPolicy);
         } else if (typeof val === "string") {
-          responseHeaders[key] = val.replace(/picture-in-picture=\(\)/gi, "picture-in-picture=*").replace(/fullscreen=\(\)/gi, "fullscreen=*");
+          responseHeaders[key] = cleanPolicy(val);
         }
       }
     }
@@ -9222,6 +9551,22 @@ function configureSessionPartition(ses, partitionName) {
           callback({ redirectURL: `data:text/html;charset=utf-8,${encodeURIComponent(html)}` });
           return;
         } else {
+          const lowerUrl = (details.url || "").toLowerCase();
+          if (lowerUrl.includes("optimizely.com") && (lowerUrl.includes("/datafiles/") || lowerUrl.includes(".json") || lowerUrl.includes("datafile"))) {
+            const emptyDatafile = JSON.stringify({
+              version: "4",
+              rollouts: [],
+              experiments: [],
+              featureFlags: [],
+              audiences: [],
+              events: [],
+              attributes: [],
+              anonymizeIP: true,
+              botFiltering: false
+            });
+            callback({ redirectURL: `data:application/json;charset=utf-8,${encodeURIComponent(emptyDatafile)}` });
+            return;
+          }
           callback({ cancel: true });
           return;
         }

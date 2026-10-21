@@ -3,7 +3,7 @@ import { Flame, X, RotateCcw, TrendingUp } from "lucide-react";
 import {
   selectTopSites,
   useTopSitesStore,
-  MIN_TOP_SITE_VISITS,
+  MIN_RECURRING_VISITS,
   type TopSite,
 } from "../../../core/topsites/useTopSitesStore";
 
@@ -62,11 +62,13 @@ function SiteIcon({ site }: { site: TopSite }) {
 
 /**
  * "Most Visited" tiles for the New Tab page.
- * Subscribes directly to the Top Sites store, so the ranking, visit counters,
- * titles and favicons update live while the user browses in other tabs/windows.
- * Only displays websites that have been visited at least minVisits times (default: 7).
+ * Subscribes directly to the Top Sites store, so ranking, visit counters,
+ * titles and favicons update live while browsing.
+ *
+ * Dynamically highlights recurring pages the user actively visits or resorts to,
+ * automatically setting aside pages that the user has stopped using.
  */
-export function TopSitesSection({ onNavigate, limit = 12, minVisits = MIN_TOP_SITE_VISITS }: Props) {
+export function TopSitesSection({ onNavigate, limit = 12, minVisits = MIN_RECURRING_VISITS }: Props) {
   const sites = useTopSitesStore((s) => s.sites);
   const hidden = useTopSitesStore((s) => s.hidden);
   const hideSite = useTopSitesStore((s) => s.hideSite);
@@ -109,13 +111,13 @@ export function TopSitesSection({ onNavigate, limit = 12, minVisits = MIN_TOP_SI
       {topSites.length === 0 ? (
         <div className="flex items-center justify-center gap-2 px-5 py-8 text-[11px] text-[var(--forge-text-muted)]">
           <TrendingUp size={14} className="text-[#FF6B00]" />
-          <span>Sites you visit frequently (at least {minVisits} times) will appear here.</span>
+          <span>Sites with recurring visits will appear here based on recent activity.</span>
         </div>
       ) : (
         <ul className="flex flex-wrap items-center gap-3 p-4 m-0 list-none">
           {topSites.map((site) => {
             const accent = accentFor(site.host);
-            const tooltip = `${site.title === site.host ? site.host : `${site.title} (${site.host})`}\n${formatVisits(site.visits)} visit${site.visits === 1 ? "" : "s"} • ${timeAgo(site.lastVisitedAt)}`;
+            const tooltip = `${site.title === site.host ? site.host : `${site.title} (${site.host})`}\n${formatVisits(site.visits)} visit${site.visits === 1 ? "" : "s"} • Active ${timeAgo(site.lastVisitedAt)}`;
             return (
               <li key={site.host} className="relative group animate-in fade-in duration-200">
                 <button
